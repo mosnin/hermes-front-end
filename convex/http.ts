@@ -216,4 +216,70 @@ http.route({
   }),
 });
 
+// --- workflow engine (connector executes dispatched steps) ------------------
+
+// POST /workflow/inbox — claim steps dispatched to this agent.
+http.route({
+  path: "/workflow/inbox",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const steps = await ctx.runMutation(internal.engine.claimSteps, {
+      agentId: agent._id,
+    });
+    return json({ ok: true, steps });
+  }),
+});
+
+// POST /workflow/result — report the result of a step.
+http.route({
+  path: "/workflow/result",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (!body.runId || !body.stepId) {
+      return json({ error: "runId and stepId required" }, 400);
+    }
+    const res = await ctx.runMutation(internal.engine.reportResult, {
+      agentId: agent._id,
+      runId: body.runId,
+      stepId: String(body.stepId),
+      ok: body.ok !== false,
+      output: body.output,
+    });
+    return json(res);
+  }),
+});
+
+// POST /trigger/run — fire a webhook trigger. Body: { triggerId, secret }.
+http.route({
+  path: "/trigger/run",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const body = await request.json().catch(() => ({}));
+    if (!body.triggerId || !body.secret) {
+      return json({ error: "triggerId and secret required" }, 400);
+    }
+    const trigger = await ctx.runQuery(internal.triggers.getForWebhook, {
+      triggerId: body.triggerId,
+    });
+    if (
+      !trigger ||
+      trigger.kind !== "webhook" ||
+      !trigger.enabled ||
+      trigger.webhookSecret !== body.secret
+    ) {
+      return json({ error: "invalid trigger or secret" }, 403);
+    }
+    const runId = await ctx.runMutation(internal.workflows.startFromTrigger, {
+      workflowId: trigger.workflowId,
+      trigger: "webhook",
+    });
+    return json({ ok: true, runId });
+  }),
+});
+
 export default http;

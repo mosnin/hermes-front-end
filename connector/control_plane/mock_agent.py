@@ -52,6 +52,17 @@ def main() -> None:
             client.heartbeat()
             last_heartbeat = now
 
+        # Execute any workflow steps the engine dispatched to us, then report.
+        for step in client.workflow_inbox():
+            print(f"[mock] workflow step: {step['name']}")
+            time.sleep(random.uniform(0.5, 1.5))  # pretend to work
+            client.workflow_result(
+                step["runId"],
+                step["stepId"],
+                ok=True,
+                output=f"Completed '{step['name']}'",
+            )
+
         roll = random.random()
         key, title = random.choice(THREADS)
         if roll < 0.45:

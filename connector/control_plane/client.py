@@ -135,6 +135,25 @@ class ControlPlaneClient:
         resp = self._post("/a2a/inbox", {"limit": limit})
         return resp.get("messages", [])
 
+    # -- Workflow engine ---------------------------------------------------
+    def workflow_inbox(self) -> list[dict[str, Any]]:
+        """Claim workflow steps dispatched to this agent (marks them running)."""
+        resp = self._post("/workflow/inbox", {})
+        return resp.get("steps", [])
+
+    def workflow_result(
+        self,
+        run_id: str,
+        step_id: str,
+        ok: bool = True,
+        output: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Report the result of a workflow step back to the engine."""
+        return self._post(
+            "/workflow/result",
+            {"runId": run_id, "stepId": step_id, "ok": ok, "output": output},
+        )
+
     def run_heartbeat_loop(self, interval: float = 30.0) -> None:
         """Block, sending heartbeats forever. Useful as a standalone process."""
         while True:

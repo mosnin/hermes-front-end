@@ -44,7 +44,12 @@ streams its activity up to Convex.
 - **Tasks** — a board to assign, prioritize, and track work per agent.
 - **Skills** — reusable instructions/context with **semantic (vector) search**.
 - **Integrations** — Slack, GitHub, Gmail, Linear, Notion, Calendar (scaffolded).
-- **Orchestration** — compose multi-step, multi-agent workflows.
+- **Workflows** — a real autonomous runtime (Convex scheduler): multi-step,
+  multi-agent workflows with retries, timeouts, durable run/step state,
+  pause/resume/kill, and scheduled/webhook triggers — all under Space guardrails.
+- **Spaces, RBAC & guardrails** — Company → Space → Squad with per-Space
+  isolation, roles (viewer/operator/admin/owner), a kill switch, loop/runaway
+  guards, and an immutable work-history record.
 
 ## Quick start
 

@@ -330,7 +330,8 @@ export default defineSchema({
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),
   })
-    .index("by_run", ["workflowRunId"]),
+    .index("by_run", ["workflowRunId"])
+    .index("by_agent_status", ["agentId", "status"]),
 
   triggers: defineTable({
     companyId: v.string(),
