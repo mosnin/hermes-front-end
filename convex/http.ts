@@ -426,4 +426,26 @@ http.route({
   }),
 });
 
+// POST /context/search — agent retrieves relevant memory (RAG) for its Space.
+http.route({
+  path: "/context/search",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (!body.query) return json({ error: "query required" }, 400);
+    const memories = await ctx.runAction(
+      internal.memories.retrieveForConnector,
+      {
+        spaceId: agent.spaceId,
+        companyId: agent.companyId,
+        query: String(body.query),
+        limit: body.limit,
+      },
+    );
+    return json({ ok: true, memories });
+  }),
+});
+
 export default http;

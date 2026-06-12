@@ -2,13 +2,13 @@
 
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Input } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Send } from "lucide-react";
+import { ArrowLeft, Brain, Send } from "lucide-react";
 
 export default function ThreadDetailPage({
   params,
@@ -28,7 +28,9 @@ export default function ThreadDetailPage({
     spaceId ? { spaceId, threadId: id } : "skip",
   );
   const send = useMutation(api.messages.send);
+  const ingest = useAction(api.memories.ingestThread);
   const [draft, setDraft] = useState("");
+  const [saved, setSaved] = useState(false);
 
   if (thread === undefined) {
     return <div className="p-8 text-sm text-muted">Loading…</div>;
@@ -55,6 +57,17 @@ export default function ThreadDetailPage({
         <div className="flex-1">
           <p className="font-medium">{thread.title}</p>
         </div>
+        <Button
+          variant="outline"
+          onClick={async () => {
+            if (!spaceId) return;
+            await ingest({ spaceId, threadId: id });
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
+          }}
+        >
+          <Brain className="h-4 w-4" /> {saved ? "Saved" : "Save to memory"}
+        </Button>
         <Badge tone={thread.status === "active" ? "green" : "default"}>
           {thread.status}
         </Badge>

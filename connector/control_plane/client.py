@@ -154,6 +154,12 @@ class ControlPlaneClient:
             {"runId": run_id, "stepId": step_id, "ok": ok, "output": output},
         )
 
+    # -- Context engine (RAG) ----------------------------------------------
+    def context_search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
+        """Retrieve relevant Space + company memory for this agent (vector search)."""
+        resp = self._post("/context/search", {"query": query, "limit": limit})
+        return resp.get("memories", [])
+
     def run_heartbeat_loop(self, interval: float = 30.0) -> None:
         """Block, sending heartbeats forever. Useful as a standalone process."""
         while True:

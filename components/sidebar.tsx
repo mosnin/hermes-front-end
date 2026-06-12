@@ -9,6 +9,7 @@ import { api } from "@/convex/_generated/api";
 import {
   Activity,
   Boxes,
+  Brain,
   ChevronDown,
   History,
   LayoutDashboard,
@@ -32,6 +33,7 @@ const nav = [
   { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
   { href: "/dashboard/workflows", label: "Workflows", icon: Workflow },
   { href: "/dashboard/skills", label: "Skills", icon: Sparkles },
+  { href: "/dashboard/knowledge", label: "Knowledge", icon: Brain },
   { href: "/dashboard/integrations", label: "Integrations", icon: Plug },
   { href: "/dashboard/history", label: "Work history", icon: History },
   { href: "/dashboard/activity", label: "Activity", icon: Activity },

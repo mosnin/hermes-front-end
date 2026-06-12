@@ -46,6 +46,9 @@ streams its activity up to Convex.
 - **Threads** — conversations/lines of work, created automatically as agents talk.
 - **Tasks** — a board to assign, prioritize, and track work per agent.
 - **Skills** — reusable instructions/context with **semantic (vector) search**.
+- **Context engine (memory brain)** — Space-scoped + company-wide `memories`
+  with vector retrieval; agents pull relevant context via `/context/search`
+  (RAG), and threads can be saved into memory in one click.
 - **Integrations** — Slack, GitHub, Gmail, Linear, Notion, Calendar (scaffolded).
 - **Workflows** — a real autonomous runtime (Convex scheduler): multi-step,
   multi-agent workflows with retries, timeouts, durable run/step state,
