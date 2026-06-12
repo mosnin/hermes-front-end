@@ -1,34 +1,37 @@
 import { v } from "convex/values";
 import { query, internalMutation } from "./_generated/server";
-import { getOwnerId } from "./lib/auth";
+import { resolveScope } from "./lib/auth";
 
-/** The live activity feed, newest first. Reactive: updates in real time. */
+/** The live activity feed for a Space (reactive). */
 export const feed = query({
   args: {
+    spaceId: v.id("spaces"),
     limit: v.optional(v.number()),
     agentId: v.optional(v.id("agents")),
   },
-  handler: async (ctx, { limit, agentId }) => {
-    const ownerId = await getOwnerId(ctx);
+  handler: async (ctx, { spaceId, limit, agentId }) => {
+    await resolveScope(ctx, spaceId);
     if (agentId) {
-      return await ctx.db
+      const rows = await ctx.db
         .query("activity")
         .withIndex("by_agent", (q) => q.eq("agentId", agentId))
         .order("desc")
         .take(limit ?? 100);
+      return rows.filter((r) => r.spaceId === spaceId);
     }
     return await ctx.db
       .query("activity")
-      .withIndex("by_owner_time", (q) => q.eq("ownerId", ownerId))
+      .withIndex("by_space_time", (q) => q.eq("spaceId", spaceId))
       .order("desc")
       .take(limit ?? 100);
   },
 });
 
-/** Append an activity event (used by the connector ingestion HTTP API). */
+/** Append an activity event. Token-authenticated connector path. */
 export const append = internalMutation({
   args: {
-    ownerId: v.string(),
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
     agentId: v.optional(v.id("agents")),
     threadId: v.optional(v.id("threads")),
     type: v.string(),
@@ -37,9 +40,6 @@ export const append = internalMutation({
     payload: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("activity", {
-      ...args,
-      createdAt: Date.now(),
-    });
+    return await ctx.db.insert("activity", { ...args, createdAt: Date.now() });
   },
 });

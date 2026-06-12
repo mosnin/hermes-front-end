@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
+import { useActiveSpace } from "@/components/active-space";
 import { Plus, Search } from "lucide-react";
 
 type Skill = {
@@ -15,7 +16,8 @@ type Skill = {
 };
 
 export default function SkillsPage() {
-  const all = useQuery(api.skills.list);
+  const { spaceId } = useActiveSpace();
+  const all = useQuery(api.skills.list, spaceId ? { spaceId } : "skip");
   const create = useAction(api.skills.create);
   const runSearch = useAction(api.skills.search);
   const remove = useMutation(api.skills.remove);
@@ -34,10 +36,11 @@ export default function SkillsPage() {
   const list = results ?? all ?? [];
 
   async function submit() {
-    if (!name.trim() || !content.trim()) return;
+    if (!name.trim() || !content.trim() || !spaceId) return;
     setBusy(true);
     try {
       await create({
+        spaceId,
         name: name.trim(),
         description: description.trim() || undefined,
         content: content.trim(),
@@ -57,13 +60,13 @@ export default function SkillsPage() {
   }
 
   async function search() {
-    if (!query.trim()) {
+    if (!query.trim() || !spaceId) {
       setResults(null);
       return;
     }
     setSearching(true);
     try {
-      const r = (await runSearch({ query: query.trim() })) as Skill[];
+      const r = (await runSearch({ spaceId, query: query.trim() })) as Skill[];
       setResults(r);
     } finally {
       setSearching(false);
@@ -128,7 +131,7 @@ export default function SkillsPage() {
               <div className="flex items-start justify-between">
                 <p className="font-medium">{s.name}</p>
                 <button
-                  onClick={() => remove({ skillId: s._id as never })}
+                  onClick={() => spaceId && remove({ spaceId, skillId: s._id as never })}
                   className="text-xs text-muted hover:text-red-400"
                 >
                   Delete

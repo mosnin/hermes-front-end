@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Input } from "@/components/ui";
+import { useActiveSpace } from "@/components/active-space";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Send } from "lucide-react";
 
@@ -17,8 +18,15 @@ export default function ThreadDetailPage({
   const { threadId } = use(params);
   const id = threadId as Id<"threads">;
   const router = useRouter();
-  const thread = useQuery(api.threads.get, { threadId: id });
-  const messages = useQuery(api.threads.messages, { threadId: id });
+  const { spaceId } = useActiveSpace();
+  const thread = useQuery(
+    api.threads.get,
+    spaceId ? { spaceId, threadId: id } : "skip",
+  );
+  const messages = useQuery(
+    api.threads.messages,
+    spaceId ? { spaceId, threadId: id } : "skip",
+  );
   const send = useMutation(api.messages.send);
   const [draft, setDraft] = useState("");
 
@@ -30,8 +38,8 @@ export default function ThreadDetailPage({
   }
 
   async function submit() {
-    if (!draft.trim()) return;
-    await send({ threadId: id, role: "user", content: draft.trim() });
+    if (!draft.trim() || !spaceId) return;
+    await send({ spaceId, threadId: id, role: "user", content: draft.trim() });
     setDraft("");
   }
 

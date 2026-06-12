@@ -1,25 +1,30 @@
 import { v } from "convex/values";
 import { mutation, internalMutation } from "./_generated/server";
-import { getOwnerId } from "./lib/auth";
+import { resolveScope, requireRole } from "./lib/auth";
+
+const ROLE = v.union(
+  v.literal("user"),
+  v.literal("assistant"),
+  v.literal("system"),
+  v.literal("tool"),
+);
 
 /** Post a message from the dashboard into a thread. */
 export const send = mutation({
   args: {
+    spaceId: v.id("spaces"),
     threadId: v.id("threads"),
-    role: v.union(
-      v.literal("user"),
-      v.literal("assistant"),
-      v.literal("system"),
-      v.literal("tool"),
-    ),
+    role: ROLE,
     content: v.string(),
   },
-  handler: async (ctx, { threadId, role, content }) => {
-    const ownerId = await getOwnerId(ctx);
+  handler: async (ctx, { spaceId, threadId, role, content }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
     const thread = await ctx.db.get(threadId);
-    if (!thread || thread.ownerId !== ownerId) throw new Error("Not found");
+    if (!thread || thread.spaceId !== spaceId) throw new Error("Not found");
     const id = await ctx.db.insert("messages", {
-      ownerId,
+      companyId: scope.companyId,
+      spaceId,
       threadId,
       agentId: thread.agentId,
       role,
@@ -34,18 +39,14 @@ export const send = mutation({
   },
 });
 
-/** Append a message relayed by the connector. */
+/** Append a message relayed by the connector. Token-authenticated path. */
 export const appendFromConnector = internalMutation({
   args: {
-    ownerId: v.string(),
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
     threadId: v.id("threads"),
     agentId: v.id("agents"),
-    role: v.union(
-      v.literal("user"),
-      v.literal("assistant"),
-      v.literal("system"),
-      v.literal("tool"),
-    ),
+    role: ROLE,
     content: v.string(),
     toolCalls: v.optional(v.any()),
   },

@@ -6,11 +6,13 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, StatusDot } from "@/components/ui";
 import { RegisterAgentDialog } from "@/components/register-agent-dialog";
+import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 import { Plus } from "lucide-react";
 
 export default function AgentsPage() {
-  const agents = useQuery(api.agents.list);
+  const { spaceId } = useActiveSpace();
+  const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
   const [open, setOpen] = useState(false);
 
   return (
@@ -19,7 +21,7 @@ export default function AgentsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Agents</h1>
           <p className="text-sm text-muted">
-            Every Hermes agent connected to this account.
+            Every Hermes agent connected to this Space.
           </p>
         </div>
         <Button onClick={() => setOpen(true)}>
@@ -43,7 +45,7 @@ export default function AgentsPage() {
                     <StatusDot status={a.status} />
                     <span className="font-medium">{a.name}</span>
                   </div>
-                  <Badge>{a.platform ?? "—"}</Badge>
+                  <Badge>{a.platform ?? a.kind ?? "—"}</Badge>
                 </div>
                 {a.description && (
                   <p className="mt-2 line-clamp-2 text-sm text-muted">

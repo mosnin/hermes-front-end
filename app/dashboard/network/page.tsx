@@ -5,29 +5,37 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, StatusDot } from "@/components/ui";
+import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 import { ArrowRight, Send } from "lucide-react";
 
 export default function NetworkPage() {
-  const directory = useQuery(api.a2a.directory);
-  const messages = useQuery(api.a2a.recent, { limit: 50 });
+  const { spaceId } = useActiveSpace();
+  const skip = spaceId ? { spaceId } : "skip";
+  const directory = useQuery(api.a2a.directory, skip);
+  const messages = useQuery(api.a2a.recent, spaceId ? { spaceId, limit: 50 } : "skip");
   const send = useMutation(api.a2a.send);
 
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [content, setContent] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function submit() {
-    if (!from || !to || from === to || !content.trim()) return;
+    if (!from || !to || from === to || !content.trim() || !spaceId) return;
     setBusy(true);
+    setError(null);
     try {
       await send({
+        spaceId,
         fromAgentId: from as Id<"agents">,
         toAgentId: to as Id<"agents">,
         content: content.trim(),
       });
       setContent("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message.replace(/^.*GuardViolation: /, "Blocked: ") : "Failed");
     } finally {
       setBusy(false);
     }
@@ -40,8 +48,8 @@ export default function NetworkPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Agent network</h1>
         <p className="text-sm text-muted">
-          Agents talk to each other in real time through the A2A broker — even
-          when they&apos;re behind NAT. Route a message, or watch them coordinate.
+          Agents coordinate in real time through the A2A broker — guarded by
+          loop detection, budgets, and the Space kill switch.
         </p>
       </div>
 
@@ -64,7 +72,7 @@ export default function NetworkPage() {
                     <div className="flex items-center gap-2">
                       <StatusDot status={c.status} />
                       <span className="text-sm font-medium">{c.name}</span>
-                      <Badge>{c.platform ?? "—"}</Badge>
+                      <Badge>{c.kind}</Badge>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {c.skills.map((s) => (
@@ -124,6 +132,7 @@ export default function NetworkPage() {
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
+                {error && <p className="text-xs text-red-400">{error}</p>}
               </div>
             </Card>
           </div>

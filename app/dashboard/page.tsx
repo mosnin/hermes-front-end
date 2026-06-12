@@ -7,13 +7,16 @@ import { api } from "@/convex/_generated/api";
 import { Button, Card, StatusDot } from "@/components/ui";
 import { ActivityFeed } from "@/components/activity-feed";
 import { RegisterAgentDialog } from "@/components/register-agent-dialog";
+import { useActiveSpace } from "@/components/active-space";
 import { Plus } from "lucide-react";
 
 export default function OverviewPage() {
-  const agents = useQuery(api.agents.list);
-  const threads = useQuery(api.threads.list, {});
-  const tasks = useQuery(api.tasks.list);
-  const skills = useQuery(api.skills.list);
+  const { spaceId, active } = useActiveSpace();
+  const skip = spaceId ? { spaceId } : "skip";
+  const agents = useQuery(api.agents.list, skip);
+  const threads = useQuery(api.threads.list, skip);
+  const tasks = useQuery(api.tasks.list, skip);
+  const skills = useQuery(api.skills.list, skip);
   const seed = useMutation(api.demo.seed);
   const [open, setOpen] = useState(false);
 
@@ -31,13 +34,17 @@ export default function OverviewPage() {
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Overview</h1>
+          <h1 className="text-2xl font-semibold">{active?.name ?? "Overview"}</h1>
           <p className="text-sm text-muted">
-            Everything your agents are doing, at a glance.
+            Everything your agents are doing in this Space, at a glance.
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => seed({})}>
+          <Button
+            variant="outline"
+            onClick={() => spaceId && seed({ spaceId })}
+            disabled={!spaceId}
+          >
             Load demo data
           </Button>
           <Button onClick={() => setOpen(true)}>

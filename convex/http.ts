@@ -6,10 +6,6 @@ import { Doc } from "./_generated/dataModel";
 
 const http = httpRouter();
 
-/**
- * Authenticate a connector request by its Bearer token. The connector sends the
- * raw token it was given at registration; we hash it and look up the agent.
- */
 async function authAgent(
   ctx: { runQuery: any },
   request: Request,
@@ -21,14 +17,25 @@ async function authAgent(
   return await ctx.runQuery(internal.agents.byTokenHash, { tokenHash });
 }
 
-function unauthorized() {
-  return new Response(JSON.stringify({ error: "unauthorized" }), {
-    status: 401,
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
     headers: { "Content-Type": "application/json" },
   });
 }
+const unauthorized = () => json({ error: "unauthorized" }, 401);
 
-// POST /connector/register — connector announces itself and goes online.
+/** Map a thrown GuardViolation to HTTP 429, everything else to 500. */
+function errorResponse(e: unknown) {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (msg.startsWith("GuardViolation:")) {
+    return json({ error: "guard", detail: msg.replace("GuardViolation: ", "") }, 429);
+  }
+  return json({ error: "internal", detail: msg }, 500);
+}
+
+// --- connector lifecycle ----------------------------------------------------
+
 http.route({
   path: "/connector/register",
   method: "POST",
@@ -44,17 +51,17 @@ http.route({
       meta: body.meta,
     });
     await ctx.runMutation(internal.activity.append, {
-      ownerId: agent.ownerId,
+      companyId: agent.companyId,
+      spaceId: agent.spaceId,
       agentId: agent._id,
       type: "system",
       title: `${agent.name} connected`,
       detail: body.platform ? `Running on ${body.platform}` : undefined,
     });
-    return Response.json({ ok: true, agentId: agent._id, name: agent.name });
+    return json({ ok: true, agentId: agent._id, name: agent.name });
   }),
 });
 
-// POST /connector/heartbeat — periodic liveness ping.
 http.route({
   path: "/connector/heartbeat",
   method: "POST",
@@ -67,11 +74,10 @@ http.route({
       status: body.status ?? "online",
       meta: body.meta,
     });
-    return Response.json({ ok: true });
+    return json({ ok: true });
   }),
 });
 
-// POST /connector/activity — append an activity event (tool calls, status, ...).
 http.route({
   path: "/connector/activity",
   method: "POST",
@@ -79,19 +85,19 @@ http.route({
     const agent = await authAgent(ctx, request);
     if (!agent) return unauthorized();
     const body = await request.json().catch(() => ({}));
-
     let threadId: string | undefined;
     if (body.threadKey) {
       threadId = await ctx.runMutation(internal.threads.upsertFromConnector, {
-        ownerId: agent.ownerId,
+        companyId: agent.companyId,
+        spaceId: agent.spaceId,
         agentId: agent._id,
         connectorKey: String(body.threadKey),
         title: body.threadTitle ?? "Untitled thread",
       });
     }
-
     await ctx.runMutation(internal.activity.append, {
-      ownerId: agent.ownerId,
+      companyId: agent.companyId,
+      spaceId: agent.spaceId,
       agentId: agent._id,
       threadId: threadId as any,
       type: body.type ?? "system",
@@ -99,11 +105,10 @@ http.route({
       detail: body.detail,
       payload: body.payload,
     });
-    return Response.json({ ok: true });
+    return json({ ok: true });
   }),
 });
 
-// POST /connector/message — relay a conversation turn into a thread.
 http.route({
   path: "/connector/message",
   method: "POST",
@@ -112,33 +117,30 @@ http.route({
     if (!agent) return unauthorized();
     const body = await request.json().catch(() => ({}));
     if (!body.threadKey || !body.content) {
-      return new Response(
-        JSON.stringify({ error: "threadKey and content required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
+      return json({ error: "threadKey and content required" }, 400);
     }
-
     const threadId = await ctx.runMutation(
       internal.threads.upsertFromConnector,
       {
-        ownerId: agent.ownerId,
+        companyId: agent.companyId,
+        spaceId: agent.spaceId,
         agentId: agent._id,
         connectorKey: String(body.threadKey),
         title: body.threadTitle ?? "Untitled thread",
       },
     );
-
     await ctx.runMutation(internal.messages.appendFromConnector, {
-      ownerId: agent.ownerId,
+      companyId: agent.companyId,
+      spaceId: agent.spaceId,
       threadId,
       agentId: agent._id,
       role: body.role ?? "assistant",
       content: String(body.content),
       toolCalls: body.toolCalls,
     });
-
     await ctx.runMutation(internal.activity.append, {
-      ownerId: agent.ownerId,
+      companyId: agent.companyId,
+      spaceId: agent.spaceId,
       agentId: agent._id,
       threadId,
       type: "message",
@@ -147,33 +149,28 @@ http.route({
         String(body.content).slice(0, 140) +
         (String(body.content).length > 140 ? "…" : ""),
     });
-    return Response.json({ ok: true, threadId });
+    return json({ ok: true, threadId });
   }),
 });
 
-// ---------------------------------------------------------------------------
-// A2A gateway — agent-to-agent messaging brokered through the control plane.
-// ---------------------------------------------------------------------------
+// --- A2A gateway ------------------------------------------------------------
 
-// POST /a2a/discover — list Agent Cards the caller can talk to.
 http.route({
   path: "/a2a/discover",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const agent = await authAgent(ctx, request);
     if (!agent) return unauthorized();
-    const cards = await ctx.runQuery(internal.a2a.directoryForOwner, {
-      ownerId: agent.ownerId,
+    const cards = await ctx.runQuery(internal.a2a.directoryForSpace, {
+      spaceId: agent.spaceId,
     });
-    // Don't include the caller in its own discovery list.
-    return Response.json({
+    return json({
       self: { id: agent._id, name: agent.name },
       agents: cards.filter((c: { id: string }) => c.id !== agent._id),
     });
   }),
 });
 
-// POST /a2a/send — send a message to another agent (by id or name).
 http.route({
   path: "/a2a/send",
   method: "POST",
@@ -182,34 +179,28 @@ http.route({
     if (!agent) return unauthorized();
     const body = await request.json().catch(() => ({}));
     if (!body.to || !body.content) {
-      return new Response(
-        JSON.stringify({ error: "to and content required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
+      return json({ error: "to and content required" }, 400);
     }
     const target = await ctx.runQuery(internal.a2a.resolveTarget, {
-      ownerId: agent.ownerId,
+      spaceId: agent.spaceId,
       ref: String(body.to),
     });
-    if (!target) {
-      return new Response(JSON.stringify({ error: "recipient not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
+    if (!target) return json({ error: "recipient not found" }, 404);
+    try {
+      const messageId = await ctx.runMutation(internal.a2a.routeFromConnector, {
+        spaceId: agent.spaceId,
+        fromAgentId: agent._id,
+        toAgentId: target._id,
+        content: String(body.content),
+        kind: body.kind ?? "message",
       });
+      return json({ ok: true, messageId, to: target._id });
+    } catch (e) {
+      return errorResponse(e);
     }
-    const messageId = await ctx.runMutation(internal.a2a.routeFromConnector, {
-      ownerId: agent.ownerId,
-      fromAgentId: agent._id,
-      toAgentId: target._id,
-      content: String(body.content),
-      kind: body.kind ?? "message",
-    });
-    return Response.json({ ok: true, messageId, to: target._id });
   }),
 });
 
-// POST /a2a/inbox — pull queued messages addressed to the caller. The connector
-// polls this (or holds it open) to receive peer messages in near real time.
 http.route({
   path: "/a2a/inbox",
   method: "POST",
@@ -221,7 +212,7 @@ http.route({
       agentId: agent._id,
       limit: body.limit,
     });
-    return Response.json({ ok: true, messages });
+    return json({ ok: true, messages });
   }),
 });
 

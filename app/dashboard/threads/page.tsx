@@ -4,13 +4,16 @@ import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Card, EmptyState } from "@/components/ui";
+import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 
 const statusTone = { active: "green", idle: "yellow", archived: "default" } as const;
 
 export default function ThreadsPage() {
-  const threads = useQuery(api.threads.list, {});
-  const agents = useQuery(api.agents.list);
+  const { spaceId } = useActiveSpace();
+  const skip = spaceId ? { spaceId } : "skip";
+  const threads = useQuery(api.threads.list, skip);
+  const agents = useQuery(api.agents.list, skip);
   const agentName = (id?: string) =>
     agents?.find((a) => a._id === id)?.name ?? "Unassigned";
 
@@ -19,8 +22,8 @@ export default function ThreadsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Threads</h1>
         <p className="text-sm text-muted">
-          Lines of work with your agents. Threads are created automatically as
-          agents converse, or you can start one.
+          Lines of work with your agents — created automatically as agents
+          converse, or start one.
         </p>
       </div>
 

@@ -1,22 +1,23 @@
+import { v } from "convex/values";
 import { mutation } from "./_generated/server";
-import { getOwnerId } from "./lib/auth";
+import { resolveScope, requireRole } from "./lib/auth";
 
-/**
- * Seed the current account with demo data so the dashboard has something to
- * show before a real agent connects. Idempotent-ish: safe to run, but will
- * create duplicates if called repeatedly. Wired to a "Load demo data" button.
- */
+/** Seed a Space with demo data so the dashboard has life before a real agent. */
 export const seed = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const ownerId = await getOwnerId(ctx);
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
+    const { companyId } = scope;
     const now = Date.now();
 
     const researchAgent = await ctx.db.insert("agents", {
-      ownerId,
+      companyId,
+      spaceId,
       name: "Research Agent",
       description: "Long-running researcher deployed on AWS.",
       platform: "aws",
+      kind: "hermes",
       status: "online",
       tokenHash: "demo-" + crypto.randomUUID(),
       lastHeartbeat: now,
@@ -26,10 +27,12 @@ export const seed = mutation({
     });
 
     const opsAgent = await ctx.db.insert("agents", {
-      ownerId,
+      companyId,
+      spaceId,
       name: "Ops Agent",
       description: "Local agent handling infra + deploys.",
       platform: "local",
+      kind: "hermes",
       status: "degraded",
       tokenHash: "demo-" + crypto.randomUUID(),
       lastHeartbeat: now - 60_000,
@@ -39,7 +42,8 @@ export const seed = mutation({
     });
 
     const thread = await ctx.db.insert("threads", {
-      ownerId,
+      companyId,
+      spaceId,
       agentId: researchAgent,
       title: "Competitor landscape report",
       status: "active",
@@ -49,7 +53,8 @@ export const seed = mutation({
     });
 
     await ctx.db.insert("messages", {
-      ownerId,
+      companyId,
+      spaceId,
       threadId: thread,
       agentId: researchAgent,
       role: "user",
@@ -57,7 +62,8 @@ export const seed = mutation({
       createdAt: now,
     });
     await ctx.db.insert("messages", {
-      ownerId,
+      companyId,
+      spaceId,
       threadId: thread,
       agentId: researchAgent,
       role: "assistant",
@@ -72,7 +78,8 @@ export const seed = mutation({
       ["Publish Q2 summary", "done", "low"],
     ] as const) {
       await ctx.db.insert("tasks", {
-        ownerId,
+        companyId,
+        spaceId,
         title,
         status,
         priority,
@@ -90,7 +97,8 @@ export const seed = mutation({
       ["status", "Ops Agent degraded", "Missed 2 heartbeats"],
     ] as const) {
       await ctx.db.insert("activity", {
-        ownerId,
+        companyId,
+        spaceId,
         agentId: type === "status" ? opsAgent : researchAgent,
         threadId: type === "message" ? thread : undefined,
         type,
@@ -100,13 +108,13 @@ export const seed = mutation({
       });
     }
 
-    // A couple of agent-to-agent (A2A) messages so the network view has life.
     for (const [fromId, toId, content] of [
       [researchAgent, opsAgent, "Can you spin up a staging box for the nightly run?"],
       [opsAgent, researchAgent, "Done — staging is up, creds in the vault."],
     ] as const) {
       await ctx.db.insert("a2aMessages", {
-        ownerId,
+        companyId,
+        spaceId,
         fromAgentId: fromId,
         toAgentId: toId,
         threadId: thread,
@@ -117,6 +125,16 @@ export const seed = mutation({
         deliveredAt: now + 5000,
       });
     }
+
+    await ctx.db.insert("workEvents", {
+      companyId,
+      spaceId,
+      actorType: "system",
+      category: "system",
+      action: "demo_seeded",
+      summary: "Loaded demo data (agents, thread, tasks, A2A messages)",
+      createdAt: now,
+    });
 
     return { ok: true };
   },

@@ -5,6 +5,7 @@ import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button, Input, Modal } from "./ui";
 import { Check, Copy } from "lucide-react";
+import { useActiveSpace } from "./active-space";
 
 /**
  * The "connect an agent" flow. Creating an agent returns a one-time connector
@@ -18,6 +19,7 @@ export function RegisterAgentDialog({
   onClose: () => void;
 }) {
   const createAgent = useAction(api.agents.create);
+  const { spaceId } = useActiveSpace();
   const [name, setName] = useState("");
   const [platform, setPlatform] = useState("");
   const [busy, setBusy] = useState(false);
@@ -29,10 +31,11 @@ export function RegisterAgentDialog({
   const httpUrl = convexUrl.replace(".convex.cloud", ".convex.site");
 
   async function submit() {
-    if (!name.trim()) return;
+    if (!name.trim() || !spaceId) return;
     setBusy(true);
     try {
       const res = await createAgent({
+        spaceId,
         name: name.trim(),
         platform: platform.trim() || undefined,
       });

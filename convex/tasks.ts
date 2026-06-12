@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { getOwnerId } from "./lib/auth";
+import { resolveScope, requireRole } from "./lib/auth";
 
 const STATUS = v.union(
   v.literal("todo"),
@@ -16,38 +16,43 @@ const PRIORITY = v.union(
 );
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
-    const ownerId = await getOwnerId(ctx);
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    await resolveScope(ctx, spaceId);
     const rows = await ctx.db
       .query("tasks")
-      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .collect();
-    // Stable board ordering: by column then orderKey.
     return rows.sort((a, b) => a.orderKey.localeCompare(b.orderKey));
   },
 });
 
 export const create = mutation({
   args: {
+    spaceId: v.id("spaces"),
     title: v.string(),
     description: v.optional(v.string()),
     priority: v.optional(PRIORITY),
     assigneeAgentId: v.optional(v.id("agents")),
+    projectId: v.optional(v.id("projects")),
+    goalId: v.optional(v.id("goals")),
     dueAt: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
-    const ownerId = await getOwnerId(ctx);
+  handler: async (ctx, { spaceId, ...args }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
     const now = Date.now();
     return await ctx.db.insert("tasks", {
-      ownerId,
+      companyId: scope.companyId,
+      spaceId,
       title: args.title,
       description: args.description,
       status: "todo",
       priority: args.priority ?? "medium",
       assigneeAgentId: args.assigneeAgentId,
+      projectId: args.projectId,
+      goalId: args.goalId,
       dueAt: args.dueAt,
-      // Newer tasks sort to the top of their column.
       orderKey: String(Number.MAX_SAFE_INTEGER - now).padStart(20, "0"),
       createdAt: now,
       updatedAt: now,
@@ -57,6 +62,7 @@ export const create = mutation({
 
 export const update = mutation({
   args: {
+    spaceId: v.id("spaces"),
     taskId: v.id("tasks"),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
@@ -66,23 +72,25 @@ export const update = mutation({
     orderKey: v.optional(v.string()),
     dueAt: v.optional(v.union(v.number(), v.null())),
   },
-  handler: async (ctx, { taskId, ...patch }) => {
-    const ownerId = await getOwnerId(ctx);
+  handler: async (ctx, { spaceId, taskId, ...patch }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
     const task = await ctx.db.get(taskId);
-    if (!task || task.ownerId !== ownerId) throw new Error("Not found");
+    if (!task || task.spaceId !== spaceId) throw new Error("Not found");
     const clean = Object.fromEntries(
-      Object.entries(patch).filter(([, v]) => v !== undefined),
+      Object.entries(patch).filter(([, val]) => val !== undefined),
     );
     await ctx.db.patch(taskId, { ...clean, updatedAt: Date.now() });
   },
 });
 
 export const remove = mutation({
-  args: { taskId: v.id("tasks") },
-  handler: async (ctx, { taskId }) => {
-    const ownerId = await getOwnerId(ctx);
+  args: { spaceId: v.id("spaces"), taskId: v.id("tasks") },
+  handler: async (ctx, { spaceId, taskId }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
     const task = await ctx.db.get(taskId);
-    if (!task || task.ownerId !== ownerId) throw new Error("Not found");
+    if (!task || task.spaceId !== spaceId) throw new Error("Not found");
     await ctx.db.delete(taskId);
   },
 });

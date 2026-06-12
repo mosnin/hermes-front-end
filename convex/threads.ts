@@ -1,14 +1,14 @@
 import { v } from "convex/values";
 import { query, mutation, internalMutation } from "./_generated/server";
-import { getOwnerId } from "./lib/auth";
+import { resolveScope, requireRole } from "./lib/auth";
 
 export const list = query({
-  args: { status: v.optional(v.string()) },
-  handler: async (ctx, { status }) => {
-    const ownerId = await getOwnerId(ctx);
+  args: { spaceId: v.id("spaces"), status: v.optional(v.string()) },
+  handler: async (ctx, { spaceId, status }) => {
+    await resolveScope(ctx, spaceId);
     const rows = await ctx.db
       .query("threads")
-      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .order("desc")
       .collect();
     return status ? rows.filter((t) => t.status === status) : rows;
@@ -16,21 +16,21 @@ export const list = query({
 });
 
 export const get = query({
-  args: { threadId: v.id("threads") },
-  handler: async (ctx, { threadId }) => {
-    const ownerId = await getOwnerId(ctx);
+  args: { spaceId: v.id("spaces"), threadId: v.id("threads") },
+  handler: async (ctx, { spaceId, threadId }) => {
+    await resolveScope(ctx, spaceId);
     const thread = await ctx.db.get(threadId);
-    if (!thread || thread.ownerId !== ownerId) return null;
+    if (!thread || thread.spaceId !== spaceId) return null;
     return thread;
   },
 });
 
 export const messages = query({
-  args: { threadId: v.id("threads") },
-  handler: async (ctx, { threadId }) => {
-    const ownerId = await getOwnerId(ctx);
+  args: { spaceId: v.id("spaces"), threadId: v.id("threads") },
+  handler: async (ctx, { spaceId, threadId }) => {
+    await resolveScope(ctx, spaceId);
     const thread = await ctx.db.get(threadId);
-    if (!thread || thread.ownerId !== ownerId) return [];
+    if (!thread || thread.spaceId !== spaceId) return [];
     return await ctx.db
       .query("messages")
       .withIndex("by_thread", (q) => q.eq("threadId", threadId))
@@ -41,13 +41,16 @@ export const messages = query({
 
 export const create = mutation({
   args: {
+    spaceId: v.id("spaces"),
     title: v.string(),
     agentId: v.optional(v.id("agents")),
   },
-  handler: async (ctx, { title, agentId }) => {
-    const ownerId = await getOwnerId(ctx);
+  handler: async (ctx, { spaceId, title, agentId }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
     return await ctx.db.insert("threads", {
-      ownerId,
+      companyId: scope.companyId,
+      spaceId,
       agentId,
       title,
       status: "active",
@@ -60,6 +63,7 @@ export const create = mutation({
 
 export const setStatus = mutation({
   args: {
+    spaceId: v.id("spaces"),
     threadId: v.id("threads"),
     status: v.union(
       v.literal("active"),
@@ -67,28 +71,25 @@ export const setStatus = mutation({
       v.literal("archived"),
     ),
   },
-  handler: async (ctx, { threadId, status }) => {
-    const ownerId = await getOwnerId(ctx);
+  handler: async (ctx, { spaceId, threadId, status }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
     const thread = await ctx.db.get(threadId);
-    if (!thread || thread.ownerId !== ownerId) throw new Error("Not found");
+    if (!thread || thread.spaceId !== spaceId) throw new Error("Not found");
     await ctx.db.patch(threadId, { status });
   },
 });
 
-// --- connector ingestion ----------------------------------------------------
-
-/**
- * Upsert a thread by the connector's stable key for an agent, creating it on
- * first sight. Returns the thread id so messages/activity can attach to it.
- */
+/** Upsert a connector thread by its stable key. Token-authenticated path. */
 export const upsertFromConnector = internalMutation({
   args: {
-    ownerId: v.string(),
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
     agentId: v.id("agents"),
     connectorKey: v.string(),
     title: v.string(),
   },
-  handler: async (ctx, { ownerId, agentId, connectorKey, title }) => {
+  handler: async (ctx, { companyId, spaceId, agentId, connectorKey, title }) => {
     const existing = await ctx.db
       .query("threads")
       .withIndex("by_connector_key", (q) =>
@@ -100,7 +101,8 @@ export const upsertFromConnector = internalMutation({
       return existing._id;
     }
     return await ctx.db.insert("threads", {
-      ownerId,
+      companyId,
+      spaceId,
       agentId,
       connectorKey,
       title,

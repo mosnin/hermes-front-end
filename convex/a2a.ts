@@ -4,14 +4,16 @@ import {
   mutation,
   internalQuery,
   internalMutation,
+  MutationCtx,
 } from "./_generated/server";
 import { Id, Doc } from "./_generated/dataModel";
-import { getOwnerId } from "./lib/auth";
-
-// ---------------------------------------------------------------------------
-// Agent Cards — A2A discovery. We derive a card from each registered agent so
-// agents (and the dashboard) can discover who's reachable and what they do.
-// ---------------------------------------------------------------------------
+import { resolveScope, requireRole, Scope } from "./lib/auth";
+import {
+  assertAutonomyActive,
+  assertWithinDailyBudget,
+  assertNotLooping,
+} from "./lib/guards";
+import { recordWorkEvent } from "./lib/events";
 
 function agentCard(agent: Doc<"agents">) {
   return {
@@ -19,8 +21,9 @@ function agentCard(agent: Doc<"agents">) {
     name: agent.name,
     description: agent.description ?? "",
     platform: agent.platform ?? null,
+    kind: agent.kind ?? "hermes",
     status: agent.status,
-    // A2A "skills" — derived from the capabilities the connector reports.
+    cardUrl: agent.cardUrl ?? null,
     skills: (agent.capabilities ?? []).map((c) => ({
       id: c,
       name: c,
@@ -30,27 +33,25 @@ function agentCard(agent: Doc<"agents">) {
   };
 }
 
-/** The directory of Agent Cards for this account (dashboard + discovery). */
 export const directory = query({
-  args: {},
-  handler: async (ctx) => {
-    const ownerId = await getOwnerId(ctx);
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    await resolveScope(ctx, spaceId);
     const agents = await ctx.db
       .query("agents")
-      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .collect();
     return agents.map(agentCard);
   },
 });
 
-/** Recent inter-agent messages, with sender/recipient names resolved. */
 export const recent = query({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, { limit }) => {
-    const ownerId = await getOwnerId(ctx);
+  args: { spaceId: v.id("spaces"), limit: v.optional(v.number()) },
+  handler: async (ctx, { spaceId, limit }) => {
+    await resolveScope(ctx, spaceId);
     const rows = await ctx.db
       .query("a2aMessages")
-      .withIndex("by_owner_time", (q) => q.eq("ownerId", ownerId))
+      .withIndex("by_space_time", (q) => q.eq("spaceId", spaceId))
       .order("desc")
       .take(limit ?? 100);
     const names = new Map<string, string>();
@@ -72,9 +73,10 @@ export const recent = query({
   },
 });
 
-/** Send a message from one agent to another, orchestrated from the dashboard. */
+/** Send a message between two agents (dashboard-orchestrated). Guarded. */
 export const send = mutation({
   args: {
+    spaceId: v.id("spaces"),
     fromAgentId: v.id("agents"),
     toAgentId: v.id("agents"),
     content: v.string(),
@@ -87,66 +89,67 @@ export const send = mutation({
       ),
     ),
   },
-  handler: async (ctx, { fromAgentId, toAgentId, content, kind }) => {
-    const ownerId = await getOwnerId(ctx);
+  handler: async (ctx, { spaceId, fromAgentId, toAgentId, content, kind }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
     const from = await ctx.db.get(fromAgentId);
     const to = await ctx.db.get(toAgentId);
-    if (!from || from.ownerId !== ownerId) throw new Error("Sender not found");
-    if (!to || to.ownerId !== ownerId) throw new Error("Recipient not found");
-    return await route(ctx, {
-      ownerId,
-      from,
-      to,
-      content,
-      kind: kind ?? "message",
-    });
+    if (!from || from.spaceId !== spaceId) throw new Error("Sender not found");
+    if (!to || to.spaceId !== spaceId) throw new Error("Recipient not found");
+    await runGuards(ctx, scope, fromAgentId, toAgentId, content);
+    return await route(ctx, { scope, from, to, content, kind: kind ?? "message" });
   },
 });
 
 // ---------------------------------------------------------------------------
-// Routing + delivery (shared by dashboard send and connector HTTP gateway)
+// Guards + routing
 // ---------------------------------------------------------------------------
 
-type Ctx = { db: any };
+async function runGuards(
+  ctx: MutationCtx,
+  scope: Scope,
+  fromAgentId: Id<"agents">,
+  toAgentId: Id<"agents">,
+  content: string,
+): Promise<void> {
+  assertAutonomyActive(scope);
+  await assertWithinDailyBudget(ctx, scope);
+  await assertNotLooping(ctx, scope, fromAgentId, toAgentId, content);
+}
 
-/**
- * Route a message between two agents: ensure a shared thread, persist the A2A
- * message (queued for the recipient to pull), mirror it into the thread so the
- * conversation is visible, and emit an activity event.
- */
 async function route(
-  ctx: Ctx,
+  ctx: MutationCtx,
   args: {
-    ownerId: string;
+    scope: Scope;
     from: Doc<"agents">;
     to: Doc<"agents">;
     content: string;
     kind: "message" | "task" | "status" | "artifact";
   },
 ): Promise<Id<"a2aMessages">> {
-  const { ownerId, from, to, content, kind } = args;
+  const { scope, from, to, content, kind } = args;
+  const { companyId, spaceId } = scope;
   const now = Date.now();
 
-  // Canonical pair key so A↔B always share one thread, attached to the
-  // recipient agent for the threads "by_connector_key" index.
   const pair = [from._id, to._id].sort().join(":");
   const connectorKey = `a2a:${pair}`;
-  let thread = await ctx.db
+  const existing = await ctx.db
     .query("threads")
-    .withIndex("by_connector_key", (q: any) =>
+    .withIndex("by_connector_key", (q) =>
       q.eq("agentId", to._id).eq("connectorKey", connectorKey),
     )
     .unique();
   let threadId: Id<"threads">;
-  if (thread) {
-    threadId = thread._id;
+  if (existing) {
+    threadId = existing._id;
     await ctx.db.patch(threadId, {
       lastMessageAt: now,
-      messageCount: (thread.messageCount ?? 0) + 1,
+      messageCount: (existing.messageCount ?? 0) + 1,
     });
   } else {
     threadId = await ctx.db.insert("threads", {
-      ownerId,
+      companyId,
+      spaceId,
       agentId: to._id,
       connectorKey,
       title: `${from.name} ↔ ${to.name}`,
@@ -158,7 +161,8 @@ async function route(
   }
 
   const messageId = await ctx.db.insert("a2aMessages", {
-    ownerId,
+    companyId,
+    spaceId,
     fromAgentId: from._id,
     toAgentId: to._id,
     threadId,
@@ -168,9 +172,9 @@ async function route(
     createdAt: now,
   });
 
-  // Mirror into the thread transcript (prefix with the sender for clarity).
   await ctx.db.insert("messages", {
-    ownerId,
+    companyId,
+    spaceId,
     threadId,
     agentId: from._id,
     role: "assistant",
@@ -179,7 +183,8 @@ async function route(
   });
 
   await ctx.db.insert("activity", {
-    ownerId,
+    companyId,
+    spaceId,
     agentId: from._id,
     threadId,
     type: "a2a",
@@ -188,19 +193,43 @@ async function route(
     createdAt: now,
   });
 
+  await recordWorkEvent(ctx, {
+    companyId,
+    spaceId,
+    actorType: "agent",
+    agentId: from._id,
+    category: "a2a",
+    action: "message_sent",
+    summary: `${from.name} → ${to.name}: ${content.slice(0, 120)}`,
+  });
+
   return messageId;
 }
 
-// --- connector gateway internals --------------------------------------------
+// --- connector gateway internals (token-authenticated) ----------------------
 
-/** Resolve a routing target by agent id or by name, scoped to the owner. */
+/** Build a guard scope from a Space doc when there is no user identity. */
+async function connectorScope(
+  ctx: MutationCtx,
+  spaceId: Id<"spaces">,
+): Promise<Scope> {
+  const space = await ctx.db.get(spaceId);
+  if (!space) throw new Error("Space not found");
+  return {
+    userId: "connector",
+    companyId: space.companyId,
+    spaceId,
+    space,
+    role: "operator",
+  };
+}
+
 export const resolveTarget = internalQuery({
-  args: { ownerId: v.string(), ref: v.string() },
-  handler: async (ctx, { ownerId, ref }) => {
-    // Try as an id first.
+  args: { spaceId: v.id("spaces"), ref: v.string() },
+  handler: async (ctx, { spaceId, ref }) => {
     const all = await ctx.db
       .query("agents")
-      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .collect();
     return (
       all.find((a) => a._id === ref) ??
@@ -212,7 +241,7 @@ export const resolveTarget = internalQuery({
 
 export const routeFromConnector = internalMutation({
   args: {
-    ownerId: v.string(),
+    spaceId: v.id("spaces"),
     fromAgentId: v.id("agents"),
     toAgentId: v.id("agents"),
     content: v.string(),
@@ -223,15 +252,17 @@ export const routeFromConnector = internalMutation({
       v.literal("artifact"),
     ),
   },
-  handler: async (ctx, { ownerId, fromAgentId, toAgentId, content, kind }) => {
+  handler: async (ctx, { spaceId, fromAgentId, toAgentId, content, kind }) => {
+    const scope = await connectorScope(ctx, spaceId);
     const from = await ctx.db.get(fromAgentId);
     const to = await ctx.db.get(toAgentId);
     if (!from || !to) throw new Error("Agent not found");
-    return await route(ctx, { ownerId, from, to, content, kind });
+    // Guards apply equally to connector-originated (autonomous) traffic.
+    await runGuards(ctx, scope, fromAgentId, toAgentId, content);
+    return await route(ctx, { scope, from, to, content, kind });
   },
 });
 
-/** The recipient's inbox: pull queued messages and mark them delivered. */
 export const pullInbox = internalMutation({
   args: { agentId: v.id("agents"), limit: v.optional(v.number()) },
   handler: async (ctx, { agentId, limit }) => {
@@ -260,12 +291,12 @@ export const pullInbox = internalMutation({
   },
 });
 
-export const directoryForOwner = internalQuery({
-  args: { ownerId: v.string() },
-  handler: async (ctx, { ownerId }) => {
+export const directoryForSpace = internalQuery({
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
     const agents = await ctx.db
       .query("agents")
-      .withIndex("by_owner", (q) => q.eq("ownerId", ownerId))
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .collect();
     return agents.map(agentCard);
   },

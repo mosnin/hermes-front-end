@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card } from "@/components/ui";
+import { useActiveSpace, useCan } from "@/components/active-space";
 
 const CATALOG = [
   { type: "slack", name: "Slack", body: "Let agents post and respond in channels." },
@@ -16,7 +17,12 @@ const CATALOG = [
 const statusTone = { connected: "green", disconnected: "default", error: "red" } as const;
 
 export default function IntegrationsPage() {
-  const installed = useQuery(api.integrations.list);
+  const { spaceId } = useActiveSpace();
+  const canManage = useCan("admin");
+  const installed = useQuery(
+    api.integrations.list,
+    spaceId ? { spaceId } : "skip",
+  );
   const connect = useMutation(api.integrations.connect);
   const remove = useMutation(api.integrations.remove);
 
@@ -27,7 +33,7 @@ export default function IntegrationsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Integrations</h1>
         <p className="text-sm text-muted">
-          Connect the tools your agents should act in.
+          Connect the tools your agents should act in. {!canManage && "(admins only)"}
         </p>
       </div>
 
@@ -49,13 +55,20 @@ export default function IntegrationsPage() {
                 {existing ? (
                   <Button
                     variant="outline"
-                    onClick={() => remove({ integrationId: existing._id })}
+                    disabled={!canManage}
+                    onClick={() =>
+                      spaceId &&
+                      remove({ spaceId, integrationId: existing._id })
+                    }
                   >
                     Disconnect
                   </Button>
                 ) : (
                   <Button
-                    onClick={() => connect({ type: c.type, name: c.name })}
+                    disabled={!canManage}
+                    onClick={() =>
+                      spaceId && connect({ spaceId, type: c.type, name: c.name })
+                    }
                   >
                     Connect
                   </Button>

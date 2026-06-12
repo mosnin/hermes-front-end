@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, Input, Modal, Textarea } from "@/components/ui";
+import { useActiveSpace } from "@/components/active-space";
 import { Plus } from "lucide-react";
 
 const COLUMNS = [
@@ -22,8 +23,10 @@ const priorityTone = {
 } as const;
 
 export default function TasksPage() {
-  const tasks = useQuery(api.tasks.list);
-  const agents = useQuery(api.agents.list);
+  const { spaceId } = useActiveSpace();
+  const skip = spaceId ? { spaceId } : "skip";
+  const tasks = useQuery(api.tasks.list, skip);
+  const agents = useQuery(api.agents.list, skip);
   const create = useMutation(api.tasks.create);
   const update = useMutation(api.tasks.update);
   const remove = useMutation(api.tasks.remove);
@@ -38,8 +41,9 @@ export default function TasksPage() {
     agents?.find((a) => a._id === id)?.name;
 
   async function submit() {
-    if (!title.trim()) return;
+    if (!title.trim() || !spaceId) return;
     await create({
+      spaceId,
       title: title.trim(),
       description: description.trim() || undefined,
       priority,
@@ -96,7 +100,12 @@ export default function TasksPage() {
                       <select
                         value={t.status}
                         onChange={(e) =>
-                          update({ taskId: t._id, status: e.target.value as never })
+                          spaceId &&
+                          update({
+                            spaceId,
+                            taskId: t._id,
+                            status: e.target.value as never,
+                          })
                         }
                         className="flex-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-xs"
                       >
@@ -107,7 +116,7 @@ export default function TasksPage() {
                         ))}
                       </select>
                       <button
-                        onClick={() => remove({ taskId: t._id })}
+                        onClick={() => spaceId && remove({ spaceId, taskId: t._id })}
                         className="text-xs text-muted hover:text-red-400"
                       >
                         Delete

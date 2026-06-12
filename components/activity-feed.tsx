@@ -5,6 +5,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, EmptyState } from "./ui";
 import { timeAgo } from "@/lib/utils";
+import { useActiveSpace } from "./active-space";
 
 const typeTone: Record<string, "default" | "green" | "yellow" | "red" | "blue"> = {
   system: "blue",
@@ -23,7 +24,11 @@ export function ActivityFeed({
   agentId?: Id<"agents">;
   limit?: number;
 }) {
-  const events = useQuery(api.activity.feed, { agentId, limit });
+  const { spaceId } = useActiveSpace();
+  const events = useQuery(
+    api.activity.feed,
+    spaceId ? { spaceId, agentId, limit } : "skip",
+  );
 
   if (events === undefined) {
     return <p className="text-sm text-muted">Loading activity…</p>;
