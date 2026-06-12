@@ -350,8 +350,15 @@ http.route({
     }
     if (!agent) return json(rpcError(null, -32600, "unknown agent"), 404);
 
-    // Inbound auth: if the agent has a key, require it; otherwise open.
-    if (agent.a2aInboundKeyHash) {
+    // Inbound auth is default-closed: external A2A is disabled until an inbound
+    // key is minted (agents.rotateInboundKey), then it must be presented.
+    if (!agent.a2aInboundKeyHash) {
+      return json(
+        rpcError(null, -32001, "external A2A not enabled for this agent"),
+        403,
+      );
+    }
+    {
       const header = request.headers.get("Authorization") ?? "";
       const provided = header.startsWith("Bearer ")
         ? header.slice(7).trim()
@@ -508,33 +515,48 @@ http.route({
   path: "/integrations/composio/webhook",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
+    // Mandatory shared secret — never default-open.
     const secret = process.env.COMPOSIO_WEBHOOK_SECRET;
-    if (secret) {
-      const provided =
-        new URL(request.url).searchParams.get("secret") ??
-        request.headers.get("x-composio-secret") ??
-        "";
-      if (provided !== secret) return json({ error: "unauthorized" }, 401);
-    }
-    const body = (await request.json().catch(() => ({}))) as any;
-    // Build a match key from common Composio payload fields.
-    const slug =
-      body.triggerSlug ??
-      body.metadata?.triggerName ??
-      body.type ??
-      body.appName ??
+    if (!secret) return json({ error: "webhook not configured" }, 503);
+    const provided =
+      new URL(request.url).searchParams.get("secret") ??
+      request.headers.get("x-composio-secret") ??
       "";
+    if (provided !== secret) return json({ error: "unauthorized" }, 401);
+
+    const body = (await request.json().catch(() => ({}))) as any;
+    // Tenant: the Composio user_id encodes the Space ("space_<id>").
+    const userId: string =
+      body.userId ??
+      body.user_id ??
+      body.data?.user_id ??
+      body.metadata?.userId ??
+      "";
+    if (!userId.startsWith("space_")) return json({ ok: true, matched: 0 });
+    const spaceIdStr = userId.slice("space_".length);
+
+    const slug = String(
+      body.triggerSlug ?? body.metadata?.triggerName ?? body.type ?? body.appName ?? "",
+    );
     if (!slug) return json({ ok: true, matched: 0 });
-    const matches = await ctx.runQuery(internal.triggers.eventMatches, {
-      needle: String(slug),
-    });
-    for (const t of matches) {
-      await ctx.runMutation(internal.workflows.startFromTrigger, {
-        workflowId: t.workflowId,
-        trigger: "event",
-      });
+
+    let matched = 0;
+    try {
+      const matches = await ctx.runQuery(
+        internal.triggers.eventTriggersInSpace,
+        { spaceId: spaceIdStr as Id<"spaces">, needle: slug },
+      );
+      for (const t of matches) {
+        await ctx.runMutation(internal.workflows.startFromTrigger, {
+          workflowId: t.workflowId,
+          trigger: "event",
+        });
+      }
+      matched = matches.length;
+    } catch {
+      return json({ ok: true, matched: 0 });
     }
-    return json({ ok: true, matched: matches.length });
+    return json({ ok: true, matched });
   }),
 });
 

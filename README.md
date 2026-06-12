@@ -107,6 +107,25 @@ python -m connector.control_plane.a2a_demo
 
 Then open **Agent network** in the dashboard.
 
+## Deploying to Vercel
+
+The app needs Convex codegen at build time, so the build command runs Convex
+first (see `vercel.json`):
+
+```
+npx convex deploy --cmd 'npm run build'
+```
+
+In the Vercel project, set these env vars (Settings → Environment Variables):
+
+- `CONVEX_DEPLOY_KEY` — from the Convex dashboard (use a **Preview** deploy key
+  for PR previews, a Production key for production). This is what lets the build
+  generate `convex/_generated` and set `NEXT_PUBLIC_CONVEX_URL` automatically.
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` — from Clerk.
+
+Without `CONVEX_DEPLOY_KEY` the build fails on `@/convex/_generated/api` (codegen
+never ran) — that's the one required secret.
+
 ## Layout
 
 ```

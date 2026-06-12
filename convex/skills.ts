@@ -8,7 +8,7 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { resolveScope } from "./lib/auth";
+import { resolveScope, requireRole } from "./lib/auth";
 import { embed } from "./embeddings";
 
 export const list = query({
@@ -61,7 +61,8 @@ export const update = action({
 export const remove = mutation({
   args: { spaceId: v.id("spaces"), skillId: v.id("skills") },
   handler: async (ctx, { spaceId, skillId }) => {
-    await resolveScope(ctx, spaceId);
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
     const skill = await ctx.db.get(skillId);
     if (!skill || skill.spaceId !== spaceId) throw new Error("Not found");
     await ctx.db.delete(skillId);
@@ -112,6 +113,7 @@ export const insert = internalMutation({
   },
   handler: async (ctx, { spaceId, ...rest }) => {
     const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
     const now = Date.now();
     return await ctx.db.insert("skills", {
       companyId: scope.companyId,
@@ -135,6 +137,7 @@ export const patch = internalMutation({
   },
   handler: async (ctx, { spaceId, skillId, ...rest }) => {
     const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
     const skill = await ctx.db.get(skillId);
     if (!skill || skill.spaceId !== scope.spaceId) throw new Error("Not found");
     await ctx.db.patch(skillId, { ...rest, updatedAt: Date.now() });

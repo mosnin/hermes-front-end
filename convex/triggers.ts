@@ -136,22 +136,25 @@ export const getForWebhook = internalQuery({
   },
 });
 
-/** Enabled event triggers whose eventType matches an incoming integration event. */
-export const eventMatches = internalQuery({
-  args: { needle: v.string() },
-  handler: async (ctx, { needle }) => {
+/**
+ * Enabled event triggers in a SPECIFIC Space whose eventType matches an
+ * incoming integration event. Scoped per-tenant (no cross-company matching);
+ * the spaceId is derived from the Composio user_id ("space_<id>").
+ */
+export const eventTriggersInSpace = internalQuery({
+  args: { spaceId: v.id("spaces"), needle: v.string() },
+  handler: async (ctx, { spaceId, needle }) => {
     const n = needle.toLowerCase();
-    const enabled = await ctx.db
+    const rows = await ctx.db
       .query("triggers")
-      .withIndex("by_due", (q) => q.eq("enabled", true))
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .collect();
-    return enabled.filter(
+    return rows.filter(
       (t) =>
+        t.enabled &&
         t.kind === "event" &&
         t.eventType != null &&
-        (t.eventType.toLowerCase() === n ||
-          t.eventType.toLowerCase().includes(n) ||
-          n.includes(t.eventType.toLowerCase())),
+        t.eventType.toLowerCase().includes(n),
     );
   },
 });

@@ -281,7 +281,8 @@ export const routeFromConnector = internalMutation({
     const scope = await connectorScope(ctx, spaceId);
     const from = await ctx.db.get(fromAgentId);
     const to = await ctx.db.get(toAgentId);
-    if (!from || !to) throw new Error("Agent not found");
+    if (!from || from.spaceId !== spaceId) throw new Error("Sender not in space");
+    if (!to || to.spaceId !== spaceId) throw new Error("Recipient not in space");
     // Guards apply equally to connector-originated (autonomous) traffic.
     await runGuards(ctx, scope, fromAgentId, toAgentId, content);
     return await route(ctx, { scope, from, to, content, kind });
