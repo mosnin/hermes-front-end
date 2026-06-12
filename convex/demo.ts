@@ -100,6 +100,24 @@ export const seed = mutation({
       });
     }
 
+    // A couple of agent-to-agent (A2A) messages so the network view has life.
+    for (const [fromId, toId, content] of [
+      [researchAgent, opsAgent, "Can you spin up a staging box for the nightly run?"],
+      [opsAgent, researchAgent, "Done — staging is up, creds in the vault."],
+    ] as const) {
+      await ctx.db.insert("a2aMessages", {
+        ownerId,
+        fromAgentId: fromId,
+        toAgentId: toId,
+        threadId: thread,
+        kind: "message",
+        content,
+        status: "delivered",
+        createdAt: now + Math.floor(Math.random() * 4000),
+        deliveredAt: now + 5000,
+      });
+    }
+
     return { ok: true };
   },
 });

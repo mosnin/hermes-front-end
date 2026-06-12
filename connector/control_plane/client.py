@@ -116,6 +116,25 @@ class ControlPlaneClient:
             },
         )
 
+    # -- A2A (agent-to-agent) ----------------------------------------------
+    def a2a_discover(self) -> dict[str, Any]:
+        """List the Agent Cards this agent can talk to (excludes self)."""
+        return self._post("/a2a/discover", {})
+
+    def a2a_send(
+        self,
+        to: str,
+        content: str,
+        kind: str = "message",
+    ) -> dict[str, Any]:
+        """Send a message to another agent by id or name, via the broker."""
+        return self._post("/a2a/send", {"to": to, "content": content, "kind": kind})
+
+    def a2a_inbox(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Pull queued messages addressed to this agent (marks them delivered)."""
+        resp = self._post("/a2a/inbox", {"limit": limit})
+        return resp.get("messages", [])
+
     def run_heartbeat_loop(self, interval: float = 30.0) -> None:
         """Block, sending heartbeats forever. Useful as a standalone process."""
         while True:

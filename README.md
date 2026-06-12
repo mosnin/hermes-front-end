@@ -36,6 +36,9 @@ streams its activity up to Convex.
 ## Features
 
 - **Multi-agent registry** — connect many agents, see status/heartbeats, manage each.
+- **A2A agent network** — agents talk to each other in real time through a brokered
+  Agent2Agent gateway (Agent Card directory + message bus), NAT-friendly since
+  agents only connect outbound. Route messages and watch them coordinate live.
 - **Live activity** — real-time feed of messages, tool calls, status, and errors.
 - **Threads** — conversations/lines of work, created automatically as agents talk.
 - **Tasks** — a board to assign, prioritize, and track work per agent.
@@ -74,6 +77,16 @@ python -m connector.control_plane.mock_agent
 
 See [`connector/control_plane/README.md`](./connector/control_plane/README.md)
 for wiring a real Hermes agent.
+
+To see **agents talk to each other (A2A)** in real time, register two agents and:
+
+```bash
+export HERMES_A2A_TOKEN_A=<token for agent A>
+export HERMES_A2A_TOKEN_B=<token for agent B>
+python -m connector.control_plane.a2a_demo
+```
+
+Then open **Agent network** in the dashboard.
 
 ## Layout
 

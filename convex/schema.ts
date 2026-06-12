@@ -191,6 +191,40 @@ export default defineSchema({
     .index("by_thread", ["threadId"]),
 
   // ---------------------------------------------------------------------------
+  // A2A messages — the agent-to-agent (Agent2Agent protocol) message bus.
+  // The control plane is the broker: agents send here and recipients receive
+  // in real time, which keeps NAT'd/local agents reachable (outbound only).
+  // ---------------------------------------------------------------------------
+  a2aMessages: defineTable({
+    ownerId: v.string(),
+    fromAgentId: v.id("agents"),
+    toAgentId: v.id("agents"),
+    threadId: v.optional(v.id("threads")),
+    // A2A message kinds: a plain message, a task hand-off, a status update, or
+    // an artifact (result) reference.
+    kind: v.union(
+      v.literal("message"),
+      v.literal("task"),
+      v.literal("status"),
+      v.literal("artifact"),
+    ),
+    content: v.string(),
+    payload: v.optional(v.any()),
+    // Delivery lifecycle: queued -> delivered (recipient pulled it) -> read.
+    status: v.union(
+      v.literal("queued"),
+      v.literal("delivered"),
+      v.literal("read"),
+    ),
+    createdAt: v.number(),
+    deliveredAt: v.optional(v.number()),
+  })
+    .index("by_owner", ["ownerId"])
+    .index("by_owner_time", ["ownerId", "createdAt"])
+    .index("by_recipient_status", ["toAgentId", "status"])
+    .index("by_thread", ["threadId"]),
+
+  // ---------------------------------------------------------------------------
   // Orchestrations — multi-agent workflows (sequences/graphs of steps).
   // ---------------------------------------------------------------------------
   orchestrations: defineTable({

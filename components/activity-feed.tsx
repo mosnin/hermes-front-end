@@ -13,6 +13,7 @@ const typeTone: Record<string, "default" | "green" | "yellow" | "red" | "blue"> 
   status: "yellow",
   error: "red",
   task: "blue",
+  a2a: "green",
 };
 
 export function ActivityFeed({

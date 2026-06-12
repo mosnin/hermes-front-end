@@ -103,10 +103,14 @@ export const search = action({
     const ids = results.map((r) => r._id);
     const docs = await ctx.runQuery(internal.skills.byIds, { ids });
     // Preserve vector-search relevance order.
-    const score = new Map(results.map((r) => [r._id, r._score]));
+    const score = new Map<string, number>(
+      results.map((r: { _id: string; _score: number }) => [r._id, r._score]),
+    );
     return docs
       .filter((d): d is NonNullable<typeof d> => d !== null)
-      .sort((a, b) => (score.get(b._id) ?? 0) - (score.get(a._id) ?? 0));
+      .sort(
+        (a, b) => (score.get(b._id) ?? 0) - (score.get(a._id) ?? 0),
+      );
   },
 });
 

@@ -151,4 +151,78 @@ http.route({
   }),
 });
 
+// ---------------------------------------------------------------------------
+// A2A gateway — agent-to-agent messaging brokered through the control plane.
+// ---------------------------------------------------------------------------
+
+// POST /a2a/discover — list Agent Cards the caller can talk to.
+http.route({
+  path: "/a2a/discover",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const cards = await ctx.runQuery(internal.a2a.directoryForOwner, {
+      ownerId: agent.ownerId,
+    });
+    // Don't include the caller in its own discovery list.
+    return Response.json({
+      self: { id: agent._id, name: agent.name },
+      agents: cards.filter((c: { id: string }) => c.id !== agent._id),
+    });
+  }),
+});
+
+// POST /a2a/send — send a message to another agent (by id or name).
+http.route({
+  path: "/a2a/send",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (!body.to || !body.content) {
+      return new Response(
+        JSON.stringify({ error: "to and content required" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const target = await ctx.runQuery(internal.a2a.resolveTarget, {
+      ownerId: agent.ownerId,
+      ref: String(body.to),
+    });
+    if (!target) {
+      return new Response(JSON.stringify({ error: "recipient not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const messageId = await ctx.runMutation(internal.a2a.routeFromConnector, {
+      ownerId: agent.ownerId,
+      fromAgentId: agent._id,
+      toAgentId: target._id,
+      content: String(body.content),
+      kind: body.kind ?? "message",
+    });
+    return Response.json({ ok: true, messageId, to: target._id });
+  }),
+});
+
+// POST /a2a/inbox — pull queued messages addressed to the caller. The connector
+// polls this (or holds it open) to receive peer messages in near real time.
+http.route({
+  path: "/a2a/inbox",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    const messages = await ctx.runMutation(internal.a2a.pullInbox, {
+      agentId: agent._id,
+      limit: body.limit,
+    });
+    return Response.json({ ok: true, messages });
+  }),
+});
+
 export default http;
