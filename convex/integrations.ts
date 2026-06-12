@@ -10,6 +10,7 @@ import {
 import { internal } from "./_generated/api";
 import { resolveScope, requireRole } from "./lib/auth";
 import { recordActivity, recordWorkEvent } from "./lib/events";
+import { recordUsage } from "./lib/metering";
 import {
   composioConfigured,
   composioUserId,
@@ -267,6 +268,9 @@ export const recordCall = internalMutation({
       action: ok ? "tool_executed" : "tool_failed",
       summary: `Ran ${toolkit}.${tool}`,
     });
+    if (ok) {
+      await recordUsage(ctx, { companyId, spaceId, agentId, kind: "tool" });
+    }
   },
 });
 

@@ -6,6 +6,9 @@ const crons = cronJobs();
 // Fire due schedule triggers once a minute. The tick is cheap and idempotent.
 crons.interval("trigger tick", { minutes: 1 }, internal.triggers.tick, {});
 
+// Sweep agent health (degraded/offline by stale heartbeat) every minute.
+crons.interval("health sweep", { minutes: 1 }, internal.health.sweep, {});
+
 // Generate a daily digest per Space at 00:05 UTC.
 crons.daily(
   "daily digests",

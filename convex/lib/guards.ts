@@ -95,3 +95,42 @@ export function assertRunWithinLimits(
     throw new GuardViolation("run wall-clock limit exceeded");
   }
 }
+
+/** Rate limit: cap autonomous messages per minute to prevent bursts. */
+export async function assertRateLimit(
+  ctx: MutationCtx,
+  scope: Scope,
+): Promise<void> {
+  const perMinute = guards(scope).maxMessagesPerMinute ?? 120;
+  const since = Date.now() - 60_000;
+  const recent = await ctx.db
+    .query("a2aMessages")
+    .withIndex("by_space_time", (q) =>
+      q.eq("spaceId", scope.spaceId).gte("createdAt", since),
+    )
+    .collect();
+  if (recent.length >= perMinute) {
+    throw new GuardViolation(`rate limit: ${perMinute} messages/minute`);
+  }
+}
+
+/** Monthly spend budget: block (and pause) when exceeded. */
+export async function assertWithinBudget(
+  ctx: MutationCtx,
+  scope: Scope,
+): Promise<void> {
+  const budget = guards(scope).monthlyBudgetUsd ?? 0;
+  if (budget <= 0) return;
+  const d = new Date();
+  const since = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+  const rows = await ctx.db
+    .query("usage")
+    .withIndex("by_space_time", (q) =>
+      q.eq("spaceId", scope.spaceId).gte("createdAt", since),
+    )
+    .collect();
+  const total = rows.reduce((s, u) => s + (u.costUsd ?? 0), 0);
+  if (total >= budget) {
+    throw new GuardViolation(`monthly budget of $${budget} reached`);
+  }
+}

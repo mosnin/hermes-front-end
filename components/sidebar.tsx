@@ -21,6 +21,7 @@ import {
   Plug,
   Plus,
   Settings,
+  ShieldAlert,
   Sparkles,
   Target,
   Workflow,
@@ -42,6 +43,7 @@ const nav = [
   { href: "/dashboard/history", label: "Work history", icon: History },
   { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/reports", label: "Reports", icon: FileText },
+  { href: "/dashboard/ops", label: "Ops & scale", icon: ShieldAlert },
   { href: "/dashboard/activity", label: "Activity", icon: Activity },
   { href: "/dashboard/settings", label: "Space settings", icon: Settings },
 ];

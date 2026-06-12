@@ -8,7 +8,7 @@ import {
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
-import { assertAutonomyActive, GuardViolation } from "./lib/guards";
+import { assertAutonomyActive, assertWithinBudget, GuardViolation } from "./lib/guards";
 import { recordWorkEvent } from "./lib/events";
 import { DEFAULT_GUARD_CONFIG } from "./schema";
 
@@ -174,6 +174,7 @@ export const start = mutation({
     const scope = await resolveScope(ctx, spaceId);
     requireRole(scope, "operator");
     assertAutonomyActive(scope);
+    await assertWithinBudget(ctx, scope);
     const wf = await ctx.db.get(workflowId);
     if (!wf || wf.spaceId !== spaceId) throw new Error("Not found");
     const g = scope.space.guardConfig ?? DEFAULT_GUARD_CONFIG;

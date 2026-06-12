@@ -5,6 +5,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { Scope } from "./lib/auth";
 import { assertRunWithinLimits, GuardViolation } from "./lib/guards";
 import { recordWorkEvent, recordActivity } from "./lib/events";
+import { recordUsage } from "./lib/metering";
 
 const DEFAULT_STEP_TIMEOUT_MS = 60_000;
 const AUTO_COMPLETE_DELAY_MS = 1500;
@@ -270,6 +271,12 @@ export const completeStep = internalMutation({
       await failRun(ctx, run, `step "${step.name}" failed after ${step.attempts} attempts`);
       return;
     }
+    await recordUsage(ctx, {
+      companyId: run.companyId,
+      spaceId: run.spaceId,
+      agentId: step.agentId,
+      kind: "step",
+    });
     await ctx.scheduler.runAfter(0, internal.engine.advanceRun, { runId });
   },
 });

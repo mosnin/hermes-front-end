@@ -20,6 +20,10 @@ export const guardConfigValidator = v.object({
   maxRunWallclockMs: v.number(),
   dailyMessageBudget: v.number(),
   maxLoopRepeats: v.number(),
+  // Ops & scale (optional so existing Spaces stay valid):
+  maxMessagesPerMinute: v.optional(v.number()),
+  // 0 / unset = unlimited. When exceeded, autonomy auto-pauses.
+  monthlyBudgetUsd: v.optional(v.number()),
 });
 
 export const DEFAULT_GUARD_CONFIG = {
@@ -29,6 +33,8 @@ export const DEFAULT_GUARD_CONFIG = {
   maxRunWallclockMs: 60 * 60 * 1000, // 1 hour
   dailyMessageBudget: 5000,
   maxLoopRepeats: 4,
+  maxMessagesPerMinute: 120,
+  monthlyBudgetUsd: 0,
 };
 
 /**

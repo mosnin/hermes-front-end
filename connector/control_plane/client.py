@@ -186,6 +186,28 @@ class ControlPlaneClient:
             {"toolkit": toolkit, "tool": tool, "arguments": arguments or {}},
         )
 
+    def stream_inbox(self, handler, max_seconds: float = 20.0) -> None:
+        """Receive A2A messages in near real time over SSE (lower latency than
+        polling). Returns when the bounded stream ends; reconnect in a loop."""
+        url = f"{self.base_url}/a2a/stream"
+        data = json.dumps({}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Authorization", f"Bearer {self.token}")
+        deadline = time.time() + max_seconds
+        with urllib.request.urlopen(req, timeout=max_seconds + 5) as resp:
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if line.startswith("data:"):
+                    try:
+                        payload = json.loads(line[5:].strip())
+                    except json.JSONDecodeError:
+                        continue
+                    for msg in payload.get("messages", []):
+                        handler(msg)
+                if time.time() > deadline:
+                    break
+
     def run_heartbeat_loop(self, interval: float = 30.0) -> None:
         """Block, sending heartbeats forever. Useful as a standalone process."""
         while True:

@@ -538,4 +538,40 @@ http.route({
   }),
 });
 
+// POST /a2a/stream — real-time inbox delivery over SSE (lower latency than
+// polling). Bounded (~20s); the connector reconnects to stay live.
+http.route({
+  path: "/a2a/stream",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const enc = new TextEncoder();
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const stream = new ReadableStream({
+      async start(controller) {
+        controller.enqueue(enc.encode(": connected\n\n"));
+        for (let i = 0; i < 20; i++) {
+          const messages = await ctx.runMutation(internal.a2a.pullInbox, {
+            agentId: agent._id,
+            limit: 25,
+          });
+          if (messages.length) {
+            controller.enqueue(
+              enc.encode(`data: ${JSON.stringify({ messages })}\n\n`),
+            );
+          } else {
+            controller.enqueue(enc.encode(": ping\n\n"));
+          }
+          await sleep(1000);
+        }
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+    });
+  }),
+});
+
 export default http;

@@ -55,6 +55,9 @@ streams its activity up to Convex.
 - **Integrations (Composio)** — managed OAuth for 250+ tools; agents/workflows
   execute actions through the control plane, and Composio triggers (webhooks)
   start workflows autonomously.
+- **Ops & scale** — usage metering + monthly **budget enforcement** (autonomy
+  auto-pauses on overspend), rate limiting, agent **health monitoring + alerts**,
+  real-time SSE inbox delivery, and audit export.
 - **Workflows** — a real autonomous runtime (Convex scheduler): multi-step,
   multi-agent workflows with retries, timeouts, durable run/step state,
   pause/resume/kill, and scheduled/webhook triggers — all under Space guardrails.
@@ -114,17 +117,28 @@ lib/            small client helpers
 connector/      Python agent-side connector (forked hermes-webui)
 ```
 
-## Data model (Convex)
+## Tenancy & data model (Convex)
 
-`agents`, `threads`, `messages`, `tasks`, `skills`, `integrations`, `activity`,
-`orchestrations` — all scoped by `ownerId` (Clerk org for teams, user for
-consumers). `skills` and `messages` carry vector indexes for semantic search.
-See [`convex/schema.ts`](./convex/schema.ts).
+**Company (Clerk org/user) → Space (operating unit) → Squad.** Every domain row
+carries `companyId` + `spaceId`; reads scope by `spaceId` after a membership
+check, with RBAC (`viewer < operator < admin < owner`) enforced server-side.
 
-## Status
+Tables: `spaces`, `squads`, `spaceMembers`, `agents`, `threads`, `messages`,
+`goals`, `projects`, `tasks`, `a2aMessages`, `workflows`, `workflowRuns`,
+`runSteps`, `triggers`, `skills`, `memories`, `workEvents`, `artifacts`,
+`reports`, `usage`, `activity`, `integrations`. `messages`, `skills`, and
+`memories` carry vector indexes. See [`convex/schema.ts`](./convex/schema.ts).
 
-This is the foundation PR. Wired and working: schema, Clerk↔Convex auth,
-multi-agent registry + one-time token flow, connector ingestion API, live
-activity, threads, tasks, skills (with vector search), integrations,
-orchestration scaffold, and a mock connector. Real agent ↔ connector wiring and
-deeper orchestration execution are the next steps.
+## Status — built in 8 phases (see [docs/PLATFORM_PLAN.md](./docs/PLATFORM_PLAN.md))
+
+1. **Org backbone** — Spaces/Squads, RBAC, per-Space isolation, Space switcher.
+2. **Guardrails & record** — loop/runaway guards, kill switch, immutable work history.
+3. **Workflow runtime** — Convex-scheduler engine, triggers (cron/webhook/event), long-running runs.
+4. **External A2A** — spec-conformant Agent Cards + JSON-RPC, plus outbound calls.
+5. **Context engine** — Space + company memory with vector RAG (`/context/search`).
+6. **Work tracking** — Goals/Projects rollups, reports/digests, analytics, artifacts.
+7. **Integrations** — Composio managed OAuth, tool execution, triggers.
+8. **Ops & scale** — metering + budget auto-pause, rate limiting, health alerts, SSE, audit export.
+
+An autonomy-first platform: humans set direction and guardrails; agents do the
+work. Run `npx convex dev` to generate types, then `npm run dev`.

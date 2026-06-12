@@ -15,6 +15,19 @@ type Guards = {
   maxRunWallclockMs: number;
   dailyMessageBudget: number;
   maxLoopRepeats: number;
+  maxMessagesPerMinute: number;
+  monthlyBudgetUsd: number;
+};
+
+const GUARD_DEFAULTS: Guards = {
+  maxStepsPerRun: 50,
+  maxAgentHops: 25,
+  maxConcurrentRuns: 10,
+  maxRunWallclockMs: 3_600_000,
+  dailyMessageBudget: 5000,
+  maxLoopRepeats: 4,
+  maxMessagesPerMinute: 120,
+  monthlyBudgetUsd: 0,
 };
 
 const GUARD_FIELDS: { key: keyof Guards; label: string; hint: string }[] = [
@@ -24,6 +37,8 @@ const GUARD_FIELDS: { key: keyof Guards; label: string; hint: string }[] = [
   { key: "maxRunWallclockMs", label: "Max run time (ms)", hint: "Kill a run after this duration" },
   { key: "dailyMessageBudget", label: "Daily message budget", hint: "A2A/message cap per 24h" },
   { key: "maxLoopRepeats", label: "Max loop repeats", hint: "Identical-message loop threshold" },
+  { key: "maxMessagesPerMinute", label: "Max messages / minute", hint: "Burst rate limit" },
+  { key: "monthlyBudgetUsd", label: "Monthly budget ($)", hint: "0 = unlimited; autonomy auto-pauses when exceeded" },
 ];
 
 export default function SettingsPage() {
@@ -43,7 +58,9 @@ export default function SettingsPage() {
   const [newRole, setNewRole] = useState<"viewer" | "operator" | "admin" | "owner">("operator");
 
   useEffect(() => {
-    if (space?.guardConfig) setGuards(space.guardConfig as Guards);
+    if (space?.guardConfig) {
+      setGuards({ ...GUARD_DEFAULTS, ...(space.guardConfig as Partial<Guards>) });
+    }
   }, [space]);
 
   if (!space) return <div className="p-8 text-sm text-muted">Loading…</div>;

@@ -13,8 +13,11 @@ import {
   assertAutonomyActive,
   assertWithinDailyBudget,
   assertNotLooping,
+  assertRateLimit,
+  assertWithinBudget,
 } from "./lib/guards";
 import { recordWorkEvent } from "./lib/events";
+import { recordUsage } from "./lib/metering";
 
 function agentCard(agent: Doc<"agents">) {
   return {
@@ -114,6 +117,8 @@ async function runGuards(
   content: string,
 ): Promise<void> {
   assertAutonomyActive(scope);
+  await assertWithinBudget(ctx, scope);
+  await assertRateLimit(ctx, scope);
   await assertWithinDailyBudget(ctx, scope);
   await assertNotLooping(ctx, scope, fromAgentId, toAgentId, content);
 }
@@ -202,6 +207,13 @@ async function route(
     category: "a2a",
     action: "message_sent",
     summary: `${from.name} → ${to.name}: ${content.slice(0, 120)}`,
+  });
+
+  await recordUsage(ctx, {
+    companyId,
+    spaceId,
+    agentId: from._id,
+    kind: "message",
   });
 
   // If the recipient is an external A2A agent, actually call it over the
