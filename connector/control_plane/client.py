@@ -160,6 +160,19 @@ class ControlPlaneClient:
         resp = self._post("/context/search", {"query": query, "limit": limit})
         return resp.get("memories", [])
 
+    # -- Deliverables ------------------------------------------------------
+    def submit_artifact(
+        self,
+        name: str,
+        kind: str = "text",
+        text: Optional[str] = None,
+        url: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Submit a deliverable (text or link) produced by this agent."""
+        return self._post(
+            "/artifact", {"name": name, "kind": kind, "text": text, "url": url}
+        )
+
     def run_heartbeat_loop(self, interval: float = 30.0) -> None:
         """Block, sending heartbeats forever. Useful as a standalone process."""
         while True:

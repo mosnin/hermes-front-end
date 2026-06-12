@@ -49,6 +49,9 @@ streams its activity up to Convex.
 - **Context engine (memory brain)** — Space-scoped + company-wide `memories`
   with vector retrieval; agents pull relevant context via `/context/search`
   (RAG), and threads can be saved into memory in one click.
+- **Goals, reports & analytics** — Goals/Projects with task rollups, auto daily
+  digests + on-demand reports, an analytics dashboard (throughput/completion/
+  cost), and artifact/deliverable storage agents can submit to.
 - **Integrations** — Slack, GitHub, Gmail, Linear, Notion, Calendar (scaffolded).
 - **Workflows** — a real autonomous runtime (Convex scheduler): multi-step,
   multi-agent workflows with retries, timeouts, durable run/step state,

@@ -8,9 +8,11 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
   Activity,
+  BarChart3,
   Boxes,
   Brain,
   ChevronDown,
+  FileText,
   History,
   LayoutDashboard,
   ListTodo,
@@ -20,6 +22,7 @@ import {
   Plus,
   Settings,
   Sparkles,
+  Target,
   Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,11 +34,14 @@ const nav = [
   { href: "/dashboard/threads", label: "Threads", icon: MessagesSquare },
   { href: "/dashboard/network", label: "Agent network", icon: Network },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
+  { href: "/dashboard/goals", label: "Goals", icon: Target },
   { href: "/dashboard/workflows", label: "Workflows", icon: Workflow },
   { href: "/dashboard/skills", label: "Skills", icon: Sparkles },
   { href: "/dashboard/knowledge", label: "Knowledge", icon: Brain },
   { href: "/dashboard/integrations", label: "Integrations", icon: Plug },
   { href: "/dashboard/history", label: "Work history", icon: History },
+  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/dashboard/reports", label: "Reports", icon: FileText },
   { href: "/dashboard/activity", label: "Activity", icon: Activity },
   { href: "/dashboard/settings", label: "Space settings", icon: Settings },
 ];

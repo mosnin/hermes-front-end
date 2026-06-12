@@ -448,4 +448,28 @@ http.route({
   }),
 });
 
+// POST /artifact — an agent submits a deliverable (text or link).
+http.route({
+  path: "/artifact",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (!body.name || (body.kind !== "text" && body.kind !== "link")) {
+      return json({ error: "name and kind (text|link) required" }, 400);
+    }
+    const id = await ctx.runMutation(internal.artifacts.addFromConnector, {
+      companyId: agent.companyId,
+      spaceId: agent.spaceId,
+      agentId: agent._id,
+      name: String(body.name),
+      kind: body.kind,
+      text: body.text,
+      url: body.url,
+    });
+    return json({ ok: true, artifactId: id });
+  }),
+});
+
 export default http;
