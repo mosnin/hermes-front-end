@@ -24,9 +24,8 @@ const priorityTone = {
 
 export default function TasksPage() {
   const { spaceId } = useActiveSpace();
-  const skip = spaceId ? { spaceId } : "skip";
-  const tasks = useQuery(api.tasks.list, skip);
-  const agents = useQuery(api.agents.list, skip);
+  const tasks = useQuery(api.tasks.list, spaceId ? { spaceId } : "skip");
+  const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
   const create = useMutation(api.tasks.create);
   const update = useMutation(api.tasks.update);
   const remove = useMutation(api.tasks.remove);

@@ -12,11 +12,10 @@ import { Plus } from "lucide-react";
 
 export default function OverviewPage() {
   const { spaceId, active } = useActiveSpace();
-  const skip = spaceId ? { spaceId } : "skip";
-  const agents = useQuery(api.agents.list, skip);
-  const threads = useQuery(api.threads.list, skip);
-  const tasks = useQuery(api.tasks.list, skip);
-  const skills = useQuery(api.skills.list, skip);
+  const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
+  const threads = useQuery(api.threads.list, spaceId ? { spaceId } : "skip");
+  const tasks = useQuery(api.tasks.list, spaceId ? { spaceId } : "skip");
+  const skills = useQuery(api.skills.list, spaceId ? { spaceId } : "skip");
   const seed = useMutation(api.demo.seed);
   const [open, setOpen] = useState(false);
 

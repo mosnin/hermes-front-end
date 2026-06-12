@@ -7,7 +7,7 @@ import {
   internalQuery,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
 import { embed } from "./embeddings";
 
@@ -75,7 +75,7 @@ export const search = action({
     query: v.string(),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { spaceId, query: queryText, limit }) => {
+  handler: async (ctx, { spaceId, query: queryText, limit }): Promise<Doc<"skills">[]> => {
     const vector = await embed(queryText);
     if (!vector) {
       return await ctx.runQuery(internal.skills.textSearch, {

@@ -7,7 +7,7 @@ import {
   internalMutation,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
 import { embed } from "./embeddings";
 
@@ -102,7 +102,7 @@ export const doRemove = internalMutation({
 
 export const companyForSpace = internalQuery({
   args: { spaceId: v.id("spaces") },
-  handler: async (ctx, { spaceId }) => {
+  handler: async (ctx, { spaceId }): Promise<{ companyId: string }> => {
     const s = await resolveScope(ctx, spaceId);
     return { companyId: s.companyId };
   },
@@ -122,7 +122,7 @@ async function retrieve(
   companyId: string,
   queryText: string,
   limit: number,
-) {
+): Promise<Doc<"memories">[]> {
   const vector = await embed(queryText);
   if (!vector) return [];
   // Filter to the company (isolation), then keep this Space's own + company-wide.
@@ -152,7 +152,7 @@ export const search = action({
     query: v.string(),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { spaceId, query, limit }) => {
+  handler: async (ctx, { spaceId, query, limit }): Promise<Doc<"memories">[]> => {
     const { companyId } = await ctx.runQuery(
       internal.memories.companyForSpace,
       { spaceId },
@@ -169,7 +169,7 @@ export const retrieveForConnector = internalAction({
     query: v.string(),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, { spaceId, companyId, query, limit }) => {
+  handler: async (ctx, { spaceId, companyId, query, limit }): Promise<Doc<"memories">[]> => {
     return await retrieve(ctx, spaceId, companyId, query, limit ?? 8);
   },
 });

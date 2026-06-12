@@ -12,11 +12,10 @@ const statusTone = { connected: "green", disconnected: "default", error: "red" }
 export default function IntegrationsPage() {
   const { spaceId } = useActiveSpace();
   const canManage = useCan("admin");
-  const skip = spaceId ? { spaceId } : "skip";
   const catalog = useQuery(api.integrations.catalog, {});
   const status = useQuery(api.integrations.status, {});
-  const installed = useQuery(api.integrations.list, skip);
-  const workflows = useQuery(api.workflows.list, skip);
+  const installed = useQuery(api.integrations.list, spaceId ? { spaceId } : "skip");
+  const workflows = useQuery(api.workflows.list, spaceId ? { spaceId } : "skip");
 
   const initiate = useAction(api.integrations.initiate);
   const refresh = useAction(api.integrations.refresh);

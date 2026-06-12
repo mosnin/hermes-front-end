@@ -11,9 +11,8 @@ const statusTone = { active: "green", idle: "yellow", archived: "default" } as c
 
 export default function ThreadsPage() {
   const { spaceId } = useActiveSpace();
-  const skip = spaceId ? { spaceId } : "skip";
-  const threads = useQuery(api.threads.list, skip);
-  const agents = useQuery(api.agents.list, skip);
+  const threads = useQuery(api.threads.list, spaceId ? { spaceId } : "skip");
+  const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
   const agentName = (id?: string) =>
     agents?.find((a) => a._id === id)?.name ?? "Unassigned";
 

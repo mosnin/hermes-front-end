@@ -11,8 +11,7 @@ import { ArrowRight, Send } from "lucide-react";
 
 export default function NetworkPage() {
   const { spaceId } = useActiveSpace();
-  const skip = spaceId ? { spaceId } : "skip";
-  const directory = useQuery(api.a2a.directory, skip);
+  const directory = useQuery(api.a2a.directory, spaceId ? { spaceId } : "skip");
   const messages = useQuery(api.a2a.recent, spaceId ? { spaceId, limit: 50 } : "skip");
   const send = useMutation(api.a2a.send);
 

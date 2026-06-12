@@ -9,10 +9,9 @@ import { timeAgo } from "@/lib/utils";
 
 export default function OpsPage() {
   const { spaceId } = useActiveSpace();
-  const skip = spaceId ? { spaceId } : "skip";
-  const usage = useQuery(api.usage.summary, skip);
-  const agents = useQuery(api.agents.list, skip);
-  const alerts = useQuery(api.health.alerts, skip);
+  const usage = useQuery(api.usage.summary, spaceId ? { spaceId } : "skip");
+  const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
+  const alerts = useQuery(api.health.alerts, spaceId ? { spaceId } : "skip");
 
   const [exporting, setExporting] = useState(false);
   const audit = useQuery(

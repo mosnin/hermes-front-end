@@ -10,9 +10,8 @@ import { Plus } from "lucide-react";
 
 export default function AnalyticsPage() {
   const { spaceId } = useActiveSpace();
-  const skip = spaceId ? { spaceId } : "skip";
-  const s = useQuery(api.analytics.summary, skip);
-  const artifacts = useQuery(api.artifacts.list, skip);
+  const s = useQuery(api.analytics.summary, spaceId ? { spaceId } : "skip");
+  const artifacts = useQuery(api.artifacts.list, spaceId ? { spaceId } : "skip");
   const createArtifact = useMutation(api.artifacts.create);
 
   const [name, setName] = useState("");

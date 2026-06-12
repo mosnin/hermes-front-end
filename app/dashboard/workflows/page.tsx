@@ -31,10 +31,9 @@ const stepTone = {
 
 export default function WorkflowsPage() {
   const { spaceId } = useActiveSpace();
-  const skip = spaceId ? { spaceId } : "skip";
-  const workflows = useQuery(api.workflows.list, skip);
-  const agents = useQuery(api.agents.list, skip);
-  const runs = useQuery(api.workflows.runs, skip);
+  const workflows = useQuery(api.workflows.list, spaceId ? { spaceId } : "skip");
+  const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
+  const runs = useQuery(api.workflows.runs, spaceId ? { spaceId } : "skip");
 
   const create = useMutation(api.workflows.create);
   const start = useMutation(api.workflows.start);

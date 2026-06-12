@@ -39,3 +39,6 @@ yarn-error.log*
 connector/**/__pycache__/
 connector/**/*.pyc
 connector/.venv/
+
+# Convex generated (regenerated at build time)
+convex/_generated/
