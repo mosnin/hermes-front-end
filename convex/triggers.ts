@@ -135,3 +135,23 @@ export const getForWebhook = internalQuery({
     return await ctx.db.get(triggerId);
   },
 });
+
+/** Enabled event triggers whose eventType matches an incoming integration event. */
+export const eventMatches = internalQuery({
+  args: { needle: v.string() },
+  handler: async (ctx, { needle }) => {
+    const n = needle.toLowerCase();
+    const enabled = await ctx.db
+      .query("triggers")
+      .withIndex("by_due", (q) => q.eq("enabled", true))
+      .collect();
+    return enabled.filter(
+      (t) =>
+        t.kind === "event" &&
+        t.eventType != null &&
+        (t.eventType.toLowerCase() === n ||
+          t.eventType.toLowerCase().includes(n) ||
+          n.includes(t.eventType.toLowerCase())),
+    );
+  },
+});

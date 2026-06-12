@@ -52,7 +52,9 @@ streams its activity up to Convex.
 - **Goals, reports & analytics** — Goals/Projects with task rollups, auto daily
   digests + on-demand reports, an analytics dashboard (throughput/completion/
   cost), and artifact/deliverable storage agents can submit to.
-- **Integrations** — Slack, GitHub, Gmail, Linear, Notion, Calendar (scaffolded).
+- **Integrations (Composio)** — managed OAuth for 250+ tools; agents/workflows
+  execute actions through the control plane, and Composio triggers (webhooks)
+  start workflows autonomously.
 - **Workflows** — a real autonomous runtime (Convex scheduler): multi-step,
   multi-agent workflows with retries, timeouts, durable run/step state,
   pause/resume/kill, and scheduled/webhook triggers — all under Space guardrails.

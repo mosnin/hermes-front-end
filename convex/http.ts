@@ -472,4 +472,70 @@ http.route({
   }),
 });
 
+// POST /integrations/execute — an agent runs a Composio tool through the
+// control plane (token-authenticated).
+http.route({
+  path: "/integrations/execute",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (!body.toolkit || !body.tool) {
+      return json({ error: "toolkit and tool required" }, 400);
+    }
+    try {
+      const res = await ctx.runAction(
+        internal.integrations.executeForConnector,
+        {
+          spaceId: agent.spaceId,
+          companyId: agent.companyId,
+          agentId: agent._id,
+          toolkit: String(body.toolkit),
+          tool: String(body.tool),
+          arguments: body.arguments,
+        },
+      );
+      return json(res);
+    } catch (e) {
+      return errorResponse(e);
+    }
+  }),
+});
+
+// POST /integrations/composio/webhook — Composio trigger events fire workflows.
+http.route({
+  path: "/integrations/composio/webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const secret = process.env.COMPOSIO_WEBHOOK_SECRET;
+    if (secret) {
+      const provided =
+        new URL(request.url).searchParams.get("secret") ??
+        request.headers.get("x-composio-secret") ??
+        "";
+      if (provided !== secret) return json({ error: "unauthorized" }, 401);
+    }
+    const body = (await request.json().catch(() => ({}))) as any;
+    // Build a match key from common Composio payload fields.
+    const slug =
+      body.triggerSlug ??
+      body.metadata?.triggerName ??
+      body.type ??
+      body.appName ??
+      "";
+    if (!slug) return json({ ok: true, matched: 0 });
+    const matches = await ctx.runQuery(internal.triggers.eventMatches, {
+      needle: String(slug),
+    });
+    for (const t of matches) {
+      await ctx.runMutation(internal.workflows.startFromTrigger, {
+        workflowId: t.workflowId,
+        trigger: "event",
+      });
+    }
+    return json({ ok: true, matched: matches.length });
+  }),
+});
+
 export default http;

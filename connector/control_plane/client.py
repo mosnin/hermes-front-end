@@ -173,6 +173,19 @@ class ControlPlaneClient:
             "/artifact", {"name": name, "kind": kind, "text": text, "url": url}
         )
 
+    # -- Integrations (Composio tools) -------------------------------------
+    def execute_integration(
+        self,
+        toolkit: str,
+        tool: str,
+        arguments: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Run a Composio tool (e.g. toolkit='github', tool='GITHUB_CREATE_ISSUE')."""
+        return self._post(
+            "/integrations/execute",
+            {"toolkit": toolkit, "tool": tool, "arguments": arguments or {}},
+        )
+
     def run_heartbeat_loop(self, interval: float = 30.0) -> None:
         """Block, sending heartbeats forever. Useful as a standalone process."""
         while True:
