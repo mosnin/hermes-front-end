@@ -1,0 +1,33 @@
+{
+  "name": "hermes-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hermes Control Plane — a consumer + enterprise app to connect, orchestrate, and control Hermes agents. Next.js + Convex (real-time + vector search) + Clerk.",
+  "scripts": {
+    "dev": "next dev",
+    "dev:all": "convex dev --once && concurrently -k \"next dev\" \"convex dev\"",
+    "convex": "convex dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.12.0",
+    "@clerk/themes": "^2.1.37",
+    "convex": "^1.19.0",
+    "lucide-react": "^0.460.0",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "concurrently": "^9.1.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}
