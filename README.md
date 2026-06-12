@@ -39,6 +39,9 @@ streams its activity up to Convex.
 - **A2A agent network** — agents talk to each other in real time through a brokered
   Agent2Agent gateway (Agent Card directory + message bus), NAT-friendly since
   agents only connect outbound. Route messages and watch them coordinate live.
+- **External A2A interop** — our agents are spec-conformant A2A servers (Agent
+  Cards at `/a2a/card/{id}`, JSON-RPC `message/send`/`message/stream`/`tasks/*`),
+  and can call any external A2A agent by its card URL — all under the same guards.
 - **Live activity** — real-time feed of messages, tool calls, status, and errors.
 - **Threads** — conversations/lines of work, created automatically as agents talk.
 - **Tasks** — a board to assign, prioritize, and track work per agent.

@@ -2,7 +2,14 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { sha256Hex } from "./lib/crypto";
-import { Doc } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
+import {
+  buildAgentCard,
+  buildTask,
+  rpcError,
+  rpcResult,
+  textFromMessage,
+} from "./a2aProtocol";
 
 const http = httpRouter();
 
@@ -279,6 +286,143 @@ http.route({
       trigger: "webhook",
     });
     return json({ ok: true, runId });
+  }),
+});
+
+// ===========================================================================
+// A2A server — expose our agents to external A2A clients (spec-conformant)
+// ===========================================================================
+
+// Gateway-level Agent Card.
+http.route({
+  path: "/.well-known/agent-card.json",
+  method: "GET",
+  handler: httpAction(async (_ctx, request) => {
+    const origin = new URL(request.url).origin;
+    return json({
+      protocolVersion: "0.3.0",
+      name: "Hermes Control Plane",
+      description:
+        "A2A gateway. Each connected agent exposes its own card at /a2a/card/{agentId}.",
+      url: origin,
+      capabilities: { streaming: true },
+      defaultInputModes: ["text/plain"],
+      defaultOutputModes: ["text/plain"],
+      skills: [],
+    });
+  }),
+});
+
+// GET /a2a/card/{agentId} — a spec-shaped Agent Card for one of our agents.
+http.route({
+  pathPrefix: "/a2a/card/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const agentId = url.pathname.slice("/a2a/card/".length);
+    try {
+      const agent = await ctx.runQuery(internal.agents.getForA2A, {
+        agentId: agentId as Id<"agents">,
+      });
+      if (!agent) return json({ error: "not found" }, 404);
+      return json(buildAgentCard(agent, `${url.origin}/a2a/rpc/${agentId}`));
+    } catch {
+      return json({ error: "invalid agent id" }, 400);
+    }
+  }),
+});
+
+// POST /a2a/rpc/{agentId} — JSON-RPC 2.0 endpoint (message/send, message/stream,
+// tasks/get, tasks/cancel).
+http.route({
+  pathPrefix: "/a2a/rpc/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const agentId = url.pathname.slice("/a2a/rpc/".length);
+    let agent: Doc<"agents"> | null;
+    try {
+      agent = await ctx.runQuery(internal.agents.getForA2A, {
+        agentId: agentId as Id<"agents">,
+      });
+    } catch {
+      return json(rpcError(null, -32600, "invalid agent id"), 400);
+    }
+    if (!agent) return json(rpcError(null, -32600, "unknown agent"), 404);
+
+    // Inbound auth: if the agent has a key, require it; otherwise open.
+    if (agent.a2aInboundKeyHash) {
+      const header = request.headers.get("Authorization") ?? "";
+      const provided = header.startsWith("Bearer ")
+        ? header.slice(7).trim()
+        : request.headers.get("X-A2A-Key") ?? "";
+      const ok = provided && (await sha256Hex(provided)) === agent.a2aInboundKeyHash;
+      if (!ok) return json(rpcError(null, -32001, "unauthorized"), 401);
+    }
+
+    const body = (await request.json().catch(() => ({}))) as {
+      id?: unknown;
+      method?: string;
+      params?: any;
+    };
+    const { id, method, params } = body;
+
+    if (method === "message/send" || method === "message/stream") {
+      const text = textFromMessage(params?.message);
+      const fromLabel = params?.metadata?.from ?? "external-a2a";
+      const task = await ctx.runMutation(internal.a2aExternal.ingestInbound, {
+        agentId: agent._id,
+        fromLabel: String(fromLabel),
+        text,
+      });
+      const taskObj = buildTask(task.taskId, task.contextId, "working");
+
+      if (method === "message/stream") {
+        // SSE: emit the submitted + working states, then close.
+        const enc = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              enc.encode(
+                `data: ${JSON.stringify(rpcResult(id, buildTask(task.taskId, task.contextId, "submitted")))}\n\n`,
+              ),
+            );
+            controller.enqueue(
+              enc.encode(`data: ${JSON.stringify(rpcResult(id, taskObj))}\n\n`),
+            );
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        });
+      }
+      return json(rpcResult(id, taskObj));
+    }
+
+    if (method === "tasks/get") {
+      try {
+        const t = await ctx.runQuery(internal.a2aExternal.inboundTask, {
+          messageId: params?.id as Id<"messages">,
+        });
+        if (!t) return json(rpcError(id, -32001, "task not found"), 404);
+        return json(rpcResult(id, buildTask(String(t.id), String(t.contextId), t.state)));
+      } catch {
+        return json(rpcError(id, -32602, "invalid task id"), 400);
+      }
+    }
+
+    if (method === "tasks/cancel") {
+      return json(
+        rpcResult(id, buildTask(String(params?.id ?? ""), "", "canceled")),
+      );
+    }
+
+    return json(rpcError(id, -32601, `method not found: ${method}`), 404);
   }),
 });
 

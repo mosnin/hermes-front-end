@@ -148,7 +148,45 @@ export const remove = mutation({
   },
 });
 
+/** Mint an inbound A2A key so external A2A clients can call this agent. */
+export const rotateInboundKey = action({
+  args: { spaceId: v.id("spaces"), agentId: v.id("agents") },
+  handler: async (ctx, { spaceId, agentId }): Promise<{ key: string }> => {
+    const key = generateToken();
+    const keyHash = await sha256Hex(key);
+    await ctx.runMutation(internal.agents.setInboundKeyHash, {
+      spaceId,
+      agentId,
+      keyHash,
+    });
+    return { key };
+  },
+});
+
+export const setInboundKeyHash = internalMutation({
+  args: {
+    spaceId: v.id("spaces"),
+    agentId: v.id("agents"),
+    keyHash: v.string(),
+  },
+  handler: async (ctx, { spaceId, agentId, keyHash }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "admin");
+    const agent = await ctx.db.get(agentId);
+    if (!agent || agent.spaceId !== spaceId) throw new Error("Not found");
+    await ctx.db.patch(agentId, { a2aInboundKeyHash: keyHash });
+  },
+});
+
 // --- connector internals (token-authenticated, no user identity) ------------
+
+/** Fetch an agent for the public A2A endpoints (card + JSON-RPC). */
+export const getForA2A = internalQuery({
+  args: { agentId: v.id("agents") },
+  handler: async (ctx, { agentId }) => {
+    return await ctx.db.get(agentId);
+  },
+});
 
 export const byTokenHash = internalQuery({
   args: { tokenHash: v.string() },

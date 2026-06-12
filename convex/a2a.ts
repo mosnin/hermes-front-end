@@ -6,6 +6,7 @@ import {
   internalMutation,
   MutationCtx,
 } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { Id, Doc } from "./_generated/dataModel";
 import { resolveScope, requireRole, Scope } from "./lib/auth";
 import {
@@ -202,6 +203,18 @@ async function route(
     action: "message_sent",
     summary: `${from.name} → ${to.name}: ${content.slice(0, 120)}`,
   });
+
+  // If the recipient is an external A2A agent, actually call it over the
+  // protocol (the internal queue/inbox only serves our own Hermes agents).
+  if (to.kind === "a2a-external" && to.cardUrl) {
+    await ctx.scheduler.runAfter(0, internal.a2aExternal.deliver, {
+      spaceId,
+      fromAgentId: from._id,
+      toAgentId: to._id,
+      cardUrl: to.cardUrl,
+      text: content,
+    });
+  }
 
   return messageId;
 }

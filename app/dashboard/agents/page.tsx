@@ -2,18 +2,23 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Card, EmptyState, StatusDot } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot } from "@/components/ui";
 import { RegisterAgentDialog } from "@/components/register-agent-dialog";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
-import { Plus } from "lucide-react";
+import { Globe, Plus } from "lucide-react";
 
 export default function AgentsPage() {
   const { spaceId } = useActiveSpace();
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
+  const registerExternal = useMutation(api.agents.registerExternal);
   const [open, setOpen] = useState(false);
+  const [extOpen, setExtOpen] = useState(false);
+  const [extName, setExtName] = useState("");
+  const [extUrl, setExtUrl] = useState("");
+  const [extCaps, setExtCaps] = useState("");
 
   return (
     <div className="p-8">
@@ -24,9 +29,14 @@ export default function AgentsPage() {
             Every Hermes agent connected to this Space.
           </p>
         </div>
-        <Button onClick={() => setOpen(true)}>
-          <Plus className="h-4 w-4" /> Connect agent
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setExtOpen(true)}>
+            <Globe className="h-4 w-4" /> Add external A2A
+          </Button>
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="h-4 w-4" /> Connect agent
+          </Button>
+        </div>
       </div>
 
       {agents?.length === 0 ? (
@@ -69,6 +79,56 @@ export default function AgentsPage() {
       )}
 
       <RegisterAgentDialog open={open} onClose={() => setOpen(false)} />
+
+      <Modal open={extOpen} onClose={() => setExtOpen(false)} title="Add external A2A agent">
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Connect any agent that speaks the A2A protocol by its Agent Card URL.
+            Your agents and workflows can then call it; the same guardrails apply.
+          </p>
+          <Input
+            value={extName}
+            onChange={(e) => setExtName(e.target.value)}
+            placeholder="Agent name"
+            autoFocus
+          />
+          <Input
+            value={extUrl}
+            onChange={(e) => setExtUrl(e.target.value)}
+            placeholder="https://example.com/.well-known/agent-card.json"
+          />
+          <Input
+            value={extCaps}
+            onChange={(e) => setExtCaps(e.target.value)}
+            placeholder="Capabilities (comma separated)"
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setExtOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!spaceId || !extName.trim() || !extUrl.trim()) return;
+                await registerExternal({
+                  spaceId,
+                  name: extName.trim(),
+                  cardUrl: extUrl.trim(),
+                  capabilities: extCaps
+                    .split(",")
+                    .map((c) => c.trim())
+                    .filter(Boolean),
+                });
+                setExtName("");
+                setExtUrl("");
+                setExtCaps("");
+                setExtOpen(false);
+              }}
+            >
+              Add agent
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

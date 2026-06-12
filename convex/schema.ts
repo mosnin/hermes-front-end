@@ -94,6 +94,9 @@ export default defineSchema({
       v.literal("pending"),
     ),
     tokenHash: v.optional(v.string()),
+    // SHA-256 of the inbound A2A key that external A2A clients present to call
+    // this agent's JSON-RPC endpoint. Set via agents.rotateInboundKey.
+    a2aInboundKeyHash: v.optional(v.string()),
     // For external A2A agents: their Agent Card URL + declared skills.
     cardUrl: v.optional(v.string()),
     lastHeartbeat: v.optional(v.number()),
