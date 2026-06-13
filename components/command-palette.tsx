@@ -8,6 +8,7 @@ import { useActiveSpace } from "./active-space";
 import {
   Activity,
   BarChart3,
+  Bell,
   Boxes,
   Brain,
   FileText,
@@ -18,6 +19,7 @@ import {
   Network,
   Plug,
   Radar,
+  Rocket,
   Search,
   Settings,
   ShieldCheck,
@@ -30,6 +32,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { label: "Agents", href: "/dashboard/agents", icon: Boxes },
+  { label: "Fleet", href: "/dashboard/fleet", icon: Rocket },
   { label: "Mission control", href: "/dashboard/mission", icon: Radar },
   { label: "Threads", href: "/dashboard/threads", icon: MessagesSquare },
   { label: "Agent network", href: "/dashboard/network", icon: Network },
@@ -40,6 +43,7 @@ const NAV = [
   { label: "Knowledge", href: "/dashboard/knowledge", icon: Brain },
   { label: "Integrations", href: "/dashboard/integrations", icon: Plug },
   { label: "Approvals", href: "/dashboard/approvals", icon: ShieldCheck },
+  { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
   { label: "Work history", href: "/dashboard/history", icon: History },
   { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { label: "Reports", href: "/dashboard/reports", icon: FileText },

@@ -103,6 +103,25 @@ export default defineSchema({
     // SHA-256 of the inbound A2A key that external A2A clients present to call
     // this agent's JSON-RPC endpoint. Set via agents.rotateInboundKey.
     a2aInboundKeyHash: v.optional(v.string()),
+    // --- Persona / config (what the agent is + how it runs) ---
+    systemPrompt: v.optional(v.string()),
+    model: v.optional(v.string()),
+    modelProvider: v.optional(v.string()),
+    toolsets: v.optional(v.array(v.string())),
+    // --- Hierarchy: which agent this one reports to (org chart) ---
+    reportsTo: v.optional(v.id("agents")),
+    // --- Fleet: cloud VM this agent runs on (one-click deploy) ---
+    vmProvider: v.optional(v.string()), // "cloudflare" | "fly" | "aws" | ...
+    vmId: v.optional(v.string()),
+    region: v.optional(v.string()),
+    deploymentStatus: v.optional(
+      v.union(
+        v.literal("provisioning"),
+        v.literal("running"),
+        v.literal("stopped"),
+        v.literal("failed"),
+      ),
+    ),
     // For external A2A agents: their Agent Card URL + declared skills.
     cardUrl: v.optional(v.string()),
     lastHeartbeat: v.optional(v.number()),
@@ -515,6 +534,23 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_space", ["spaceId"]),
+
+  // ===========================================================================
+  // Notifications — in-app alerts surfaced in the bell + notifications page.
+  // ===========================================================================
+  notifications: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    type: v.string(), // "alert" | "approval" | "run" | "agent" | "system" | ...
+    title: v.string(),
+    body: v.optional(v.string()),
+    href: v.optional(v.string()),
+    read: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_space_time", ["spaceId", "createdAt"])
+    .index("by_space_read", ["spaceId", "read"]),
 
   // ===========================================================================
   // Governance: approval requests (human-in-the-loop gates, off by default)

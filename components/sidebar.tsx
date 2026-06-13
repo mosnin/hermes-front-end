@@ -9,6 +9,7 @@ import { api } from "@/convex/_generated/api";
 import {
   Activity,
   BarChart3,
+  Bell,
   Boxes,
   Brain,
   ChevronDown,
@@ -22,6 +23,7 @@ import {
   Plug,
   Plus,
   Radar,
+  Rocket,
   Search,
   Settings,
   ShieldCheck,
@@ -35,6 +37,7 @@ import { useActiveSpace } from "./active-space";
 import { useTheme } from "./theme";
 import { useDialog } from "./dialog";
 import { useToast } from "./toast";
+import { NotificationBell } from "./notification-bell";
 
 const SECTIONS: {
   title: string;
@@ -45,6 +48,7 @@ const SECTIONS: {
     items: [
       { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
       { href: "/dashboard/agents", label: "Agents", icon: Boxes },
+      { href: "/dashboard/fleet", label: "Fleet", icon: Rocket },
       { href: "/dashboard/mission", label: "Mission control", icon: Radar },
       { href: "/dashboard/threads", label: "Threads", icon: MessagesSquare },
       { href: "/dashboard/network", label: "Agent network", icon: Network },
@@ -70,6 +74,7 @@ const SECTIONS: {
     title: "Insight",
     items: [
       { href: "/dashboard/approvals", label: "Approvals", icon: ShieldCheck },
+      { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
       { href: "/dashboard/history", label: "Work history", icon: History },
       { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
       { href: "/dashboard/reports", label: "Reports", icon: FileText },
@@ -217,6 +222,7 @@ export function Sidebar() {
       <div className="mt-3 flex items-center gap-2 border-t border-border px-2 pt-3">
         <UserButton afterSignOutUrl="/" />
         <span className="flex-1 text-xs text-muted">Account</span>
+        <NotificationBell />
         <button
           onClick={toggle}
           className="rounded-md p-1.5 text-muted hover:bg-surface-2 hover:text-foreground"

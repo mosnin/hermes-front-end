@@ -1,0 +1,27 @@
+{
+  // Hermes Fleet Worker — boots one container per agent.
+  // Fill in your account_id, then: npx wrangler deploy
+  "name": "hermes-fleet",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Container-backed Durable Object: one instance per agent.
+  "durable_objects": {
+    "bindings": [{ "name": "AGENT", "class_name": "Agent" }]
+  },
+  "migrations": [{ "tag": "v1", "new_classes": ["Agent"] }],
+
+  // Cloudflare Containers — point image at the Hermes connector.
+  // See https://developers.cloudflare.com/containers/ for the current schema.
+  "containers": [
+    {
+      "class_name": "Agent",
+      "image": "./Dockerfile",
+      "instances": 100,
+      "name": "hermes-agent"
+    }
+  ]
+
+  // Set the shared secret with:  npx wrangler secret put FLEET_SECRET
+}

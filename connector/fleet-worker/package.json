@@ -1,0 +1,13 @@
+{
+  "name": "hermes-fleet-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker that boots one isolated container per Hermes agent for one-click fleet deploy.",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

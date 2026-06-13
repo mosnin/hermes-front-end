@@ -137,6 +137,28 @@ export const update = mutation({
   },
 });
 
+export const updatePersona = mutation({
+  args: {
+    spaceId: v.id("spaces"),
+    agentId: v.id("agents"),
+    systemPrompt: v.optional(v.string()),
+    model: v.optional(v.string()),
+    modelProvider: v.optional(v.string()),
+    toolsets: v.optional(v.array(v.string())),
+    reportsTo: v.optional(v.union(v.id("agents"), v.null())),
+  },
+  handler: async (ctx, { spaceId, agentId, ...patch }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
+    const agent = await ctx.db.get(agentId);
+    if (!agent || agent.spaceId !== spaceId) throw new Error("Not found");
+    const clean = Object.fromEntries(
+      Object.entries(patch).filter(([, val]) => val !== undefined),
+    );
+    await ctx.db.patch(agentId, clean);
+  },
+});
+
 export const remove = mutation({
   args: { spaceId: v.id("spaces"), agentId: v.id("agents") },
   handler: async (ctx, { spaceId, agentId }) => {
