@@ -538,6 +538,40 @@ export default defineSchema({
   }).index("by_space", ["spaceId"]),
 
   // ===========================================================================
+  // Quality: agent evaluations / scorecards.
+  // ===========================================================================
+  evals: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    agentId: v.id("agents"),
+    threadId: v.optional(v.id("threads")),
+    rating: v.number(), // 1..5 (or 1 = thumbs up, 0 = thumbs down)
+    dimension: v.optional(v.string()), // "quality" | "speed" | "cost" | ...
+    comment: v.optional(v.string()),
+    source: v.optional(v.string()), // "human" | "auto" | "llm-judge"
+    createdAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_agent", ["agentId"]),
+
+  // ===========================================================================
+  // Developer platform: API keys to drive the control plane programmatically.
+  // ===========================================================================
+  apiKeys: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    name: v.string(),
+    keyHash: v.string(),
+    prefix: v.string(), // first chars, for display
+    createdBy: v.string(),
+    lastUsedAt: v.optional(v.number()),
+    revoked: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_hash", ["keyHash"]),
+
+  // ===========================================================================
   // Trust: action ledger — every external action an agent takes or proposes,
   // with reversibility for rollback. Source of truth for "what agents did".
   // ===========================================================================

@@ -11,7 +11,10 @@ import {
   Bell,
   Boxes,
   Brain,
+  Code2,
+  FileSearch,
   FileText,
+  Gauge,
   History,
   LayoutDashboard,
   ListTodo,
@@ -47,9 +50,12 @@ const NAV = [
   { label: "Action ledger", href: "/dashboard/ledger", icon: ScrollText },
   { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
   { label: "Work history", href: "/dashboard/history", icon: History },
+  { label: "Audit log", href: "/dashboard/audit", icon: FileSearch },
+  { label: "Agent evals", href: "/dashboard/evals", icon: Gauge },
   { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { label: "Reports", href: "/dashboard/reports", icon: FileText },
   { label: "Ops & scale", href: "/dashboard/ops", icon: Activity },
+  { label: "Developer", href: "/dashboard/developer", icon: Code2 },
   { label: "Space settings", href: "/dashboard/settings", icon: Settings },
 ];
 

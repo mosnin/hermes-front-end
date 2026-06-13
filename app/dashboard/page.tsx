@@ -8,6 +8,7 @@ import { Button, Card, StatusDot } from "@/components/ui";
 import { ActivityFeed } from "@/components/activity-feed";
 import { RegisterAgentDialog } from "@/components/register-agent-dialog";
 import { useActiveSpace } from "@/components/active-space";
+import { Onboarding } from "@/components/onboarding";
 import { Plus } from "lucide-react";
 
 export default function OverviewPage() {
@@ -31,6 +32,7 @@ export default function OverviewPage() {
 
   return (
     <div className="p-8">
+      <Onboarding />
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">{active?.name ?? "Overview"}</h1>

@@ -27,3 +27,22 @@ export const export_ = query({
     }));
   },
 });
+
+/** Browse the immutable work record for a Space (admin+). */
+export const list = query({
+  args: {
+    spaceId: v.id("spaces"),
+    category: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { spaceId, category, limit }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "admin");
+    const rows = await ctx.db
+      .query("workEvents")
+      .withIndex("by_space_time", (q) => q.eq("spaceId", spaceId))
+      .order("desc")
+      .take(limit ?? 500);
+    return category ? rows.filter((e) => e.category === category) : rows;
+  },
+});
