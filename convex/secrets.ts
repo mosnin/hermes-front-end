@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery } from "./_generated/server";
 import { resolveScope, requireRole } from "./lib/auth";
 import { recordWorkEvent } from "./lib/events";
 
@@ -96,5 +96,41 @@ export const reveal = query({
     const row = await ctx.db.get(secretId);
     if (!row || row.spaceId !== spaceId) throw new Error("Not found");
     return { value: row.value };
+  },
+});
+
+// --- connector injection (token-authenticated, no user identity) -------------
+//
+// The two queries below are internal-only — they are never client-callable and
+// carry no role/identity check. They are invoked from the connector secrets
+// HTTP endpoint, where the agent is already authenticated by its connector
+// token (the endpoint resolves the agent and passes `agent.spaceId`). The raw
+// secret value IS returned here so the orchestrator can inject it into the
+// agent's environment, letting the agent use credentials (e.g. an API key for a
+// tool) without the dashboard ever exposing the value.
+
+/** All of a Space's secrets as `{ name, value }` pairs for env injection. */
+export const getForConnector = internalQuery({
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    const rows = await ctx.db
+      .query("secrets")
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+      .collect();
+    return rows.map((r) => ({ name: r.name, value: r.value }));
+  },
+});
+
+/** A single Space secret's value by name, or null if not set. */
+export const getOneForConnector = internalQuery({
+  args: { spaceId: v.id("spaces"), name: v.string() },
+  handler: async (ctx, { spaceId, name }) => {
+    const row = await ctx.db
+      .query("secrets")
+      .withIndex("by_space_name", (q) =>
+        q.eq("spaceId", spaceId).eq("name", name),
+      )
+      .unique();
+    return row ? { value: row.value } : null;
   },
 });

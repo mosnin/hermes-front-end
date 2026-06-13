@@ -208,6 +208,11 @@ class ControlPlaneClient:
                 if time.time() > deadline:
                     break
 
+    def get_secrets(self) -> dict[str, str]:
+        """Fetch this Space's secrets (name -> value) to use as credentials."""
+        resp = self._post("/connector/secrets", {})
+        return {s["name"]: s["value"] for s in resp.get("secrets", [])}
+
     def run_heartbeat_loop(self, interval: float = 30.0) -> None:
         """Block, sending heartbeats forever. Useful as a standalone process."""
         while True:

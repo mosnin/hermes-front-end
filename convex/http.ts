@@ -596,4 +596,164 @@ http.route({
   }),
 });
 
+// POST /connector/secrets — a deployed agent pulls its Space's secrets to use
+// as credentials (token-authenticated). Values are injected into its env.
+http.route({
+  path: "/connector/secrets",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const secrets = await ctx.runQuery(internal.secrets.getForConnector, {
+      spaceId: agent.spaceId,
+    });
+    return json({ ok: true, secrets });
+  }),
+});
+
+// POST /bridges/slack/{bridgeId}?secret=... — Slack Events API webhook.
+http.route({
+  pathPrefix: "/bridges/slack/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const bridgeId = url.pathname.slice("/bridges/slack/".length);
+    const body = (await request.json().catch(() => ({}))) as any;
+
+    // Slack URL verification handshake.
+    if (body.type === "url_verification") {
+      return json({ challenge: body.challenge });
+    }
+
+    let bridge: Doc<"bridges"> | null;
+    try {
+      bridge = await ctx.runQuery(internal.bridges.getById, {
+        bridgeId: bridgeId as Id<"bridges">,
+      });
+    } catch {
+      return json({ error: "invalid bridge" }, 400);
+    }
+    if (!bridge) return json({ error: "unknown bridge" }, 404);
+
+    const secret = bridge.config?.signingSecret as string | undefined;
+    if (secret && url.searchParams.get("secret") !== secret) {
+      return json({ error: "unauthorized" }, 401);
+    }
+
+    const event = body.event ?? {};
+    // Ignore bot's own messages / non-message events.
+    if (event.bot_id || (event.type !== "message" && event.type !== "app_mention")) {
+      return json({ ok: true });
+    }
+    if (event.text) {
+      await ctx.runMutation(internal.bridges.handleInbound, {
+        bridgeId: bridge._id,
+        userLabel: String(event.user ?? "slack-user"),
+        text: String(event.text),
+      });
+    }
+    return json({ ok: true });
+  }),
+});
+
+// ===========================================================================
+// Public REST API — authenticated by an API key (hk_...) minted in Developer.
+// ===========================================================================
+
+async function authApiKey(
+  ctx: { runQuery: any; runMutation: any },
+  request: Request,
+): Promise<{ spaceId: Id<"spaces">; companyId: string } | null> {
+  const header = request.headers.get("Authorization") ?? "";
+  const key = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  if (!key.startsWith("hk_")) return null;
+  const keyHash = await sha256Hex(key);
+  const row = await ctx.runQuery(internal.apiKeys.byHash, { keyHash });
+  if (!row || row.revoked) return null;
+  await ctx.runMutation(internal.publicApi.touchKey, { keyId: row._id });
+  return { spaceId: row.spaceId, companyId: row.companyId };
+}
+
+http.route({
+  path: "/api/v1/agents",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await authApiKey(ctx, request);
+    if (!auth) return unauthorized();
+    const agents = await ctx.runQuery(internal.publicApi.listAgents, {
+      spaceId: auth.spaceId,
+    });
+    return json({ agents });
+  }),
+});
+
+http.route({
+  path: "/api/v1/tasks",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await authApiKey(ctx, request);
+    if (!auth) return unauthorized();
+    const tasks = await ctx.runQuery(internal.publicApi.listTasks, {
+      spaceId: auth.spaceId,
+    });
+    return json({ tasks });
+  }),
+});
+
+http.route({
+  path: "/api/v1/tasks",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await authApiKey(ctx, request);
+    if (!auth) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (!body.title) return json({ error: "title required" }, 400);
+    const id = await ctx.runMutation(internal.publicApi.createTask, {
+      spaceId: auth.spaceId,
+      companyId: auth.companyId,
+      title: String(body.title),
+      description: body.description,
+    });
+    return json({ id });
+  }),
+});
+
+http.route({
+  path: "/api/v1/messages",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await authApiKey(ctx, request);
+    if (!auth) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (!body.content) return json({ error: "content required" }, 400);
+    const res = await ctx.runMutation(internal.publicApi.sendMessage, {
+      spaceId: auth.spaceId,
+      companyId: auth.companyId,
+      content: String(body.content),
+      threadTitle: body.threadTitle,
+    });
+    return json(res);
+  }),
+});
+
+http.route({
+  path: "/api/v1/workflows/run",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await authApiKey(ctx, request);
+    if (!auth) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (!body.workflowId) return json({ error: "workflowId required" }, 400);
+    try {
+      const runId = await ctx.runMutation(internal.workflows.startFromTrigger, {
+        workflowId: body.workflowId as Id<"workflows">,
+        trigger: "api",
+      });
+      return json({ runId });
+    } catch {
+      return json({ error: "invalid workflowId" }, 400);
+    }
+  }),
+});
+
 export default http;
