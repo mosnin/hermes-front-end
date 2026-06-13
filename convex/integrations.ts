@@ -233,11 +233,38 @@ export const composioAccount = internalQuery({
         .collect()
     ).find((i) => i.type === toolkit && i.config?.provider === "composio");
     if (!row) return null;
+    const space = await ctx.db.get(spaceId);
     return {
       companyId: row.companyId,
       userId: row.config?.userId as string,
       connectedAccountId: row.config?.connectedAccountId as string | undefined,
+      shadowMode: space?.shadowMode ?? false,
     };
+  },
+});
+
+/** Record a proposed (shadow-mode) tool call to the action ledger. */
+export const recordProposed = internalMutation({
+  args: {
+    spaceId: v.id("spaces"),
+    companyId: v.string(),
+    agentId: v.optional(v.id("agents")),
+    toolkit: v.string(),
+    tool: v.string(),
+    arguments: v.optional(v.any()),
+  },
+  handler: async (ctx, { spaceId, companyId, agentId, toolkit, tool, arguments: args }) => {
+    await ctx.db.insert("actionLedger", {
+      companyId,
+      spaceId,
+      agentId,
+      action: `${toolkit}.${tool}`,
+      target: toolkit,
+      status: "proposed",
+      reversible: false,
+      payload: { arguments: args },
+      createdAt: Date.now(),
+    });
   },
 });
 
@@ -289,6 +316,16 @@ export const execute = action({
       requireAuth: true,
     });
     if (!acct) throw new Error(`No connected ${toolkit} integration`);
+    if (acct.shadowMode) {
+      await ctx.runMutation(internal.integrations.recordProposed, {
+        spaceId,
+        companyId: acct.companyId,
+        toolkit,
+        tool,
+        arguments: args,
+      });
+      return { proposed: true, shadowMode: true };
+    }
     const result = await executeTool(
       tool,
       acct.userId,
@@ -323,6 +360,12 @@ export const executeForConnector = internalAction({
       requireAuth: false,
     });
     if (!acct) throw new Error(`No connected ${toolkit} integration`);
+    if (acct.shadowMode) {
+      await ctx.runMutation(internal.integrations.recordProposed, {
+        spaceId, companyId, agentId, toolkit, tool, arguments: args,
+      });
+      return { ok: true, proposed: true, shadowMode: true };
+    }
     try {
       const result = await executeTool(tool, acct.userId, args ?? {}, acct.connectedAccountId);
       await ctx.runMutation(internal.integrations.recordCall, {

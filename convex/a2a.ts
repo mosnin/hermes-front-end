@@ -15,6 +15,7 @@ import {
   assertNotLooping,
   assertRateLimit,
   assertWithinBudget,
+  GuardViolation,
 } from "./lib/guards";
 import { recordWorkEvent } from "./lib/events";
 import { recordUsage } from "./lib/metering";
@@ -117,6 +118,23 @@ async function runGuards(
   content: string,
 ): Promise<void> {
   assertAutonomyActive(scope);
+  // Shadow mode: log the action as a proposal and block execution.
+  if (scope.space.shadowMode) {
+    await ctx.db.insert("actionLedger", {
+      companyId: scope.companyId,
+      spaceId: scope.spaceId,
+      agentId: fromAgentId,
+      action: "a2a_send",
+      target: toAgentId,
+      status: "proposed",
+      reversible: false,
+      payload: { content: content.slice(0, 500) },
+      createdAt: Date.now(),
+    });
+    throw new GuardViolation(
+      "shadow mode — action proposed to the ledger, not executed",
+    );
+  }
   await assertWithinBudget(ctx, scope);
   await assertRateLimit(ctx, scope);
   await assertWithinDailyBudget(ctx, scope);
