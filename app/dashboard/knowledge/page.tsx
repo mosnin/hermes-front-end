@@ -5,7 +5,8 @@ import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Plus, Search } from "lucide-react";
+import { useToast } from "@/components/toast";
+import { FileText, Link2, Plus, Search } from "lucide-react";
 
 type Memory = {
   _id: string;
@@ -18,10 +19,13 @@ type Memory = {
 
 export default function KnowledgePage() {
   const { spaceId } = useActiveSpace();
+  const toast = useToast();
   const all = useQuery(api.memories.list, spaceId ? { spaceId } : "skip");
   const add = useAction(api.memories.add);
   const remove = useAction(api.memories.remove);
   const runSearch = useAction(api.memories.search);
+  const ingestUrl = useAction(api.memories.ingestUrl);
+  const ingestText = useAction(api.memories.ingestText);
 
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -29,6 +33,17 @@ export default function KnowledgePage() {
   const [scope, setScope] = useState<"space" | "company">("space");
   const [tags, setTags] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const [urlOpen, setUrlOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [urlScope, setUrlScope] = useState<"space" | "company">("space");
+  const [urlBusy, setUrlBusy] = useState(false);
+
+  const [docOpen, setDocOpen] = useState(false);
+  const [docTitle, setDocTitle] = useState("");
+  const [docContent, setDocContent] = useState("");
+  const [docScope, setDocScope] = useState<"space" | "company">("space");
+  const [docBusy, setDocBusy] = useState(false);
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Memory[] | null>(null);
@@ -71,6 +86,44 @@ export default function KnowledgePage() {
     }
   }
 
+  async function submitUrl() {
+    if (!spaceId || !url.trim()) return;
+    setUrlBusy(true);
+    try {
+      await ingestUrl({ spaceId, url: url.trim(), scope: urlScope });
+      toast("URL ingested into memory", "success");
+      setUrl("");
+      setUrlScope("space");
+      setUrlOpen(false);
+    } catch {
+      toast("Could not ingest that URL", "error");
+    } finally {
+      setUrlBusy(false);
+    }
+  }
+
+  async function submitDoc() {
+    if (!spaceId || !docTitle.trim() || !docContent.trim()) return;
+    setDocBusy(true);
+    try {
+      await ingestText({
+        spaceId,
+        title: docTitle.trim(),
+        content: docContent.trim(),
+        scope: docScope,
+      });
+      toast("Document ingested into memory", "success");
+      setDocTitle("");
+      setDocContent("");
+      setDocScope("space");
+      setDocOpen(false);
+    } catch {
+      toast("Could not ingest that document", "error");
+    } finally {
+      setDocBusy(false);
+    }
+  }
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
@@ -81,9 +134,17 @@ export default function KnowledgePage() {
             agents retrieve with semantic (vector) search.
           </p>
         </div>
-        <Button onClick={() => setOpen(true)}>
-          <Plus className="h-4 w-4" /> Add memory
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setUrlOpen(true)}>
+            <Link2 className="h-4 w-4" /> Ingest URL
+          </Button>
+          <Button variant="outline" onClick={() => setDocOpen(true)}>
+            <FileText className="h-4 w-4" /> Ingest document
+          </Button>
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="h-4 w-4" /> Add memory
+          </Button>
+        </div>
       </div>
 
       <div className="mb-6 flex gap-2">
@@ -197,6 +258,80 @@ export default function KnowledgePage() {
             </Button>
             <Button onClick={submit} disabled={busy || !title.trim() || !content.trim()}>
               {busy ? "Saving…" : "Save memory"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={urlOpen} onClose={() => setUrlOpen(false)} title="Ingest URL">
+        <div className="space-y-4">
+          <Input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submitUrl()}
+            placeholder="https://example.com/article"
+            autoFocus
+          />
+          <div>
+            <label className="mb-1 block text-xs text-muted">Scope</label>
+            <select
+              value={urlScope}
+              onChange={(e) => setUrlScope(e.target.value as never)}
+              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
+            >
+              <option value="space">This Space only</option>
+              <option value="company">Company-wide</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setUrlOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitUrl} disabled={urlBusy || !url.trim()}>
+              {urlBusy ? "Ingesting…" : "Ingest URL"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={docOpen}
+        onClose={() => setDocOpen(false)}
+        title="Ingest document"
+      >
+        <div className="space-y-4">
+          <Input
+            value={docTitle}
+            onChange={(e) => setDocTitle(e.target.value)}
+            placeholder="Document title"
+            autoFocus
+          />
+          <Textarea
+            value={docContent}
+            onChange={(e) => setDocContent(e.target.value)}
+            placeholder="Paste the document text…"
+            rows={10}
+          />
+          <div>
+            <label className="mb-1 block text-xs text-muted">Scope</label>
+            <select
+              value={docScope}
+              onChange={(e) => setDocScope(e.target.value as never)}
+              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
+            >
+              <option value="space">This Space only</option>
+              <option value="company">Company-wide</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setDocOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={submitDoc}
+              disabled={docBusy || !docTitle.trim() || !docContent.trim()}
+            >
+              {docBusy ? "Ingesting…" : "Ingest document"}
             </Button>
           </div>
         </div>

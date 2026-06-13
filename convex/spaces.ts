@@ -186,6 +186,28 @@ export const setAutonomyPaused = mutation({
   },
 });
 
+/** Shadow mode: agents propose actions to the ledger instead of executing them. */
+export const setShadowMode = mutation({
+  args: { spaceId: v.id("spaces"), shadow: v.boolean() },
+  handler: async (ctx, { spaceId, shadow }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "admin");
+    await ctx.db.patch(spaceId, { shadowMode: shadow });
+    await ctx.db.insert("workEvents", {
+      companyId: scope.companyId,
+      spaceId,
+      actorType: "user",
+      actorId: scope.userId,
+      category: "governance",
+      action: shadow ? "shadow_enabled" : "shadow_disabled",
+      summary: shadow
+        ? "Shadow mode enabled — agents propose actions instead of executing"
+        : "Shadow mode disabled — agents execute actions normally",
+      createdAt: Date.now(),
+    });
+  },
+});
+
 // --- members & roles --------------------------------------------------------
 
 export const members = query({

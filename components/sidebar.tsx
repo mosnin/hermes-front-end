@@ -24,6 +24,7 @@ import {
   Plus,
   Radar,
   Rocket,
+  ScrollText,
   Search,
   Settings,
   ShieldCheck,
@@ -74,6 +75,7 @@ const SECTIONS: {
     title: "Insight",
     items: [
       { href: "/dashboard/approvals", label: "Approvals", icon: ShieldCheck },
+      { href: "/dashboard/ledger", label: "Action ledger", icon: ScrollText },
       { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
       { href: "/dashboard/history", label: "Work history", icon: History },
       { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },

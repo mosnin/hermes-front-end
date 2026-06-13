@@ -35,9 +35,26 @@ export default function TasksPage() {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"low" | "medium" | "high" | "urgent">("medium");
   const [assignee, setAssignee] = useState<string>("");
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
 
   const agentName = (id?: Id<"agents">) =>
     agents?.find((a) => a._id === id)?.name;
+
+  const total = (tasks ?? []).length;
+  const doneCount = (tasks ?? []).filter((t) => t.status === "done").length;
+
+  function onDragStart(e: React.DragEvent, taskId: Id<"tasks">) {
+    e.dataTransfer.setData("text/plain", taskId);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function onDrop(e: React.DragEvent, column: string) {
+    e.preventDefault();
+    setDragOverCol(null);
+    const taskId = e.dataTransfer.getData("text/plain");
+    if (!spaceId || !taskId) return;
+    update({ spaceId, taskId: taskId as Id<"tasks">, status: column as never });
+  }
 
   async function submit() {
     if (!title.trim() || !spaceId) return;
@@ -63,6 +80,9 @@ export default function TasksPage() {
           <p className="text-sm text-muted">
             Assign work to agents and move it across the board.
           </p>
+          <p className="mt-1 text-xs text-muted">
+            {doneCount}/{total} done
+          </p>
         </div>
         <Button onClick={() => setOpen(true)}>
           <Plus className="h-4 w-4" /> New task
@@ -73,14 +93,38 @@ export default function TasksPage() {
         {COLUMNS.map((col) => {
           const items = (tasks ?? []).filter((t) => t.status === col.key);
           return (
-            <div key={col.key} className="rounded-2xl border border-border bg-surface/40 p-3">
+            <div
+              key={col.key}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (dragOverCol !== col.key) setDragOverCol(col.key);
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setDragOverCol((c) => (c === col.key ? null : c));
+                }
+              }}
+              onDrop={(e) => onDrop(e, col.key)}
+              className={`rounded-2xl border bg-surface/40 p-3 transition-colors ${
+                dragOverCol === col.key
+                  ? "border-accent bg-accent/10"
+                  : "border-border"
+              }`}
+            >
               <div className="mb-3 flex items-center justify-between px-1">
                 <span className="text-sm font-medium">{col.label}</span>
                 <Badge>{items.length}</Badge>
               </div>
               <div className="space-y-2">
                 {items.map((t) => (
-                  <Card key={t._id} className="p-3">
+                  <div
+                    key={t._id}
+                    draggable
+                    onDragStart={(e) => onDragStart(e, t._id)}
+                    className="cursor-grab active:cursor-grabbing"
+                  >
+                  <Card className="p-3">
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-medium">{t.title}</p>
                       <Badge tone={priorityTone[t.priority]}>{t.priority}</Badge>
@@ -122,6 +166,7 @@ export default function TasksPage() {
                       </button>
                     </div>
                   </Card>
+                  </div>
                 ))}
                 {items.length === 0 && (
                   <p className="px-1 py-4 text-center text-xs text-muted">

@@ -56,6 +56,8 @@ export default defineSchema({
     createdBy: v.string(),
     // Master kill switch: when true, all autonomous dispatch is halted.
     autonomyPaused: v.optional(v.boolean()),
+    // Shadow mode: agents PROPOSE actions instead of executing them.
+    shadowMode: v.optional(v.boolean()),
     guardConfig: v.optional(guardConfigValidator),
     createdAt: v.number(),
   })
@@ -534,6 +536,32 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_space", ["spaceId"]),
+
+  // ===========================================================================
+  // Trust: action ledger — every external action an agent takes or proposes,
+  // with reversibility for rollback. Source of truth for "what agents did".
+  // ===========================================================================
+  actionLedger: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    agentId: v.optional(v.id("agents")),
+    workflowRunId: v.optional(v.id("workflowRuns")),
+    action: v.string(),
+    target: v.optional(v.string()),
+    status: v.union(
+      v.literal("proposed"),
+      v.literal("executed"),
+      v.literal("reverted"),
+      v.literal("blocked"),
+    ),
+    reversible: v.optional(v.boolean()),
+    payload: v.optional(v.any()),
+    createdAt: v.number(),
+    decidedAt: v.optional(v.number()),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_space_time", ["spaceId", "createdAt"])
+    .index("by_space_status", ["spaceId", "status"]),
 
   // ===========================================================================
   // Notifications — in-app alerts surfaced in the bell + notifications page.

@@ -54,6 +54,61 @@ export const add = action({
   },
 });
 
+export const ingestText = action({
+  args: {
+    spaceId: v.id("spaces"),
+    title: v.string(),
+    content: v.string(),
+    scope: v.optional(SCOPE),
+  },
+  handler: async (ctx, args): Promise<Id<"memories">> => {
+    const embedding = await embed(`${args.title}\n\n${args.content}`);
+    return await ctx.runMutation(internal.memories.insert, {
+      spaceId: args.spaceId,
+      title: args.title,
+      content: args.content.slice(0, 8000),
+      scope: args.scope ?? "space",
+      source: "document",
+      embedding: embedding ?? undefined,
+    });
+  },
+});
+
+export const ingestUrl = action({
+  args: {
+    spaceId: v.id("spaces"),
+    url: v.string(),
+    scope: v.optional(SCOPE),
+  },
+  handler: async (ctx, args): Promise<Id<"memories">> => {
+    let html: string;
+    try {
+      const res = await fetch(args.url);
+      if (!res.ok) throw new Error("Bad status");
+      html = await res.text();
+    } catch {
+      throw new Error("Could not fetch URL");
+    }
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 8000);
+    const title = `URL: ${args.url}`;
+    const embedding = await embed(`${title}\n\n${text}`);
+    return await ctx.runMutation(internal.memories.insert, {
+      spaceId: args.spaceId,
+      title,
+      content: text,
+      scope: args.scope ?? "space",
+      source: "url",
+      embedding: embedding ?? undefined,
+    });
+  },
+});
+
 export const insert = internalMutation({
   args: {
     spaceId: v.id("spaces"),

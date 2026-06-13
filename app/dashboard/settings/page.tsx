@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, Input } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
-import { Power } from "lucide-react";
+import { Power, EyeOff } from "lucide-react";
 
 type Guards = {
   maxStepsPerRun: number;
@@ -49,6 +49,7 @@ export default function SettingsPage() {
 
   const setGuardConfig = useMutation(api.spaces.setGuardConfig);
   const setPaused = useMutation(api.spaces.setAutonomyPaused);
+  const setShadowMode = useMutation(api.spaces.setShadowMode);
   const addMember = useMutation(api.spaces.addMember);
   const setRole = useMutation(api.spaces.setMemberRole);
   const removeMember = useMutation(api.spaces.removeMember);
@@ -94,6 +95,31 @@ export default function SettingsPage() {
           >
             <Power className="h-4 w-4" />
             {space.autonomyPaused ? "Resume autonomy" : "Pause all autonomy"}
+          </Button>
+        </div>
+      </Card>
+
+      {/* Shadow mode */}
+      <Card className="mb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold">Shadow mode</h2>
+            <p className="text-sm text-muted">
+              {space.shadowMode
+                ? "Shadow mode is on — agents propose actions to the ledger instead of executing them."
+                : "Shadow mode is off — agents execute actions directly. When on, agents propose actions to the ledger instead of executing them."}
+            </p>
+          </div>
+          <Button
+            variant={space.shadowMode ? "primary" : "outline"}
+            disabled={!canAdmin || !spaceId}
+            onClick={() =>
+              spaceId &&
+              setShadowMode({ spaceId, shadow: !space.shadowMode })
+            }
+          >
+            <EyeOff className="h-4 w-4" />
+            {space.shadowMode ? "Disable shadow mode" : "Enable shadow mode"}
           </Button>
         </div>
       </Card>

@@ -7,7 +7,17 @@ import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
-import { Play, Plus, Trash2, X, Zap } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  FlaskConical,
+  Play,
+  Plus,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-react";
+import { WorkflowTrace } from "@/components/workflow-trace";
 
 type StepDraft = { id: string; name: string; instruction: string; agentId: string };
 
@@ -20,14 +30,9 @@ const runTone = {
   killed: "red",
 } as const;
 
-const stepTone = {
-  pending: "default",
-  dispatched: "blue",
-  running: "yellow",
-  done: "green",
-  failed: "red",
-  skipped: "default",
-} as const;
+function newStep(): StepDraft {
+  return { id: crypto.randomUUID(), name: "", instruction: "", agentId: "" };
+}
 
 export default function WorkflowsPage() {
   const { spaceId } = useActiveSpace();
@@ -43,37 +48,62 @@ export default function WorkflowsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [sequential, setSequential] = useState(true);
-  const [steps, setSteps] = useState<StepDraft[]>([
-    { id: crypto.randomUUID(), name: "", instruction: "", agentId: "" },
-  ]);
+  const [steps, setSteps] = useState<StepDraft[]>([newStep()]);
   const [selectedRun, setSelectedRun] = useState<Id<"workflowRuns"> | null>(null);
 
   function addStep() {
-    setSteps((s) => [
-      ...s,
-      { id: crypto.randomUUID(), name: "", instruction: "", agentId: "" },
-    ]);
+    setSteps((s) => [...s, newStep()]);
   }
 
+  function patchStep(id: string, patch: Partial<StepDraft>) {
+    setSteps((arr) => arr.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  }
+
+  function removeStep(id: string) {
+    setSteps((arr) => arr.filter((x) => x.id !== id));
+  }
+
+  function moveStep(index: number, dir: -1 | 1) {
+    setSteps((arr) => {
+      const next = [...arr];
+      const target = index + dir;
+      if (target < 0 || target >= next.length) return arr;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  // Validation: name required, and every non-empty step must have both a
+  // name and instruction. At least one complete step required.
+  const completeSteps = steps.filter(
+    (s) => s.name.trim() && s.instruction.trim(),
+  );
+  const partialStep = steps.find(
+    (s) =>
+      (s.name.trim() && !s.instruction.trim()) ||
+      (!s.name.trim() && s.instruction.trim()),
+  );
+  const canSubmit =
+    Boolean(name.trim()) && completeSteps.length > 0 && !partialStep;
+
   async function submit() {
-    if (!spaceId || !name.trim()) return;
-    const clean = steps.filter((s) => s.name.trim() && s.instruction.trim());
-    if (clean.length === 0) return;
+    if (!spaceId || !canSubmit) return;
     await create({
       spaceId,
       name: name.trim(),
       description: description.trim() || undefined,
-      steps: clean.map((s, i) => ({
+      steps: completeSteps.map((s, i) => ({
         id: s.id,
         name: s.name.trim(),
         instruction: s.instruction.trim(),
         agentId: s.agentId ? (s.agentId as Id<"agents">) : undefined,
-        dependsOn: sequential && i > 0 ? [clean[i - 1].id] : undefined,
+        dependsOn:
+          sequential && i > 0 ? [completeSteps[i - 1].id] : undefined,
       })),
     });
     setName("");
     setDescription("");
-    setSteps([{ id: crypto.randomUUID(), name: "", instruction: "", agentId: "" }]);
+    setSteps([newStep()]);
     setOpen(false);
   }
 
@@ -104,8 +134,8 @@ export default function WorkflowsPage() {
           ) : (
             (workflows ?? []).map((wf) => (
               <Card key={wf._id}>
-                <div className="flex items-start justify-between">
-                  <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <p className="font-medium">{wf.name}</p>
                     {wf.description && (
                       <p className="text-sm text-muted">{wf.description}</p>
@@ -114,19 +144,40 @@ export default function WorkflowsPage() {
                       {wf.steps.length} step{wf.steps.length === 1 ? "" : "s"}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     <Button
+                      variant="outline"
+                      title="Run with simulated step completion"
                       onClick={() =>
-                        spaceId && start({ spaceId, workflowId: wf._id })
+                        spaceId &&
+                        start({
+                          spaceId,
+                          workflowId: wf._id,
+                          autoComplete: true,
+                        })
                       }
                     >
-                      <Play className="h-4 w-4" /> Run
+                      <FlaskConical className="h-4 w-4" /> Simulate
+                    </Button>
+                    <Button
+                      title="Run live (agents execute each step)"
+                      onClick={() =>
+                        spaceId &&
+                        start({
+                          spaceId,
+                          workflowId: wf._id,
+                          autoComplete: false,
+                        })
+                      }
+                    >
+                      <Play className="h-4 w-4" /> Run live
                     </Button>
                     <button
                       onClick={() =>
                         spaceId && remove({ spaceId, workflowId: wf._id })
                       }
                       className="text-muted hover:text-red-400"
+                      title="Delete workflow"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -162,7 +213,7 @@ export default function WorkflowsPage() {
                   started {timeAgo(r.startedAt)}
                   {r.error ? ` · ${r.error}` : ""}
                 </p>
-                {selectedRun === r._id && <RunSteps runId={r._id} />}
+                {selectedRun === r._id && <WorkflowTrace runId={r._id} />}
               </Card>
             ))
           )}
@@ -192,116 +243,105 @@ export default function WorkflowsPage() {
                   checked={sequential}
                   onChange={(e) => setSequential(e.target.checked)}
                 />
-                run sequentially
+                {sequential ? "run sequentially" : "run in parallel"}
               </label>
             </div>
-            {steps.map((s, i) => (
-              <div key={s.id} className="rounded-lg border border-border p-2">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="text-xs text-muted">#{i + 1}</span>
-                  <Input
-                    value={s.name}
-                    onChange={(e) =>
-                      setSteps((arr) =>
-                        arr.map((x) =>
-                          x.id === s.id ? { ...x, name: e.target.value } : x,
-                        ),
-                      )
-                    }
-                    placeholder="Step name"
-                  />
-                  <select
-                    value={s.agentId}
-                    onChange={(e) =>
-                      setSteps((arr) =>
-                        arr.map((x) =>
-                          x.id === s.id ? { ...x, agentId: e.target.value } : x,
-                        ),
-                      )
-                    }
-                    className="rounded-lg border border-border bg-surface-2 px-2 py-2 text-sm"
-                  >
-                    <option value="">Auto agent</option>
-                    {(agents ?? []).map((a) => (
-                      <option key={a._id} value={a._id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                  {steps.length > 1 && (
-                    <button
-                      onClick={() =>
-                        setSteps((arr) => arr.filter((x) => x.id !== s.id))
+            {steps.map((s, i) => {
+              const incomplete =
+                (s.name.trim() && !s.instruction.trim()) ||
+                (!s.name.trim() && s.instruction.trim());
+              return (
+                <div
+                  key={s.id}
+                  className="rounded-lg border border-border p-2"
+                >
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="w-5 text-xs text-muted">#{i + 1}</span>
+                    <Input
+                      value={s.name}
+                      onChange={(e) => patchStep(s.id, { name: e.target.value })}
+                      placeholder="Step name"
+                    />
+                    <select
+                      value={s.agentId}
+                      onChange={(e) =>
+                        patchStep(s.id, { agentId: e.target.value })
                       }
-                      className="text-muted hover:text-red-400"
+                      className="rounded-lg border border-border bg-surface-2 px-2 py-2 text-sm"
                     >
-                      <X className="h-4 w-4" />
-                    </button>
+                      <option value="">Auto agent</option>
+                      {(agents ?? []).map((a) => (
+                        <option key={a._id} value={a._id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex items-center">
+                      <button
+                        onClick={() => moveStep(i, -1)}
+                        disabled={i === 0}
+                        className="text-muted hover:text-foreground disabled:opacity-30"
+                        title="Move up"
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => moveStep(i, 1)}
+                        disabled={i === steps.length - 1}
+                        className="text-muted hover:text-foreground disabled:opacity-30"
+                        title="Move down"
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </button>
+                      {steps.length > 1 && (
+                        <button
+                          onClick={() => removeStep(s.id)}
+                          className="text-muted hover:text-red-400"
+                          title="Remove step"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <Input
+                    value={s.instruction}
+                    onChange={(e) =>
+                      patchStep(s.id, { instruction: e.target.value })
+                    }
+                    placeholder="Instruction for the agent…"
+                  />
+                  {incomplete && (
+                    <p className="mt-1 text-xs text-red-400">
+                      Both a name and an instruction are required.
+                    </p>
                   )}
                 </div>
-                <Input
-                  value={s.instruction}
-                  onChange={(e) =>
-                    setSteps((arr) =>
-                      arr.map((x) =>
-                        x.id === s.id ? { ...x, instruction: e.target.value } : x,
-                      ),
-                    )
-                  }
-                  placeholder="Instruction for the agent…"
-                />
-              </div>
-            ))}
+              );
+            })}
             <Button variant="outline" onClick={addStep}>
               <Plus className="h-4 w-4" /> Add step
             </Button>
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="flex items-center justify-end gap-2">
+            {!canSubmit && (name.trim() || completeSteps.length > 0) && (
+              <span className="mr-auto text-xs text-muted">
+                {!name.trim()
+                  ? "Add a workflow name."
+                  : partialStep
+                    ? "Finish or clear incomplete steps."
+                    : "Add at least one complete step."}
+              </span>
+            )}
             <Button variant="ghost" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={submit} disabled={!name.trim()}>
+            <Button onClick={submit} disabled={!canSubmit}>
               Create
             </Button>
           </div>
         </div>
       </Modal>
-    </div>
-  );
-}
-
-function RunSteps({ runId }: { runId: Id<"workflowRuns"> }) {
-  const { spaceId } = useActiveSpace();
-  const steps = useQuery(
-    api.workflows.runSteps,
-    spaceId ? { spaceId, runId } : "skip",
-  );
-  const cancel = useMutation(api.workflows.cancelRun);
-  const pause = useMutation(api.workflows.pauseRun);
-  const resume = useMutation(api.workflows.resumeRun);
-
-  return (
-    <div className="mt-3 border-t border-border pt-3">
-      <ol className="space-y-2">
-        {(steps ?? []).map((s) => (
-          <li key={s._id} className="flex items-center gap-2 text-sm">
-            <span className="w-5 text-xs text-muted">{s.index + 1}</span>
-            <span className="flex-1 truncate">{s.name}</span>
-            <Badge tone={stepTone[s.status]}>{s.status}</Badge>
-          </li>
-        ))}
-      </ol>
-      <div className="mt-3 flex gap-2">
-        <Button variant="outline" onClick={() => spaceId && pause({ spaceId, runId })}>
-          Pause
-        </Button>
-        <Button variant="outline" onClick={() => spaceId && resume({ spaceId, runId })}>
-          Resume
-        </Button>
-        <Button variant="danger" onClick={() => spaceId && cancel({ spaceId, runId })}>
-          Kill
-        </Button>
-      </div>
     </div>
   );
 }
