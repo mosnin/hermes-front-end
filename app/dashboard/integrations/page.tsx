@@ -6,6 +6,8 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, Input, Modal } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
+import { useDialog } from "@/components/dialog";
+import { useToast } from "@/components/toast";
 
 const statusTone = { connected: "green", disconnected: "default", error: "red" } as const;
 
@@ -22,6 +24,8 @@ export default function IntegrationsPage() {
   const enableTrigger = useAction(api.integrations.enableTrigger);
   const remove = useMutation(api.integrations.remove);
 
+  const dialog = useDialog();
+  const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [trigOpen, setTrigOpen] = useState<{ toolkit: string } | null>(null);
   const [trigSlug, setTrigSlug] = useState("");
@@ -31,19 +35,24 @@ export default function IntegrationsPage() {
 
   async function connect(toolkit: string, name: string) {
     if (!spaceId) return;
-    const authConfigId = window.prompt(
-      `Composio auth config id for ${name}\n(create one in the Composio dashboard for this toolkit):`,
-    );
+    const authConfigId = await dialog.prompt({
+      title: `Connect ${name}`,
+      label: "Composio auth config id",
+      placeholder: "ac_…",
+      confirmLabel: "Connect",
+    });
     if (!authConfigId?.trim()) return;
     setBusy(toolkit);
     try {
-      const res = await initiate({
-        spaceId,
-        toolkit,
-        name,
-        authConfigId: authConfigId.trim(),
-      });
-      if (res.redirectUrl) window.open(res.redirectUrl, "_blank");
+      const res = await initiate({ spaceId, toolkit, name, authConfigId: authConfigId.trim() });
+      if (res.redirectUrl) {
+        window.open(res.redirectUrl, "_blank");
+        toast(`Opening ${name} authorization…`, "info");
+      } else {
+        toast(`${name} connection started`, "success");
+      }
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to connect", "error");
     } finally {
       setBusy(null);
     }

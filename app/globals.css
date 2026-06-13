@@ -11,6 +11,17 @@
   --accent-2: #00d3a7;
 }
 
+[data-theme="light"] {
+  --background: #f7f8fa;
+  --surface: #ffffff;
+  --surface-2: #f0f1f5;
+  --border: #e2e5ec;
+  --foreground: #1a1d26;
+  --muted: #6b7180;
+  --accent: #6d5efc;
+  --accent-2: #00a886;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
