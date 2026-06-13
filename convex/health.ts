@@ -1,17 +1,23 @@
 import { v } from "convex/values";
 import { query, internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { resolveScope } from "./lib/auth";
 
 const DEGRADE_MS = 90_000; // missed heartbeats -> degraded
 const OFFLINE_MS = 300_000; // prolonged silence -> offline
 
-/** Cron: mark agents degraded/offline by heartbeat staleness and alert. */
+/**
+ * Cron: mark agents degraded/offline by heartbeat staleness and alert.
+ * Paginated + self-chaining so it scales past a single page of agents.
+ */
 export const sweep = internalMutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, { cursor }) => {
     const now = Date.now();
-    const agents = await ctx.db.query("agents").collect();
-    for (const a of agents) {
+    const page = await ctx.db
+      .query("agents")
+      .paginate({ numItems: 200, cursor: cursor ?? null });
+    for (const a of page.page) {
       if (a.kind === "a2a-external") continue;
       const last = a.lastHeartbeat ?? 0;
       const age = now - last;
@@ -43,6 +49,11 @@ export const sweep = internalMutation({
           createdAt: now,
         });
       }
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.health.sweep, {
+        cursor: page.continueCursor,
+      });
     }
   },
 });

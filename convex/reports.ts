@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalMutation, MutationCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
 
@@ -77,13 +78,24 @@ export const generate = mutation({
   },
 });
 
-/** Cron: generate a daily digest for every Space with autonomy active. */
+/**
+ * Cron: generate a daily digest per active Space. Paginated + self-chaining,
+ * and skips Spaces whose autonomy is paused.
+ */
 export const generateAllDaily = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const spaces = await ctx.db.query("spaces").collect();
-    for (const space of spaces) {
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query("spaces")
+      .paginate({ numItems: 100, cursor: cursor ?? null });
+    for (const space of page.page) {
+      if (space.autonomyPaused) continue;
       await buildReport(ctx, space, "daily");
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.reports.generateAllDaily, {
+        cursor: page.continueCursor,
+      });
     }
   },
 });
