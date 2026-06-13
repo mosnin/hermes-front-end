@@ -58,6 +58,8 @@ export default defineSchema({
     autonomyPaused: v.optional(v.boolean()),
     // Shadow mode: agents PROPOSE actions instead of executing them.
     shadowMode: v.optional(v.boolean()),
+    // Billing plan tier for this Space.
+    plan: v.optional(v.string()), // "free" | "team" | "enterprise"
     guardConfig: v.optional(guardConfigValidator),
     createdAt: v.number(),
   })
@@ -533,6 +535,42 @@ export default defineSchema({
     config: v.optional(v.any()),
     // Reference to a secret stored out-of-band; never the raw secret.
     secretRef: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_space", ["spaceId"]),
+
+  // ===========================================================================
+  // Secrets vault — credentials agents/integrations use (value never returned
+  // in lists; only a masked preview).
+  // ===========================================================================
+  secrets: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    name: v.string(),
+    value: v.string(),
+    preview: v.string(), // masked, safe to display
+    createdBy: v.string(),
+    updatedAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_space_name", ["spaceId", "name"]),
+
+  // ===========================================================================
+  // Chat bridges — control agents from Slack / Telegram / Discord.
+  // ===========================================================================
+  bridges: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    type: v.string(), // "slack" | "telegram" | "discord"
+    name: v.string(),
+    status: v.union(
+      v.literal("connected"),
+      v.literal("disconnected"),
+      v.literal("error"),
+    ),
+    config: v.optional(v.any()),
+    agentId: v.optional(v.id("agents")), // which agent messages route to
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_space", ["spaceId"]),
