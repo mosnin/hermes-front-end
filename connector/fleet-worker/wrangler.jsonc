@@ -1,27 +1,43 @@
 {
   // Hermes Fleet Worker — boots one container per agent.
-  // Fill in your account_id, then: npx wrangler deploy
+  // Deploy with:  npx wrangler deploy   (Cloudflare account with Containers enabled)
   "name": "hermes-fleet",
   "main": "src/index.ts",
+  // Containers + the @cloudflare/containers helper need a recent runtime.
   "compatibility_date": "2025-06-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Container-backed Durable Object: one instance per agent.
+  // Container-backed Durable Object: one instance per agent. The class name must
+  // match the exported `AgentContainer` class in src/index.ts and the
+  // `class_name` in the `containers` block below.
   "durable_objects": {
-    "bindings": [{ "name": "AGENT", "class_name": "Agent" }]
+    "bindings": [{ "name": "AGENT", "class_name": "AgentContainer" }]
   },
-  "migrations": [{ "tag": "v1", "new_classes": ["Agent"] }],
 
-  // Cloudflare Containers — point image at the Hermes connector.
-  // See https://developers.cloudflare.com/containers/ for the current schema.
+  // Containers run on SQLite-backed Durable Objects, so the migration must use
+  // `new_sqlite_classes` (not `new_classes`).
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AgentContainer"] }],
+
+  // Cloudflare Containers — the agent image built from ./Dockerfile.
+  // See https://developers.cloudflare.com/containers/ for the current schema;
+  // `instance_type` and `max_instances` may gain options over time.
   "containers": [
     {
-      "class_name": "Agent",
+      // Must match the Durable Object class above.
+      "class_name": "AgentContainer",
+      // Build context is the REPO ROOT so the Dockerfile can COPY the connector
+      // package (which lives at connector/control_plane, one dir up from here).
+      // The path is relative to this wrangler.jsonc file.
       "image": "./Dockerfile",
-      "instances": 100,
-      "name": "hermes-agent"
+      "image_build_context": "../../",
+      // Smallest tier is plenty for the outbound-only connector loop.
+      // Options: "dev" | "basic" | "standard" (check docs for current tiers).
+      "instance_type": "basic",
+      // Upper bound on concurrently running agent containers.
+      "max_instances": 100
     }
   ]
 
-  // Set the shared secret with:  npx wrangler secret put FLEET_SECRET
+  // Set the shared secret the Worker checks on every request with:
+  //   npx wrangler secret put FLEET_SECRET
 }

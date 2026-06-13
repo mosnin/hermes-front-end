@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { Plus, Star } from "lucide-react";
+import { Plus, Sparkles, Star } from "lucide-react";
 
 function Stars({ value }: { value: number }) {
   const rounded = Math.round(value);
@@ -32,6 +32,7 @@ export default function EvalsPage() {
   const evals = useQuery(api.evals.list, spaceId ? { spaceId } : "skip");
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
   const log = useMutation(api.evals.log);
+  const autoEvaluate = useAction(api.evals.autoEvaluate);
   const toast = useToast();
 
   const [open, setOpen] = useState(false);
@@ -39,6 +40,11 @@ export default function EvalsPage() {
   const [rating, setRating] = useState<number>(5);
   const [dimension, setDimension] = useState("");
   const [comment, setComment] = useState("");
+
+  const [autoOpen, setAutoOpen] = useState(false);
+  const [autoAgentId, setAutoAgentId] = useState<string>("");
+  const [autoDimension, setAutoDimension] = useState("");
+  const [autoBusy, setAutoBusy] = useState(false);
 
   const agentName = (id: Id<"agents">) => agents?.find((a) => a._id === id)?.name;
 
@@ -65,6 +71,26 @@ export default function EvalsPage() {
     }
   }
 
+  async function runAuto() {
+    if (!spaceId || !autoAgentId) return;
+    setAutoBusy(true);
+    try {
+      const result = await autoEvaluate({
+        spaceId,
+        agentId: autoAgentId as Id<"agents">,
+        dimension: autoDimension.trim() || undefined,
+      });
+      toast(`Auto-eval: ${result.rating}/5 — ${result.comment}`, "success");
+      setAutoOpen(false);
+      setAutoAgentId("");
+      setAutoDimension("");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Auto-evaluation failed", "error");
+    } finally {
+      setAutoBusy(false);
+    }
+  }
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
@@ -74,9 +100,14 @@ export default function EvalsPage() {
             Score agent performance and track quality, speed, and cost over time.
           </p>
         </div>
-        <Button onClick={() => setOpen(true)}>
-          <Plus className="h-4 w-4" /> Log evaluation
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" onClick={() => setAutoOpen(true)}>
+            <Sparkles className="h-4 w-4" /> Auto-evaluate
+          </Button>
+          <Button onClick={() => setOpen(true)}>
+            <Plus className="h-4 w-4" /> Log evaluation
+          </Button>
+        </div>
       </div>
 
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -190,6 +221,54 @@ export default function EvalsPage() {
             </Button>
             <Button onClick={submit} disabled={!agentId}>
               Log
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={autoOpen}
+        onClose={() => !autoBusy && setAutoOpen(false)}
+        title="Auto-evaluate agent"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            An LLM judge rates the agent&apos;s recent output and logs an
+            automated evaluation.
+          </p>
+          <div>
+            <label className="mb-1 block text-xs text-muted">Agent</label>
+            <select
+              value={autoAgentId}
+              onChange={(e) => setAutoAgentId(e.target.value)}
+              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
+            >
+              <option value="">Select an agent…</option>
+              {(agents ?? []).map((a) => (
+                <option key={a._id} value={a._id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted">Dimension</label>
+            <Input
+              value={autoDimension}
+              onChange={(e) => setAutoDimension(e.target.value)}
+              placeholder="quality (default)"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setAutoOpen(false)}
+              disabled={autoBusy}
+            >
+              Cancel
+            </Button>
+            <Button onClick={runAuto} disabled={!autoAgentId || autoBusy}>
+              {autoBusy ? "Evaluating…" : "Run auto-eval"}
             </Button>
           </div>
         </div>

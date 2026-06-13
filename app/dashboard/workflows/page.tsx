@@ -25,6 +25,7 @@ const runTone = {
   pending: "default",
   running: "yellow",
   paused: "yellow",
+  awaiting_approval: "blue",
   completed: "green",
   failed: "red",
   killed: "red",

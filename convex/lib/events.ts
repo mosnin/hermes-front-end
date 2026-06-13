@@ -35,6 +35,30 @@ export async function recordWorkEvent(
   });
 }
 
+/** Raise an in-app notification (shown in the bell + notifications page). */
+export async function recordNotification(
+  ctx: MutationCtx,
+  args: {
+    companyId: string;
+    spaceId: Id<"spaces">;
+    type: string;
+    title: string;
+    body?: string;
+    href?: string;
+  },
+): Promise<void> {
+  await ctx.db.insert("notifications", {
+    companyId: args.companyId,
+    spaceId: args.spaceId,
+    type: args.type,
+    title: args.title,
+    body: args.body,
+    href: args.href,
+    read: false,
+    createdAt: Date.now(),
+  });
+}
+
 /** Append to the live activity feed. */
 export async function recordActivity(
   ctx: MutationCtx,

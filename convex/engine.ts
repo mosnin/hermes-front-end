@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { Scope } from "./lib/auth";
 import { assertRunWithinLimits, GuardViolation } from "./lib/guards";
-import { recordWorkEvent, recordActivity } from "./lib/events";
+import { recordWorkEvent, recordActivity, recordNotification } from "./lib/events";
 import { recordUsage } from "./lib/metering";
 
 const DEFAULT_STEP_TIMEOUT_MS = 60_000;
@@ -65,6 +65,14 @@ async function failRun(
     category: "workflow",
     action: "run_failed",
     summary: `Workflow run failed: ${error}`,
+  });
+  await recordNotification(ctx, {
+    companyId: run.companyId,
+    spaceId: run.spaceId,
+    type: "run",
+    title: "Workflow run failed",
+    body: error,
+    href: "/dashboard/workflows",
   });
 }
 

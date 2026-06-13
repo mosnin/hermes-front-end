@@ -60,6 +60,8 @@ export default defineSchema({
     shadowMode: v.optional(v.boolean()),
     // Billing plan tier for this Space.
     plan: v.optional(v.string()), // "free" | "team" | "enterprise"
+    // Model router policy: { primary, fallbacks[], byCapability? }.
+    modelPolicy: v.optional(v.any()),
     guardConfig: v.optional(guardConfigValidator),
     createdAt: v.number(),
   })
@@ -297,6 +299,8 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     enabled: v.boolean(),
+    // Require a human approval before this workflow's runs dispatch.
+    requiresApproval: v.optional(v.boolean()),
     // Ordered/DAG steps. dependsOn references step ids.
     steps: v.array(
       v.object({
@@ -323,6 +327,7 @@ export default defineSchema({
       v.literal("pending"),
       v.literal("running"),
       v.literal("paused"),
+      v.literal("awaiting_approval"),
       v.literal("completed"),
       v.literal("failed"),
       v.literal("killed"),

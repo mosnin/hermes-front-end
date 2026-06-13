@@ -1,6 +1,6 @@
 import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
-import { recordWorkEvent } from "./events";
+import { recordWorkEvent, recordNotification } from "./events";
 
 // Rough per-event cost estimates (USD). Real token costs can be passed in
 // explicitly via costUsd when known.
@@ -63,6 +63,14 @@ export async function recordUsage(
         category: "governance",
         action: "budget_exceeded",
         summary: `Monthly budget of $${budget} reached ($${total.toFixed(2)}) — autonomy paused`,
+      });
+      await recordNotification(ctx, {
+        companyId: args.companyId,
+        spaceId: args.spaceId,
+        type: "system",
+        title: "Budget reached — autonomy paused",
+        body: `$${total.toFixed(2)} of $${budget} this month`,
+        href: "/dashboard/ops",
       });
     }
   }

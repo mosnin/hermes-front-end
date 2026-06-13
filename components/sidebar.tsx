@@ -15,6 +15,7 @@ import {
   Cable,
   ChevronDown,
   Code2,
+  Cpu,
   CreditCard,
   FileSearch,
   FileText,
@@ -67,6 +68,7 @@ const SECTIONS: {
       { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
       { href: "/dashboard/goals", label: "Goals", icon: Target },
       { href: "/dashboard/workflows", label: "Workflows", icon: Workflow },
+      { href: "/dashboard/models", label: "Model router", icon: Cpu },
     ],
   },
   {

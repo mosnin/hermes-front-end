@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { resolveScope } from "./lib/auth";
+import { recordNotification } from "./lib/events";
 
 const DEGRADE_MS = 90_000; // missed heartbeats -> degraded
 const OFFLINE_MS = 300_000; // prolonged silence -> offline
@@ -47,6 +48,14 @@ export const sweep = internalMutation({
           action: "agent_health",
           summary: `${a.name} -> ${next} (stale heartbeat)`,
           createdAt: now,
+        });
+        await recordNotification(ctx, {
+          companyId: a.companyId,
+          spaceId: a.spaceId,
+          type: "alert",
+          title: `${a.name} is ${next}`,
+          body: `No heartbeat for ${Math.round(age / 1000)}s`,
+          href: "/dashboard/ops",
         });
       }
     }

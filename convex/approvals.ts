@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { resolveScope, requireRole } from "./lib/auth";
-import { recordWorkEvent } from "./lib/events";
+import { recordWorkEvent, recordNotification } from "./lib/events";
 
 /** List approval requests for a Space, newest first; optionally filtered by status. */
 export const list = query({
@@ -78,6 +79,14 @@ export const request = mutation({
       action: "approval_requested",
       summary: args.title,
     });
+    await recordNotification(ctx, {
+      companyId: scope.companyId,
+      spaceId,
+      type: "approval",
+      title: `Approval needed: ${args.title}`,
+      body: args.detail,
+      href: "/dashboard/approvals",
+    });
     return approvalId;
   },
 });
@@ -110,5 +119,23 @@ export const decide = mutation({
       action: approve ? "approval_granted" : "approval_rejected",
       summary: `${approve ? "Approved" : "Rejected"}: ${approval.title}`,
     });
+
+    // If this approval gated a workflow run, release or kill it now.
+    if (approval.workflowRunId) {
+      const run = await ctx.db.get(approval.workflowRunId);
+      if (run && run.status === "awaiting_approval") {
+        if (approve) {
+          await ctx.db.patch(run._id, { status: "running" });
+          await ctx.scheduler.runAfter(0, internal.engine.advanceRun, {
+            runId: run._id,
+          });
+        } else {
+          await ctx.db.patch(run._id, {
+            status: "killed",
+            finishedAt: Date.now(),
+          });
+        }
+      }
+    }
   },
 });

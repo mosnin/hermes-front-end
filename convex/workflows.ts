@@ -9,7 +9,7 @@ import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
 import { assertAutonomyActive, assertWithinBudget, GuardViolation } from "./lib/guards";
-import { recordWorkEvent } from "./lib/events";
+import { recordWorkEvent, recordNotification } from "./lib/events";
 import { DEFAULT_GUARD_CONFIG } from "./schema";
 
 const STEP = v.object({
@@ -51,8 +51,9 @@ export const create = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     steps: v.array(STEP),
+    requiresApproval: v.optional(v.boolean()),
   },
-  handler: async (ctx, { spaceId, name, description, steps }) => {
+  handler: async (ctx, { spaceId, name, description, steps, requiresApproval }) => {
     const scope = await resolveScope(ctx, spaceId);
     requireRole(scope, "operator");
     const now = Date.now();
@@ -62,6 +63,7 @@ export const create = mutation({
       name,
       description,
       enabled: true,
+      requiresApproval,
       steps,
       createdAt: now,
       updatedAt: now,
@@ -125,11 +127,13 @@ async function createRun(
     );
   }
   const now = Date.now();
+  // Approval-gated workflows wait in "awaiting_approval" until a human decides.
+  const gated = !!wf.requiresApproval;
   const runId = await ctx.db.insert("workflowRuns", {
     companyId: wf.companyId,
     spaceId: wf.spaceId,
     workflowId: wf._id,
-    status: "pending",
+    status: gated ? "awaiting_approval" : "pending",
     trigger: opts.trigger,
     input: { autoComplete: opts.autoComplete },
     hops: 0,
@@ -160,7 +164,28 @@ async function createRun(
     action: "run_started",
     summary: `Started "${wf.name}" (${opts.trigger})`,
   });
-  await ctx.scheduler.runAfter(0, internal.engine.advanceRun, { runId });
+  if (gated) {
+    // Open an approval gate + notify; the run dispatches only once approved.
+    await ctx.db.insert("approvals", {
+      companyId: wf.companyId,
+      spaceId: wf.spaceId,
+      workflowRunId: runId,
+      kind: "workflow",
+      title: `Run workflow "${wf.name}"`,
+      detail: `${wf.steps.length} step(s) awaiting approval`,
+      status: "pending",
+      createdAt: now,
+    });
+    await recordNotification(ctx, {
+      companyId: wf.companyId,
+      spaceId: wf.spaceId,
+      type: "approval",
+      title: `Approval needed: run "${wf.name}"`,
+      href: "/dashboard/approvals",
+    });
+  } else {
+    await ctx.scheduler.runAfter(0, internal.engine.advanceRun, { runId });
+  }
   return runId;
 }
 
@@ -178,9 +203,21 @@ export const start = mutation({
     const wf = await ctx.db.get(workflowId);
     if (!wf || wf.spaceId !== spaceId) throw new Error("Not found");
     const g = scope.space.guardConfig ?? DEFAULT_GUARD_CONFIG;
+    // Default: dispatch to real agents when any are online; only fall back to
+    // simulation (autoComplete) when the Space has no live agents.
+    let auto = autoComplete;
+    if (auto === undefined) {
+      const online = await ctx.db
+        .query("agents")
+        .withIndex("by_space_status", (q) =>
+          q.eq("spaceId", spaceId).eq("status", "online"),
+        )
+        .first();
+      auto = !online;
+    }
     return await createRun(ctx, wf, {
       trigger: "manual",
-      autoComplete: autoComplete ?? true,
+      autoComplete: auto,
       maxConcurrent: g.maxConcurrentRuns,
     });
   },
