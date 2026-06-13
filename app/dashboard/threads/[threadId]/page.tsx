@@ -1,14 +1,19 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Input } from "@/components/ui";
-import { useActiveSpace } from "@/components/active-space";
+import { Badge, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Brain, Send } from "lucide-react";
+import { useActiveSpace } from "@/components/active-space";
+import { useToast } from "@/components/toast";
+import {
+  MessageBubble,
+  type ChatMessage,
+} from "@/components/chat/message-bubble";
+import { ArrowLeft, Brain, Send, Square } from "lucide-react";
 
 export default function ThreadDetailPage({
   params,
@@ -18,7 +23,9 @@ export default function ThreadDetailPage({
   const { threadId } = use(params);
   const id = threadId as Id<"threads">;
   const router = useRouter();
+  const toast = useToast();
   const { spaceId } = useActiveSpace();
+
   const thread = useQuery(
     api.threads.get,
     spaceId ? { spaceId, threadId: id } : "skip",
@@ -29,8 +36,27 @@ export default function ThreadDetailPage({
   );
   const send = useMutation(api.messages.send);
   const ingest = useAction(api.memories.ingestThread);
+
   const [draft, setDraft] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-scroll to bottom whenever messages change.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  // Grow textarea with content.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+  }, [draft]);
 
   if (thread === undefined) {
     return <div className="p-8 text-sm text-muted">Loading…</div>;
@@ -40,10 +66,42 @@ export default function ThreadDetailPage({
   }
 
   async function submit() {
-    if (!draft.trim() || !spaceId) return;
-    await send({ spaceId, threadId: id, role: "user", content: draft.trim() });
+    const content = draft.trim();
+    if (!content || !spaceId || sending) return;
+    setSending(true);
     setDraft("");
+    try {
+      await send({ spaceId, threadId: id, role: "user", content });
+    } catch {
+      // Restore the draft so the user doesn't lose their message.
+      setDraft(content);
+      toast("Failed to send message", "error");
+    } finally {
+      setSending(false);
+    }
   }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit();
+    }
+  }
+
+  async function saveToMemory() {
+    if (!spaceId || saving) return;
+    setSaving(true);
+    try {
+      await ingest({ spaceId, threadId: id });
+      toast("Saved to memory", "success");
+    } catch {
+      toast("Failed to save to memory", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const list = (messages ?? []) as ChatMessage[];
 
   return (
     <div className="flex h-full flex-col">
@@ -57,61 +115,61 @@ export default function ThreadDetailPage({
         <div className="flex-1">
           <p className="font-medium">{thread.title}</p>
         </div>
-        <Button
-          variant="outline"
-          onClick={async () => {
-            if (!spaceId) return;
-            await ingest({ spaceId, threadId: id });
-            setSaved(true);
-            setTimeout(() => setSaved(false), 2000);
-          }}
-        >
-          <Brain className="h-4 w-4" /> {saved ? "Saved" : "Save to memory"}
+        <Button variant="outline" onClick={saveToMemory} disabled={saving}>
+          <Brain className="h-4 w-4" /> {saving ? "Saving…" : "Save to memory"}
         </Button>
         <Badge tone={thread.status === "active" ? "green" : "default"}>
           {thread.status}
         </Badge>
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto p-6">
-        {(messages ?? []).map((m) => (
-          <div
-            key={m._id}
-            className={cn(
-              "flex",
-              m.role === "user" ? "justify-end" : "justify-start",
-            )}
-          >
-            <div
-              className={cn(
-                "max-w-[75%] rounded-2xl px-4 py-2 text-sm",
-                m.role === "user"
-                  ? "bg-accent text-white"
-                  : "border border-border bg-surface",
-              )}
-            >
-              <p className="mb-1 text-[10px] uppercase tracking-wide opacity-60">
-                {m.role}
-              </p>
-              <p className="whitespace-pre-wrap">{m.content}</p>
-            </div>
-          </div>
+      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-6">
+        {list.map((m) => (
+          <MessageBubble key={m._id} message={m} />
         ))}
         {messages?.length === 0 && (
           <p className="text-center text-sm text-muted">No messages yet.</p>
         )}
+        {sending && (
+          <div className="flex justify-start">
+            <div className="rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm text-muted">
+              <span className="inline-flex items-center gap-1">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted" />
+                Sending…
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center gap-2 border-t border-border p-4">
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="Message this agent…"
-        />
-        <Button onClick={submit} disabled={!draft.trim()}>
-          <Send className="h-4 w-4" />
-        </Button>
+      <div className="border-t border-border p-4">
+        <div className="flex items-end gap-2">
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={onKeyDown}
+            rows={1}
+            placeholder="Message this agent…  (Enter to send, Shift+Enter for newline)"
+            className={cn(
+              "w-full resize-none rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent",
+              "max-h-[200px] min-h-[2.5rem]",
+            )}
+          />
+          {sending ? (
+            <Button
+              variant="outline"
+              onClick={() => setSending(false)}
+              title="Stop"
+            >
+              <Square className="h-4 w-4" /> Stop
+            </Button>
+          ) : (
+            <Button onClick={submit} disabled={!draft.trim()}>
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -21,8 +21,10 @@ import {
   Network,
   Plug,
   Plus,
+  Radar,
   Search,
   Settings,
+  ShieldCheck,
   Sparkles,
   Sun,
   Target,
@@ -43,6 +45,7 @@ const SECTIONS: {
     items: [
       { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
       { href: "/dashboard/agents", label: "Agents", icon: Boxes },
+      { href: "/dashboard/mission", label: "Mission control", icon: Radar },
       { href: "/dashboard/threads", label: "Threads", icon: MessagesSquare },
       { href: "/dashboard/network", label: "Agent network", icon: Network },
     ],
@@ -66,6 +69,7 @@ const SECTIONS: {
   {
     title: "Insight",
     items: [
+      { href: "/dashboard/approvals", label: "Approvals", icon: ShieldCheck },
       { href: "/dashboard/history", label: "Work history", icon: History },
       { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
       { href: "/dashboard/reports", label: "Reports", icon: FileText },

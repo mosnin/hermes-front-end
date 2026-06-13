@@ -6,7 +6,8 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Plus, Target } from "lucide-react";
+import { AutoPlanDialog } from "@/components/auto-plan-dialog";
+import { Plus, Sparkles, Target } from "lucide-react";
 
 const goalTone = { active: "green", at_risk: "yellow", done: "blue", archived: "default" } as const;
 
@@ -36,6 +37,8 @@ export default function GoalsPage() {
   const [pName, setPName] = useState("");
   const [pGoal, setPGoal] = useState("");
 
+  const [planOpen, setPlanOpen] = useState(false);
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
@@ -47,6 +50,9 @@ export default function GoalsPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setPlanOpen(true)}>
+            <Sparkles className="h-4 w-4" /> Auto-plan with AI
+          </Button>
           <Button variant="outline" onClick={() => setPOpen(true)}>
             <Plus className="h-4 w-4" /> New project
           </Button>
@@ -172,6 +178,8 @@ export default function GoalsPage() {
           </div>
         </div>
       </Modal>
+
+      <AutoPlanDialog open={planOpen} onClose={() => setPlanOpen(false)} />
     </div>
   );
 }

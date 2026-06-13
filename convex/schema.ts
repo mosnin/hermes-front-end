@@ -515,4 +515,29 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_space", ["spaceId"]),
+
+  // ===========================================================================
+  // Governance: approval requests (human-in-the-loop gates, off by default)
+  // ===========================================================================
+  approvals: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    workflowRunId: v.optional(v.id("workflowRuns")),
+    agentId: v.optional(v.id("agents")),
+    kind: v.string(), // "action" | "spend" | "tool" | "workflow" | ...
+    title: v.string(),
+    detail: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected"),
+    ),
+    requestedBy: v.optional(v.string()),
+    decidedBy: v.optional(v.string()),
+    decidedAt: v.optional(v.number()),
+    payload: v.optional(v.any()),
+    createdAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_space_status", ["spaceId", "status"]),
 });
