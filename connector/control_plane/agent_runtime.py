@@ -24,6 +24,7 @@ import urllib.error
 import urllib.request
 
 from .client import ControlPlaneClient
+from .mcp_client import McpClient, connect_all
 
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-8"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
@@ -85,26 +86,151 @@ def llm_respond(prompt: str, system: str = "") -> str:
         return f"(echo) {prompt}"
 
 
+def _stringify_tool_result(result: dict) -> str:
+    """Render an MCP tools/call result (or error) as readable text.
+
+    MCP results carry a `content` list of {type, text|...} blocks; we pull out
+    the text blocks. Falls back to compact JSON for anything else.
+    """
+    if not isinstance(result, dict):
+        return str(result)
+    if "error" in result:
+        err = result["error"]
+        msg = err.get("message") if isinstance(err, dict) else err
+        return f"error: {msg}"
+    content = result.get("content")
+    if isinstance(content, list):
+        texts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
+        joined = "\n".join(t for t in texts if t)
+        if joined:
+            return joined
+    try:
+        return json.dumps(result, ensure_ascii=False)[:2000]
+    except (TypeError, ValueError):
+        return str(result)
+
+
 class AgentRuntime:
     def __init__(self, client: ControlPlaneClient) -> None:
         self.client = client
         self.system = os.environ.get("HERMES_AGENT_SYSTEM_PROMPT", "")
+        # MCP wiring (populated by _load_mcp on startup; empty if none assigned).
+        self.mcp_clients: dict[str, McpClient] = {}
+        # tool_name -> (McpClient, tool_dict{name, description, inputSchema})
+        self.mcp_tools: dict[str, tuple[McpClient, dict]] = {}
+
+    # -- MCP --------------------------------------------------------------
+    def _load_mcp(self) -> None:
+        """Fetch the MCP servers assigned to this agent and register their tools.
+
+        The control plane exposes a `/connector/mcp` endpoint surfaced as
+        ControlPlaneClient.list_mcp(). That method may not exist yet (older
+        client) — guard with hasattr + try/except so the runtime still works.
+        Returned servers are expected as a list of
+        {name, url, authHeader?, transport?}.
+        """
+        servers: list = []
+        if hasattr(self.client, "list_mcp"):
+            try:
+                servers = self.client.list_mcp() or []
+            except Exception as e:  # noqa: BLE001 — endpoint missing / offline
+                print(f"[runtime] list_mcp failed: {e}")
+                servers = []
+        if not servers:
+            print("[runtime] no MCP servers assigned")
+            return
+        try:
+            self.mcp_clients, self.mcp_tools = connect_all(servers)
+        except Exception as e:  # noqa: BLE001 — never let MCP break startup
+            print(f"[runtime] MCP connect failed: {e}")
+            return
+        if self.mcp_tools:
+            print(f"[runtime] MCP tools available: {', '.join(sorted(self.mcp_tools))}")
+
+    def _mcp_tool_summary(self) -> str:
+        """One-line-per-tool summary for the LLM prompt context."""
+        lines = []
+        for name, (_client, tool) in sorted(self.mcp_tools.items()):
+            desc = (tool.get("description") or "").strip().replace("\n", " ")
+            lines.append(f"- {name}: {desc[:160]}" if desc else f"- {name}")
+        return "\n".join(lines)
+
+    def maybe_use_tools(self, instruction: str) -> str:
+        """v1 heuristic: if a connected MCP tool name appears in the instruction,
+        call it and return a formatted result block to append to the reply.
+
+        This is intentionally naive: we do a substring match of each tool name
+        against the instruction, then best-effort build arguments by mapping the
+        tool's top-level inputSchema property names onto words in the
+        instruction. Returns "" when nothing matched or no tools are connected.
+        Always defensive — never raises.
+        """
+        if not self.mcp_tools or not instruction:
+            return ""
+        text = instruction.lower()
+        blocks: list[str] = []
+        for name, (client, tool) in self.mcp_tools.items():
+            if name.lower() not in text:
+                continue
+            args = self._guess_arguments(tool, instruction)
+            print(f"[runtime] MCP call: {name}({args})")
+            try:
+                result = client.call_tool(name, args)
+            except Exception as e:  # noqa: BLE001 — defensive, call_tool shouldn't raise
+                result = {"error": {"message": str(e)}}
+            blocks.append(f"[tool {name} result]\n{_stringify_tool_result(result)[:1500]}")
+        return ("\n\n".join(blocks)) if blocks else ""
+
+    @staticmethod
+    def _guess_arguments(tool: dict, instruction: str) -> dict:
+        """Best-effort v1 argument extraction from a free-text instruction.
+
+        We look at the tool's JSON-schema properties. If there is a single
+        string-ish property (or a 'query'/'q'/'input'/'text' one), we pass the
+        whole instruction as its value. Otherwise we return {} and let the MCP
+        server apply its own defaults / report a validation error.
+        """
+        schema = tool.get("inputSchema") or {}
+        props = schema.get("properties") if isinstance(schema, dict) else None
+        if not isinstance(props, dict) or not props:
+            return {}
+        for key in ("query", "q", "input", "text", "message", "prompt"):
+            if key in props:
+                return {key: instruction}
+        # Single property: hand it the instruction as a reasonable default.
+        if len(props) == 1:
+            (only_key,) = props.keys()
+            return {only_key: instruction}
+        return {}
 
     def _augment(self, prompt: str) -> str:
-        """Pull relevant Space/company memory (RAG) to ground the response."""
+        """Pull relevant Space/company memory (RAG) to ground the response,
+        and tell the LLM which MCP tools it has at its disposal."""
         try:
             memories = self.client.context_search(prompt, limit=4)
         except Exception:  # noqa: BLE001
             memories = []
-        if not memories:
+        parts: list[str] = []
+        if memories:
+            context = "\n".join(
+                f"- {m.get('title')}: {m.get('content', '')[:300]}" for m in memories
+            )
+            parts.append(f"Relevant context:\n{context}")
+        if self.mcp_tools:
+            parts.append(f"Available tools (via MCP):\n{self._mcp_tool_summary()}")
+        if not parts:
             return prompt
-        context = "\n".join(f"- {m.get('title')}: {m.get('content', '')[:300]}" for m in memories)
-        return f"Relevant context:\n{context}\n\nTask: {prompt}"
+        return "\n\n".join(parts) + f"\n\nTask: {prompt}"
 
     def run(self) -> None:
         caps = ["chat", "workflow", "rag"]
         info = self.client.register(platform_name="runtime", capabilities=caps)
         print(f"[runtime] registered as {info.get('name')} ({info.get('agentId')})")
+
+        # Connect to the MCP servers assigned to this agent (best-effort).
+        self._load_mcp()
+        if self.mcp_tools:
+            caps.append("mcp")
 
         last_heartbeat = 0.0
         while True:
@@ -117,7 +243,13 @@ class AgentRuntime:
             for step in self.client.workflow_inbox():
                 print(f"[runtime] workflow step: {step['name']}")
                 self.client.activity("tool_call", f"thinking: {step['name']}")
-                out = llm_respond(self._augment(step["instruction"]), self.system)
+                instruction = step["instruction"]
+                out = llm_respond(self._augment(instruction), self.system)
+                # v1 heuristic: if the instruction names an MCP tool, call it
+                # and append the result to the step output.
+                tool_out = self.maybe_use_tools(instruction)
+                if tool_out:
+                    out = f"{out}\n\n{tool_out}"
                 self.client.workflow_result(step["runId"], step["stepId"], ok=True, output=out[:4000])
 
             # 2. Reply to inbound A2A messages.
@@ -125,6 +257,9 @@ class AgentRuntime:
                 sender = msg.get("from", {})
                 print(f"[runtime] A2A from {sender.get('name')}: {msg['content'][:60]}")
                 reply = llm_respond(self._augment(msg["content"]), self.system)
+                tool_out = self.maybe_use_tools(msg["content"])
+                if tool_out:
+                    reply = f"{reply}\n\n{tool_out}"
                 try:
                     self.client.a2a_send(to=sender.get("id", ""), content=reply[:4000])
                 except Exception as e:  # noqa: BLE001

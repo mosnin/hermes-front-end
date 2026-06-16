@@ -213,6 +213,35 @@ class ControlPlaneClient:
         resp = self._post("/connector/secrets", {})
         return {s["name"]: s["value"] for s in resp.get("secrets", [])}
 
+    def list_mcp(self) -> list[dict[str, Any]]:
+        """Fetch the MCP servers assigned to this agent (name/url/transport/auth)."""
+        resp = self._post("/connector/mcp", {})
+        return resp.get("servers", [])
+
+    def stream_chunk(
+        self,
+        thread_key: str,
+        stream_id: str,
+        seq: int,
+        text: str,
+        done: bool = False,
+        thread_title: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Stream a buffered chunk of an agent reply for real-time UI rendering.
+        Send a few tokens per call (not per token) to keep cost sane; set
+        done=True on the final chunk to finalize into a permanent message."""
+        return self._post(
+            "/connector/stream",
+            {
+                "threadKey": thread_key,
+                "threadTitle": thread_title,
+                "streamId": stream_id,
+                "seq": seq,
+                "text": text,
+                "done": done,
+            },
+        )
+
     def run_heartbeat_loop(self, interval: float = 30.0) -> None:
         """Block, sending heartbeats forever. Useful as a standalone process."""
         while True:

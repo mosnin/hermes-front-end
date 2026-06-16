@@ -681,4 +681,68 @@ export default defineSchema({
   })
     .index("by_space", ["spaceId"])
     .index("by_space_status", ["spaceId", "status"]),
+
+  // ===========================================================================
+  // MCP servers — existing MCP endpoints agents can use (contact lookup,
+  // AgentMail, MiniChat, Calendly, etc.).
+  // ===========================================================================
+  mcpServers: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    name: v.string(),
+    url: v.string(),
+    transport: v.union(v.literal("sse"), v.literal("http"), v.literal("stdio")),
+    authHeader: v.optional(v.string()),
+    scope: v.union(v.literal("space"), v.literal("agent")),
+    agentId: v.optional(v.id("agents")),
+    status: v.union(
+      v.literal("connected"),
+      v.literal("disconnected"),
+      v.literal("error"),
+    ),
+    tools: v.optional(v.array(v.string())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_agent", ["agentId"]),
+
+  // ===========================================================================
+  // Campaigns — ongoing jobs (the core use case): a standing objective agents
+  // pursue continuously (e.g. outreach), with progress metrics.
+  // ===========================================================================
+  campaigns: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    name: v.string(),
+    objective: v.string(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("paused"),
+      v.literal("completed"),
+    ),
+    agentId: v.optional(v.id("agents")),
+    cadence: v.optional(v.string()),
+    nextRunAt: v.optional(v.number()),
+    metrics: v.optional(v.any()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_due", ["status", "nextRunAt"]),
+
+  // ===========================================================================
+  // Stream chunks — real-time token streaming for agent replies (a buffered
+  // chunk is far cheaper than one DB write per token).
+  // ===========================================================================
+  streamChunks: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    threadId: v.id("threads"),
+    streamId: v.string(),
+    seq: v.number(),
+    text: v.string(),
+    done: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_stream", ["streamId", "seq"]),
 });

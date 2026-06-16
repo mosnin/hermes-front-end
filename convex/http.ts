@@ -596,6 +596,64 @@ http.route({
   }),
 });
 
+// POST /connector/stream — an agent streams buffered chunks of a reply for
+// real-time UI rendering; done=true finalizes into a permanent message.
+http.route({
+  path: "/connector/stream",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (!body.streamId || !body.threadKey) {
+      return json({ error: "streamId and threadKey required" }, 400);
+    }
+    const threadId = await ctx.runMutation(
+      internal.threads.upsertFromConnector,
+      {
+        companyId: agent.companyId,
+        spaceId: agent.spaceId,
+        agentId: agent._id,
+        connectorKey: String(body.threadKey),
+        title: body.threadTitle ?? "Untitled thread",
+      },
+    );
+    await ctx.runMutation(internal.streaming.appendChunk, {
+      companyId: agent.companyId,
+      spaceId: agent.spaceId,
+      threadId,
+      streamId: String(body.streamId),
+      seq: Number(body.seq ?? 0),
+      text: String(body.text ?? ""),
+      done: !!body.done,
+    });
+    if (body.done) {
+      await ctx.runMutation(internal.streaming.finalizeStream, {
+        companyId: agent.companyId,
+        spaceId: agent.spaceId,
+        threadId,
+        streamId: String(body.streamId),
+      });
+    }
+    return json({ ok: true });
+  }),
+});
+
+// POST /connector/mcp — a deployed agent fetches the MCP servers assigned to it.
+http.route({
+  path: "/connector/mcp",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const servers = await ctx.runQuery(internal.mcp.forConnector, {
+      spaceId: agent.spaceId,
+      agentId: agent._id,
+    });
+    return json({ ok: true, servers });
+  }),
+});
+
 // POST /connector/secrets — a deployed agent pulls its Space's secrets to use
 // as credentials (token-authenticated). Values are injected into its env.
 http.route({

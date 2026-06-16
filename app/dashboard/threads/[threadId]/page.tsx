@@ -13,6 +13,7 @@ import {
   MessageBubble,
   type ChatMessage,
 } from "@/components/chat/message-bubble";
+import { Markdown } from "@/components/chat/markdown";
 import { ArrowLeft, Brain, Send, Square } from "lucide-react";
 
 export default function ThreadDetailPage({
@@ -37,6 +38,19 @@ export default function ThreadDetailPage({
   const send = useMutation(api.messages.send);
   const ingest = useAction(api.memories.ingestThread);
 
+  // The most recent non-finalized stream for this thread (null when idle).
+  const activeStreamId = useQuery(
+    api.streaming.activeStream,
+    spaceId ? { spaceId, threadId: id } : "skip",
+  );
+  // Live chunks for the active stream — Convex reactivity pushes new tokens.
+  const streamChunks = useQuery(
+    api.streaming.chunks,
+    spaceId && activeStreamId
+      ? { spaceId, streamId: activeStreamId }
+      : "skip",
+  );
+
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -44,11 +58,11 @@ export default function ThreadDetailPage({
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom whenever messages change.
+  // Auto-scroll to bottom whenever messages change or new stream chunks land.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  }, [messages, streamChunks]);
 
   // Grow textarea with content.
   useEffect(() => {
@@ -103,6 +117,15 @@ export default function ThreadDetailPage({
 
   const list = (messages ?? []) as ChatMessage[];
 
+  // Concatenated text of the in-flight reply. We show the typing bubble while
+  // chunks exist and none has been marked done (the connector sends done on the
+  // final chunk; finalizeStream then deletes the rows and the message lands).
+  const streamText = (streamChunks ?? []).map((c) => c.text).join("");
+  const streaming =
+    !!streamChunks &&
+    streamChunks.length > 0 &&
+    !streamChunks.some((c) => c.done);
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-border p-4">
@@ -127,10 +150,26 @@ export default function ThreadDetailPage({
         {list.map((m) => (
           <MessageBubble key={m._id} message={m} />
         ))}
-        {messages?.length === 0 && (
+        {messages?.length === 0 && !streaming && (
           <p className="text-center text-sm text-muted">No messages yet.</p>
         )}
-        {sending && (
+        {streaming && (
+          <div className="flex justify-start">
+            <div className="max-w-[78%] rounded-2xl border border-border bg-surface px-4 py-2.5 text-foreground">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted">
+                  Assistant
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] text-muted/70">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted" />
+                  typing…
+                </span>
+              </div>
+              {streamText && <Markdown content={streamText} />}
+            </div>
+          </div>
+        )}
+        {sending && !streaming && (
           <div className="flex justify-start">
             <div className="rounded-2xl border border-border bg-surface px-4 py-2.5 text-sm text-muted">
               <span className="inline-flex items-center gap-1">
