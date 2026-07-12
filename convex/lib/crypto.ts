@@ -52,6 +52,29 @@ export function timingSafeEqualHex(a: string, b: string): boolean {
 }
 
 /**
+ * Verify a Stripe webhook signature. Header format:
+ *   Stripe-Signature: t=1700000000,v1=<hex>,v1=<hex-old-key>
+ * Valid when any v1 equals HMAC-SHA256(secret, "{t}.{rawBody}") and the
+ * timestamp is fresh (anti-replay).
+ */
+export async function verifyStripeSignature(
+  secret: string,
+  header: string | null,
+  rawBody: string,
+  nowMs: number = Date.now(),
+): Promise<boolean> {
+  if (!header) return false;
+  const parts = header.split(",").map((p) => p.trim());
+  const t = parts.find((p) => p.startsWith("t="))?.slice(2);
+  const v1s = parts.filter((p) => p.startsWith("v1=")).map((p) => p.slice(3));
+  if (!t || v1s.length === 0) return false;
+  const ts = Number(t);
+  if (!Number.isFinite(ts) || Math.abs(nowMs / 1000 - ts) > 300) return false;
+  const expected = await hmacSha256Hex(secret, `${t}.${rawBody}`);
+  return v1s.some((v) => timingSafeEqualHex(expected, v));
+}
+
+/**
  * Verify a Slack Events API request signature (the real scheme: v0=HMAC-SHA256
  * over "v0:{timestamp}:{rawBody}" with the app's signing secret), rejecting
  * stale timestamps to block replay.

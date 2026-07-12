@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
@@ -51,12 +51,34 @@ export default function BillingPage() {
 
   const usage = useQuery(api.usage.summary, spaceId ? { spaceId } : "skip");
   const current = useQuery(api.billing.plan, spaceId ? { spaceId } : "skip");
+  const entitlements = useQuery(
+    api.billing.entitlements,
+    spaceId ? { spaceId } : "skip",
+  );
   const setPlan = useMutation(api.billing.setPlan);
+  const createCheckout = useAction(api.stripe.createCheckout);
 
   const currentPlan = (current?.plan ?? "free") as PlanId;
 
   const changePlan = async (id: PlanId) => {
     if (!spaceId) return;
+    // Paid tiers go through Stripe checkout when it's configured; the webhook
+    // applies the plan after payment. Falls back to the manual switch (admin)
+    // when Stripe isn't set up, and for downgrades to free.
+    if (id !== "free") {
+      try {
+        const { url } = await createCheckout({ spaceId, plan: id });
+        window.location.href = url;
+        return;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "";
+        if (!msg.includes("not configured")) {
+          toast(msg || "Checkout failed.", "error");
+          return;
+        }
+        // Stripe not configured → manual plan switch below.
+      }
+    }
     try {
       await setPlan({ spaceId, plan: id });
       toast(
@@ -103,6 +125,25 @@ export default function BillingPage() {
         <p className="mt-3 text-sm text-muted">
           {usage?.events ?? 0} usage events recorded this month.
         </p>
+        {entitlements && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {(
+              [
+                ["Agents", entitlements.usage.agents, entitlements.limits.maxAgents],
+                ["Workflows", entitlements.usage.workflows, entitlements.limits.maxWorkflows],
+                ["Bridges", entitlements.usage.bridges, entitlements.limits.maxBridges],
+                ["API keys", entitlements.usage.apiKeys, entitlements.limits.maxApiKeys],
+              ] as const
+            ).map(([label, used, max]) => (
+              <div key={label} className="rounded-lg border border-border p-2 text-sm">
+                <span className="text-muted">{label}</span>
+                <p className="font-semibold">
+                  {used} <span className="font-normal text-muted">/ {max >= 100000 ? "∞" : max}</span>
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="mt-3 space-y-1">
           {usage &&
             Object.entries(usage.byKind).map(([k, val]) => {

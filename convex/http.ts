@@ -1,7 +1,12 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { sha256Hex, verifySlackSignature } from "./lib/crypto";
+import {
+  sha256Hex,
+  verifySlackSignature,
+  verifyStripeSignature,
+} from "./lib/crypto";
+import { planChangeFromEvent } from "./stripe";
 import { Doc, Id } from "./_generated/dataModel";
 import {
   buildAgentCard,
@@ -841,6 +846,42 @@ http.route({
       text: String(body.text),
     });
     return json({ ok: result.ok, detail: result.detail });
+  }),
+});
+
+// POST /billing/stripe/webhook — Stripe events drive plan entitlements.
+// Signature-verified (t/v1 HMAC over "{t}.{rawBody}" with anti-replay);
+// unsigned or stale requests are rejected before any state changes.
+http.route({
+  path: "/billing/stripe/webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!secret) return json({ error: "stripe not configured" }, 501);
+    const rawBody = await request.text().catch(() => "");
+    const ok = await verifyStripeSignature(
+      secret,
+      request.headers.get("Stripe-Signature"),
+      rawBody,
+    );
+    if (!ok) return json({ error: "bad signature" }, 401);
+
+    let event: any = {};
+    try {
+      event = JSON.parse(rawBody);
+    } catch {
+      return json({ error: "bad payload" }, 400);
+    }
+    const change = planChangeFromEvent(event);
+    if (change) {
+      await ctx.runMutation(internal.stripe.applyPlanFromStripe, {
+        spaceId: change.spaceId as Id<"spaces">,
+        plan: change.plan,
+        stripeEvent: String(event.type),
+      });
+    }
+    // Always 200 for recognized-but-ignored events so Stripe stops retrying.
+    return json({ received: true });
   }),
 });
 
