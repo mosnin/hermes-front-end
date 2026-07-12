@@ -7,11 +7,27 @@ import { Badge, Button, Card, EmptyState, StatusDot } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 
+const SLO_LABELS: Record<string, string> = {
+  runSuccess: "Run success ≥95%",
+  messageLoss: "Zero message loss",
+  errorBudget: "Errors ≤50 / 24h",
+  fleetOnline: "Fleet reachable",
+};
+
 export default function OpsPage() {
   const { spaceId } = useActiveSpace();
   const usage = useQuery(api.usage.summary, spaceId ? { spaceId } : "skip");
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
   const alerts = useQuery(api.health.alerts, spaceId ? { spaceId } : "skip");
+  const metrics = useQuery(api.metrics.summary, spaceId ? { spaceId } : "skip");
+  const errors = useQuery(
+    api.observability.listErrors,
+    spaceId ? { spaceId, limit: 10 } : "skip",
+  );
+  const deadLetters = useQuery(
+    api.reliability.listDeadLetters,
+    spaceId ? { spaceId, status: "open" } : "skip",
+  );
 
   const [exporting, setExporting] = useState(false);
   const audit = useQuery(
@@ -51,6 +67,51 @@ export default function OpsPage() {
           ⏸ Autonomy is paused — possibly by the budget guard. Resume in Space
           settings once reviewed.
         </div>
+      )}
+
+      {metrics && (
+        <Card className="mb-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-semibold">Service health (24h)</h2>
+            <Badge tone={metrics.healthy ? "green" : "red"}>
+              {metrics.healthy ? "All SLOs met" : "SLO breach"}
+            </Badge>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {Object.entries(metrics.slo).map(([key, s]) => (
+              <div key={key} className="rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted">{SLO_LABELS[key] ?? key}</span>
+                  <Badge tone={s.ok ? "green" : "red"}>{s.ok ? "ok" : "breach"}</Badge>
+                </div>
+                <p className="mt-1 text-lg font-semibold">
+                  {s.actual === null
+                    ? "—"
+                    : typeof s.actual === "number" && s.actual <= 1 && key !== "errorBudget" && key !== "messageLoss"
+                      ? `${Math.round(s.actual * 100)}%`
+                      : s.actual}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <span className="text-muted">
+              Runs: {metrics.runs.completed}✓ {metrics.runs.failed}✗
+              {metrics.runs.durationP50Ms !== null &&
+                ` · p50 ${(metrics.runs.durationP50Ms / 1000).toFixed(1)}s`}
+            </span>
+            <span className="text-muted">
+              A2A: {metrics.a2a.sent} sent · {metrics.a2a.acked} acked
+              {metrics.a2a.redelivered > 0 && ` · ${metrics.a2a.redelivered} redelivered`}
+            </span>
+            <span className="text-muted">
+              Dead letters: {metrics.deadLetters.open} open
+            </span>
+            <span className="text-muted">
+              Window spend: ${metrics.spend.windowUsd.toFixed(2)}
+            </span>
+          </div>
+        </Card>
       )}
 
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
@@ -121,6 +182,53 @@ export default function OpsPage() {
           </ul>
         )}
       </Card>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <h2 className="mb-3 font-semibold">Error stream</h2>
+          {errors?.length === 0 ? (
+            <EmptyState title="No recent errors" body="Structured failures (with trace ids) appear here." />
+          ) : (
+            <ul className="divide-y divide-border">
+              {(errors ?? []).map((e) => (
+                <li key={e._id} className="py-2">
+                  <div className="flex items-center gap-2">
+                    <Badge tone={e.kind === "guard_violation" ? "yellow" : "red"}>
+                      {e.kind}
+                    </Badge>
+                    <span className="text-xs text-muted">{e.source}</span>
+                    <span className="ml-auto text-xs text-muted">{timeAgo(e.createdAt)}</span>
+                  </div>
+                  <p className="mt-1 truncate text-sm">{e.message}</p>
+                  <p className="text-[10px] text-muted">trace {e.traceId}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <h2 className="mb-3 font-semibold">Dead letters</h2>
+          {deadLetters?.length === 0 ? (
+            <EmptyState
+              title="Nothing dead-lettered"
+              body="Terminal failures land here with enough context to replay."
+            />
+          ) : (
+            <ul className="divide-y divide-border">
+              {(deadLetters ?? []).map((d) => (
+                <li key={d._id} className="py-2">
+                  <div className="flex items-center gap-2">
+                    <Badge tone="red">{d.kind}</Badge>
+                    <span className="ml-auto text-xs text-muted">{timeAgo(d.createdAt)}</span>
+                  </div>
+                  <p className="mt-1 truncate text-sm">{d.error}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
