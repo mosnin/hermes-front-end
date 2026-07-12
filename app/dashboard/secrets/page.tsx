@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -18,19 +18,37 @@ function RevealValue({
   secretId: Id<"secrets">;
 }) {
   const toast = useToast();
-  const revealed = useQuery(api.secrets.reveal, { spaceId, secretId });
-  if (revealed === undefined) {
+  // Reveal is a mutation (not a query) so every exposure lands in the audit
+  // trail — fire it once on mount and hold the value locally.
+  const reveal = useMutation(api.secrets.reveal);
+  const [value, setValue] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    reveal({ spaceId, secretId })
+      .then((r) => {
+        if (!cancelled) setValue(r.value);
+      })
+      .catch(() => {
+        if (!cancelled) toast("Could not reveal secret", "error");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaceId, secretId]);
+
+  if (value === null) {
     return <span className="text-xs text-muted">Revealing…</span>;
   }
   return (
     <div className="flex items-center gap-2">
       <code className="break-all rounded bg-surface-2 px-2 py-1 text-xs">
-        {revealed.value}
+        {value}
       </code>
       <button
         title="Copy value"
         onClick={() => {
-          navigator.clipboard.writeText(revealed.value);
+          navigator.clipboard.writeText(value);
           toast("Copied secret value", "success");
         }}
         className="text-muted hover:text-foreground"

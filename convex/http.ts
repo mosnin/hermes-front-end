@@ -1,7 +1,7 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { sha256Hex } from "./lib/crypto";
+import { sha256Hex, verifySlackSignature } from "./lib/crypto";
 import { Doc, Id } from "./_generated/dataModel";
 import {
   buildAgentCard,
@@ -742,6 +742,13 @@ http.route({
     const secrets = await ctx.runQuery(internal.secrets.getForConnector, {
       spaceId: agent.spaceId,
     });
+    // Every bulk credential access is audit-logged and attributable.
+    await ctx.runMutation(internal.secrets.recordConnectorAccess, {
+      companyId: agent.companyId,
+      spaceId: agent.spaceId,
+      agentId: agent._id,
+      count: secrets.length,
+    });
     return json({ ok: true, secrets });
   }),
 });
@@ -753,7 +760,14 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const url = new URL(request.url);
     const bridgeId = url.pathname.slice("/bridges/slack/".length);
-    const body = (await request.json().catch(() => ({}))) as any;
+    // Raw body first — Slack's HMAC covers the exact bytes on the wire.
+    const rawBody = await request.text().catch(() => "");
+    let body: any = {};
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      // fall through with {}
+    }
 
     // Slack URL verification handshake.
     if (body.type === "url_verification") {
@@ -770,8 +784,21 @@ http.route({
     }
     if (!bridge) return json({ error: "unknown bridge" }, 404);
 
-    const secret = bridge.config?.signingSecret as string | undefined;
-    if (secret && url.searchParams.get("secret") !== secret) {
+    // Real Slack request signing when a signingSecret is configured:
+    // v0=HMAC-SHA256("v0:{ts}:{body}") with timestamp freshness (anti-replay)
+    // and constant-time comparison. Falls back to the shared ?secret= param for
+    // bridges configured with sharedSecret instead.
+    const signingSecret = bridge.config?.signingSecret as string | undefined;
+    const sharedSecret = bridge.config?.sharedSecret as string | undefined;
+    if (signingSecret) {
+      const ok = await verifySlackSignature(
+        signingSecret,
+        request.headers.get("X-Slack-Request-Timestamp"),
+        request.headers.get("X-Slack-Signature"),
+        rawBody,
+      );
+      if (!ok) return json({ error: "bad signature" }, 401);
+    } else if (sharedSecret && url.searchParams.get("secret") !== sharedSecret) {
       return json({ error: "unauthorized" }, 401);
     }
 

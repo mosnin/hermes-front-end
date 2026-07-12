@@ -93,6 +93,50 @@ export const insert = internalMutation({
   },
 });
 
+/**
+ * Rotate an agent's connector token (admin). The old token stops working the
+ * moment this commits; the new one is returned exactly once. Rotate on
+ * compromise, offboarding, or on a schedule.
+ */
+export const rotateToken = action({
+  args: { spaceId: v.id("spaces"), agentId: v.id("agents") },
+  handler: async (ctx, args): Promise<{ token: string }> => {
+    const token = generateToken();
+    const tokenHash = await sha256Hex(token);
+    await ctx.runMutation(internal.agents.applyRotatedToken, {
+      spaceId: args.spaceId,
+      agentId: args.agentId,
+      tokenHash,
+    });
+    return { token };
+  },
+});
+
+export const applyRotatedToken = internalMutation({
+  args: {
+    spaceId: v.id("spaces"),
+    agentId: v.id("agents"),
+    tokenHash: v.string(),
+  },
+  handler: async (ctx, { spaceId, agentId, tokenHash }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "admin");
+    const agent = await ctx.db.get(agentId);
+    if (!agent || agent.spaceId !== spaceId) throw new Error("Not found");
+    await ctx.db.patch(agentId, { tokenHash });
+    await recordWorkEvent(ctx, {
+      companyId: scope.companyId,
+      spaceId,
+      actorType: "user",
+      actorId: scope.userId,
+      agentId,
+      category: "governance",
+      action: "token_rotated",
+      summary: `Rotated connector token for ${agent.name}`,
+    });
+  },
+});
+
 /** Register an external A2A agent by its Agent Card URL (Phase 4 wires calls). */
 export const registerExternal = mutation({
   args: {

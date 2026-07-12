@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation, internalQuery } from "./_generated/server";
+import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { resolveScope, requireRole } from "./lib/auth";
 import { recordWorkEvent } from "./lib/events";
 
@@ -87,15 +87,50 @@ export const remove = mutation({
   },
 });
 
-/** Reveal the raw value of a secret (admin reveal). Admins only. */
-export const reveal = query({
+/**
+ * Reveal the raw value of a secret (admin reveal). Admins only. A mutation —
+ * not a query — precisely so every reveal is written to the audit trail; a
+ * credential exposure with no record is how breaches go unnoticed.
+ */
+export const reveal = mutation({
   args: { spaceId: v.id("spaces"), secretId: v.id("secrets") },
   handler: async (ctx, { spaceId, secretId }) => {
     const scope = await resolveScope(ctx, spaceId);
     requireRole(scope, "admin");
     const row = await ctx.db.get(secretId);
     if (!row || row.spaceId !== spaceId) throw new Error("Not found");
+    await recordWorkEvent(ctx, {
+      companyId: scope.companyId,
+      spaceId,
+      actorType: "user",
+      actorId: scope.userId,
+      category: "governance",
+      action: "secret_revealed",
+      summary: `Revealed secret ${row.name}`,
+    });
     return { value: row.value };
+  },
+});
+
+/** Audit trail for connector env-injection: called by /connector/secrets after
+ * the fetch so every bulk credential access is attributable to an agent. */
+export const recordConnectorAccess = internalMutation({
+  args: {
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    agentId: v.id("agents"),
+    count: v.number(),
+  },
+  handler: async (ctx, { companyId, spaceId, agentId, count }) => {
+    await recordWorkEvent(ctx, {
+      companyId,
+      spaceId,
+      actorType: "agent",
+      agentId,
+      category: "governance",
+      action: "secrets_fetched",
+      summary: `Agent fetched ${count} secret(s) for env injection`,
+    });
   },
 });
 
