@@ -29,6 +29,44 @@ describe("reliability primitives", () => {
     expect(second).toBe(false);
   });
 
+  test("atomic ingestMessage dedupes without double-writing the message", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "u", org_id: "org_idem" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "Idem" });
+    const agent = await owner.action(api.agents.create, { spaceId, name: "A" });
+    const agentId = agent.agentId as Id<"agents">;
+    const companyId = await t.run(async (ctx) => {
+      const s = await ctx.db.get(spaceId as Id<"spaces">);
+      return s!.companyId;
+    });
+
+    const ingest = () =>
+      t.mutation(internal.connector.ingestMessage, {
+        agentId,
+        companyId,
+        spaceId,
+        connectorKey: "thread-1",
+        threadTitle: "T",
+        role: "assistant",
+        content: "hello world",
+        idempotencyKey: "msg-1",
+      });
+
+    const first = await ingest();
+    const second = await ingest();
+    expect(first.deduped).toBe(false);
+    expect(second.deduped).toBe(true);
+
+    // Exactly one message persisted despite two ingest calls.
+    const msgs = await t.run(async (ctx) =>
+      ctx.db
+        .query("messages")
+        .withIndex("by_space", (q) => q.eq("spaceId", spaceId as Id<"spaces">))
+        .collect(),
+    );
+    expect(msgs.length).toBe(1);
+  });
+
   test("dead-letters are listed and can be dismissed", async () => {
     const t = convexTest(schema, modules);
     const owner = t.withIdentity({ subject: "user_owner", org_id: "org_rel2" });

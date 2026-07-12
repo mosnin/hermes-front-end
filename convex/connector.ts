@@ -14,6 +14,94 @@ export const markIfFirst = internalMutation({
   handler: async (ctx, { agentId, key }) => firstSeen(ctx, agentId, key),
 });
 
+const MSG_ROLE = v.union(
+  v.literal("user"),
+  v.literal("assistant"),
+  v.literal("system"),
+  v.literal("tool"),
+);
+
+/**
+ * Atomically ingest a connector message: idempotency check + thread upsert +
+ * message insert + activity, all in ONE transaction. This is the correct home
+ * for the idempotency key — recording it in a separate mutation before the
+ * write (the earlier design) meant a failure after the key committed would drop
+ * the message permanently while the client saw success. Here, if anything
+ * throws the whole transaction (key included) rolls back, so a retry
+ * re-processes cleanly and a true duplicate is dropped.
+ */
+export const ingestMessage = internalMutation({
+  args: {
+    agentId: v.id("agents"),
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    connectorKey: v.string(),
+    threadTitle: v.string(),
+    role: MSG_ROLE,
+    content: v.string(),
+    toolCalls: v.optional(v.any()),
+    idempotencyKey: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const first = await firstSeen(ctx, args.agentId, args.idempotencyKey);
+    if (!first) return { deduped: true, threadId: null };
+
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("threads")
+      .withIndex("by_connector_key", (q) =>
+        q.eq("agentId", args.agentId).eq("connectorKey", args.connectorKey),
+      )
+      .unique();
+    let threadId;
+    if (existing) {
+      threadId = existing._id;
+      await ctx.db.patch(threadId, {
+        lastMessageAt: now,
+        messageCount: (existing.messageCount ?? 0) + 1,
+      });
+    } else {
+      threadId = await ctx.db.insert("threads", {
+        companyId: args.companyId,
+        spaceId: args.spaceId,
+        agentId: args.agentId,
+        connectorKey: args.connectorKey,
+        title: args.threadTitle,
+        status: "active",
+        messageCount: 1,
+        createdAt: now,
+        lastMessageAt: now,
+      });
+    }
+
+    await ctx.db.insert("messages", {
+      companyId: args.companyId,
+      spaceId: args.spaceId,
+      threadId,
+      agentId: args.agentId,
+      role: args.role,
+      content: args.content,
+      toolCalls: args.toolCalls,
+      createdAt: now,
+    });
+
+    const detail =
+      args.content.slice(0, 140) + (args.content.length > 140 ? "…" : "");
+    await ctx.db.insert("activity", {
+      companyId: args.companyId,
+      spaceId: args.spaceId,
+      agentId: args.agentId,
+      threadId,
+      type: "message",
+      title: `${args.role} message`,
+      detail,
+      createdAt: now,
+    });
+
+    return { deduped: false, threadId };
+  },
+});
+
 /**
  * Combined work pull for the real-time long-poll transport.
  *

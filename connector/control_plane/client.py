@@ -239,8 +239,17 @@ class ControlPlaneClient:
         req.add_header("Authorization", f"Bearer {self.token}")
         try:
             resp = urllib.request.urlopen(req, timeout=max_seconds + 10)
-        except (urllib.error.HTTPError, urllib.error.URLError):
-            return False
+        except urllib.error.HTTPError as e:
+            # Only a definitive "not found / not allowed" means the deployment
+            # doesn't support the endpoint → fall back to polling. Any other HTTP
+            # status is transient; re-raise so the caller retries the stream
+            # instead of permanently downgrading on a blip.
+            if e.code in (404, 405):
+                return False
+            raise
+        except urllib.error.URLError:
+            # Transient network error (DNS, reset, timeout) — retry the stream.
+            raise
         with resp:
             for raw in resp:
                 line = raw.decode("utf-8", "replace").strip()

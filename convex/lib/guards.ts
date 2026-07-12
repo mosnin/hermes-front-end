@@ -41,7 +41,8 @@ export async function assertWithinDailyBudget(
   ctx: MutationCtx,
   scope: Scope,
 ): Promise<void> {
-  const budget = guards(scope).dailyMessageBudget;
+  const budget =
+    guards(scope).dailyMessageBudget ?? DEFAULT_GUARD_CONFIG.dailyMessageBudget;
   const { count } = await readCounter(
     ctx,
     scope.spaceId,
@@ -68,7 +69,8 @@ export async function assertNotLooping(
   toAgentId: Id<"agents">,
   content: string,
 ): Promise<void> {
-  const maxRepeats = guards(scope).maxLoopRepeats;
+  const maxRepeats =
+    guards(scope).maxLoopRepeats ?? DEFAULT_GUARD_CONFIG.maxLoopRepeats;
   const key = loopHash(fromAgentId, toAgentId, content);
   const { count } = await readCounter(
     ctx,

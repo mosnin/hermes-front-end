@@ -126,46 +126,24 @@ http.route({
     if (!body.threadKey || !body.content) {
       return json({ error: "threadKey and content required" }, 400);
     }
-    // Dedupe retried ingestion when the connector supplies an Idempotency-Key.
-    const idemKey = request.headers.get("Idempotency-Key") ?? undefined;
-    if (idemKey) {
-      const first = await ctx.runMutation(internal.connector.markIfFirst, {
-        agentId: agent._id,
-        key: idemKey,
-      });
-      if (!first) return json({ ok: true, deduped: true });
-    }
-    const threadId = await ctx.runMutation(
-      internal.threads.upsertFromConnector,
-      {
-        companyId: agent.companyId,
-        spaceId: agent.spaceId,
-        agentId: agent._id,
-        connectorKey: String(body.threadKey),
-        title: body.threadTitle ?? "Untitled thread",
-      },
-    );
-    await ctx.runMutation(internal.messages.appendFromConnector, {
+    // One atomic mutation: idempotency + thread upsert + message + activity, so
+    // a retried request can never leave the key committed without the message.
+    const role = ["user", "assistant", "system", "tool"].includes(body.role)
+      ? body.role
+      : "assistant";
+    const result = await ctx.runMutation(internal.connector.ingestMessage, {
+      agentId: agent._id,
       companyId: agent.companyId,
       spaceId: agent.spaceId,
-      threadId,
-      agentId: agent._id,
-      role: body.role ?? "assistant",
+      connectorKey: String(body.threadKey),
+      threadTitle: body.threadTitle ?? "Untitled thread",
+      role,
       content: String(body.content),
       toolCalls: body.toolCalls,
+      idempotencyKey: request.headers.get("Idempotency-Key") ?? undefined,
     });
-    await ctx.runMutation(internal.activity.append, {
-      companyId: agent.companyId,
-      spaceId: agent.spaceId,
-      agentId: agent._id,
-      threadId,
-      type: "message",
-      title: `${body.role ?? "assistant"} message`,
-      detail:
-        String(body.content).slice(0, 140) +
-        (String(body.content).length > 140 ? "…" : ""),
-    });
-    return json({ ok: true, threadId });
+    if (result.deduped) return json({ ok: true, deduped: true });
+    return json({ ok: true, threadId: result.threadId });
   }),
 });
 
