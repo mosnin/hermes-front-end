@@ -775,6 +775,26 @@ export default defineSchema({
     .index("by_space_time", ["spaceId", "createdAt"]),
 
   // ===========================================================================
+  // Structured error capture — every autonomous failure lands here with a trace
+  // id so operators have real observability (not just an activity feed). Indexed
+  // by space+time for the Ops error stream and by trace id to correlate a single
+  // request across the connector → HTTP → workflow hops.
+  // ===========================================================================
+  errors: defineTable({
+    companyId: v.string(),
+    spaceId: v.optional(v.id("spaces")),
+    traceId: v.string(),
+    source: v.string(), // "a2a" | "connector" | "workflow" | "bridge" | ...
+    agentId: v.optional(v.id("agents")),
+    kind: v.string(), // "guard_violation" | "exception" | "delivery_failed"
+    message: v.string(),
+    detail: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_space_time", ["spaceId", "createdAt"])
+    .index("by_trace", ["traceId"]),
+
+  // ===========================================================================
   // Idempotency keys — dedupe retried connector ingestion (a network blip after
   // the server already processed a POST must not double-write). One row per
   // (agent, key); handlers check-and-set before acting.

@@ -15,6 +15,7 @@ import {
   buildOutboundRequest,
   interpretOutboundResponse,
 } from "./lib/channels";
+import { assertFeature, assertWithinPlanCount } from "./lib/plans";
 
 /** List chat bridges for a Space (newest first). */
 export const list = query({
@@ -41,6 +42,8 @@ export const connect = mutation({
   handler: async (ctx, { spaceId, type, name, agentId, config }) => {
     const scope = await resolveScope(ctx, spaceId);
     requireRole(scope, "admin");
+    assertFeature(scope, "bridges");
+    await assertWithinPlanCount(ctx, scope, "bridges", "maxBridges");
     const now = Date.now();
     const bridgeId = await ctx.db.insert("bridges", {
       companyId: scope.companyId,

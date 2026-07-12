@@ -10,6 +10,7 @@ import { internal } from "./_generated/api";
 import { resolveScope, requireRole } from "./lib/auth";
 import { recordWorkEvent } from "./lib/events";
 import { generateToken, sha256Hex } from "./lib/crypto";
+import { assertWithinPlanCount } from "./lib/plans";
 
 export const list = query({
   args: { spaceId: v.id("spaces") },
@@ -68,6 +69,7 @@ export const insert = internalMutation({
   handler: async (ctx, { spaceId, tokenHash, ...rest }) => {
     const scope = await resolveScope(ctx, spaceId);
     requireRole(scope, "operator");
+    await assertWithinPlanCount(ctx, scope, "agents", "maxAgents");
     const agentId = await ctx.db.insert("agents", {
       companyId: scope.companyId,
       spaceId,
@@ -102,6 +104,7 @@ export const registerExternal = mutation({
   handler: async (ctx, { spaceId, name, cardUrl, capabilities }) => {
     const scope = await resolveScope(ctx, spaceId);
     requireRole(scope, "operator");
+    await assertWithinPlanCount(ctx, scope, "agents", "maxAgents");
     return await ctx.db.insert("agents", {
       companyId: scope.companyId,
       spaceId,

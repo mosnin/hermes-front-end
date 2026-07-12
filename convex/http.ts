@@ -212,6 +212,17 @@ http.route({
       });
       return json({ ok: true, messageId, to: target._id });
     } catch (e) {
+      // Capture in a separate transaction — the failed mutation rolled back, so
+      // the record must be written here at the (non-transactional) gateway.
+      const msg = e instanceof Error ? e.message : String(e);
+      await ctx.runMutation(internal.observability.capture, {
+        companyId: agent.companyId,
+        spaceId: agent.spaceId,
+        source: "a2a",
+        agentId: agent._id,
+        kind: msg.includes("GuardViolation") ? "guard_violation" : "exception",
+        message: msg,
+      });
       return errorResponse(e);
     }
   }),

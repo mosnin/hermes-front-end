@@ -10,6 +10,7 @@ import { Doc, Id } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
 import { assertAutonomyActive, assertWithinBudget, GuardViolation } from "./lib/guards";
 import { recordWorkEvent, recordNotification } from "./lib/events";
+import { assertWithinPlanCount } from "./lib/plans";
 import { DEFAULT_GUARD_CONFIG } from "./schema";
 
 const STEP = v.object({
@@ -56,6 +57,7 @@ export const create = mutation({
   handler: async (ctx, { spaceId, name, description, steps, requiresApproval }) => {
     const scope = await resolveScope(ctx, spaceId);
     requireRole(scope, "operator");
+    await assertWithinPlanCount(ctx, scope, "workflows", "maxWorkflows");
     const now = Date.now();
     return await ctx.db.insert("workflows", {
       companyId: scope.companyId,

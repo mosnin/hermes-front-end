@@ -102,6 +102,9 @@ export const send = mutation({
     const to = await ctx.db.get(toAgentId);
     if (!from || from.spaceId !== spaceId) throw new Error("Sender not found");
     if (!to || to.spaceId !== spaceId) throw new Error("Recipient not found");
+    // NB: error capture for a thrown guard happens at the gateway (httpAction),
+    // not here — a mutation that throws rolls back all its writes, so recording
+    // inside this transaction would vanish with it.
     await runGuards(ctx, scope, fromAgentId, toAgentId, content);
     return await route(ctx, { scope, from, to, content, kind: kind ?? "message" });
   },

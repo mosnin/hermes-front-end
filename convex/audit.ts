@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { resolveScope, requireRole } from "./lib/auth";
+import { assertFeature } from "./lib/plans";
 
 /** Export the immutable work record for a Space (admin+) — JSON download. */
 export const export_ = query({
@@ -8,6 +9,7 @@ export const export_ = query({
   handler: async (ctx, { spaceId, sinceDays }) => {
     const scope = await resolveScope(ctx, spaceId);
     requireRole(scope, "admin");
+    assertFeature(scope, "audit_export"); // enterprise entitlement
     const since = Date.now() - (sinceDays ?? 30) * 86_400_000;
     const rows = await ctx.db
       .query("workEvents")
