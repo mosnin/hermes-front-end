@@ -20,4 +20,8 @@ crons.daily(
   {},
 );
 
+// Sweep expired aggregate counters (minute/day/loop buckets) hourly so the
+// counters table stays bounded regardless of message volume.
+crons.interval("counter sweep", { hours: 1 }, internal.maintenance.sweepCounters, {});
+
 export default crons;

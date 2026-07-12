@@ -745,4 +745,27 @@ export default defineSchema({
     done: v.boolean(),
     createdAt: v.number(),
   }).index("by_stream", ["streamId", "seq"]),
+
+  // ===========================================================================
+  // Aggregate counters — O(1) rolling-window accounting so metering & guards
+  // never scan unbounded history (the old .collect() approach was O(n²) within
+  // a window). One row per (space, scope, bucket), patched in place:
+  //   scope "usage"    bucket "<YYYY-MM>"  → monthly spend accumulator (valueUsd)
+  //   scope "a2a:min"  bucket "<epochMin>" → messages sent this minute (rate)
+  //   scope "a2a:day"  bucket "<epochDay>" → messages sent today (daily budget)
+  //   scope "loop"     bucket "<hash>:<min>" → identical from→to→content repeats
+  // Buckets age out naturally (never read once their window passes) and are
+  // swept by the "counter sweep" cron.
+  // ===========================================================================
+  counters: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    scope: v.string(),
+    bucket: v.string(),
+    count: v.number(),
+    valueUsd: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_space_scope_bucket", ["spaceId", "scope", "bucket"])
+    .index("by_updated", ["updatedAt"]),
 });

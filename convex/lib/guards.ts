@@ -2,6 +2,14 @@ import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import { Scope } from "./auth";
 import { DEFAULT_GUARD_CONFIG } from "../schema";
+import {
+  bumpCounter,
+  readCounter,
+  monthBucket,
+  minuteBucket,
+  dayBucket,
+  loopHash,
+} from "./counters";
 
 /**
  * Guard violations are thrown with this prefix so callers (and the connector
@@ -25,21 +33,22 @@ export function assertAutonomyActive(scope: Scope): void {
   }
 }
 
-/** Daily message/A2A budget — protects against runaway spend and chatter. */
+/**
+ * Daily message/A2A budget — protects against runaway spend and chatter.
+ * Reads an O(1) per-day counter instead of scanning 24h of messages.
+ */
 export async function assertWithinDailyBudget(
   ctx: MutationCtx,
   scope: Scope,
 ): Promise<void> {
   const budget = guards(scope).dailyMessageBudget;
-  const since = Date.now() - 24 * 60 * 60 * 1000;
-  // Count A2A messages in the Space over the last 24h (indexed scan, bounded).
-  const recent = await ctx.db
-    .query("a2aMessages")
-    .withIndex("by_space_time", (q) =>
-      q.eq("spaceId", scope.spaceId).gte("createdAt", since),
-    )
-    .collect();
-  if (recent.length >= budget) {
+  const { count } = await readCounter(
+    ctx,
+    scope.spaceId,
+    "a2a:day",
+    dayBucket(),
+  );
+  if (count >= budget) {
     throw new GuardViolation(
       `daily message budget reached (${budget}); autonomy throttled`,
     );
@@ -48,7 +57,9 @@ export async function assertWithinDailyBudget(
 
 /**
  * Loop detection — if the same sender→recipient pair has repeated effectively
- * identical messages within a short window, we're in a runaway loop.
+ * identical messages within a short window, we're in a runaway loop. Uses an
+ * O(1) counter keyed by a hash of (from, to, normalized-content) in the current
+ * minute bucket instead of scanning and filtering every recent message.
  */
 export async function assertNotLooping(
   ctx: MutationCtx,
@@ -58,23 +69,16 @@ export async function assertNotLooping(
   content: string,
 ): Promise<void> {
   const maxRepeats = guards(scope).maxLoopRepeats;
-  const since = Date.now() - 60 * 1000; // 1 minute window
-  const recent = await ctx.db
-    .query("a2aMessages")
-    .withIndex("by_space_time", (q) =>
-      q.eq("spaceId", scope.spaceId).gte("createdAt", since),
-    )
-    .collect();
-  const norm = content.trim().toLowerCase().slice(0, 200);
-  const repeats = recent.filter(
-    (m) =>
-      m.fromAgentId === fromAgentId &&
-      m.toAgentId === toAgentId &&
-      m.content.trim().toLowerCase().slice(0, 200) === norm,
-  ).length;
-  if (repeats >= maxRepeats) {
+  const key = loopHash(fromAgentId, toAgentId, content);
+  const { count } = await readCounter(
+    ctx,
+    scope.spaceId,
+    "loop",
+    `${key}:${minuteBucket()}`,
+  );
+  if (count >= maxRepeats) {
     throw new GuardViolation(
-      `loop detected: identical message repeated ${repeats}x in 60s`,
+      `loop detected: identical message repeated ${count}x in ~60s`,
     );
   }
 }
@@ -96,41 +100,67 @@ export function assertRunWithinLimits(
   }
 }
 
-/** Rate limit: cap autonomous messages per minute to prevent bursts. */
+/**
+ * Rate limit: cap autonomous messages per minute to prevent bursts.
+ * O(1) fixed-window counter read.
+ */
 export async function assertRateLimit(
   ctx: MutationCtx,
   scope: Scope,
 ): Promise<void> {
   const perMinute = guards(scope).maxMessagesPerMinute ?? 120;
-  const since = Date.now() - 60_000;
-  const recent = await ctx.db
-    .query("a2aMessages")
-    .withIndex("by_space_time", (q) =>
-      q.eq("spaceId", scope.spaceId).gte("createdAt", since),
-    )
-    .collect();
-  if (recent.length >= perMinute) {
+  const { count } = await readCounter(
+    ctx,
+    scope.spaceId,
+    "a2a:min",
+    minuteBucket(),
+  );
+  if (count >= perMinute) {
     throw new GuardViolation(`rate limit: ${perMinute} messages/minute`);
   }
 }
 
-/** Monthly spend budget: block (and pause) when exceeded. */
+/**
+ * Monthly spend budget: block (and pause) when exceeded. Reads the same O(1)
+ * month accumulator that recordUsage maintains (scope "usage").
+ */
 export async function assertWithinBudget(
   ctx: MutationCtx,
   scope: Scope,
 ): Promise<void> {
   const budget = guards(scope).monthlyBudgetUsd ?? 0;
   if (budget <= 0) return;
-  const d = new Date();
-  const since = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
-  const rows = await ctx.db
-    .query("usage")
-    .withIndex("by_space_time", (q) =>
-      q.eq("spaceId", scope.spaceId).gte("createdAt", since),
-    )
-    .collect();
-  const total = rows.reduce((s, u) => s + (u.costUsd ?? 0), 0);
-  if (total >= budget) {
+  const { valueUsd } = await readCounter(
+    ctx,
+    scope.spaceId,
+    "usage",
+    monthBucket(),
+  );
+  if (valueUsd >= budget) {
     throw new GuardViolation(`monthly budget of $${budget} reached`);
   }
+}
+
+/**
+ * Record that an A2A message was sent — bumps the per-minute (rate), per-day
+ * (daily budget), and loop-detection counters in O(1). Call this in the send
+ * path right after the message row is written, so the guards above see it on
+ * the next attempt. `usage`/spend is handled separately by recordUsage.
+ */
+export async function recordA2ASend(
+  ctx: MutationCtx,
+  scope: Scope,
+  fromAgentId: Id<"agents">,
+  toAgentId: Id<"agents">,
+  content: string,
+): Promise<void> {
+  const base = { companyId: scope.companyId, spaceId: scope.spaceId };
+  await bumpCounter(ctx, { ...base, scope: "a2a:min", bucket: minuteBucket() });
+  await bumpCounter(ctx, { ...base, scope: "a2a:day", bucket: dayBucket() });
+  const key = loopHash(fromAgentId, toAgentId, content);
+  await bumpCounter(ctx, {
+    ...base,
+    scope: "loop",
+    bucket: `${key}:${minuteBucket()}`,
+  });
 }

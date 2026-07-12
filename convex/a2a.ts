@@ -15,6 +15,7 @@ import {
   assertNotLooping,
   assertRateLimit,
   assertWithinBudget,
+  recordA2ASend,
   GuardViolation,
 } from "./lib/guards";
 import { recordWorkEvent } from "./lib/events";
@@ -233,6 +234,9 @@ async function route(
     agentId: from._id,
     kind: "message",
   });
+
+  // O(1) counters that back the rate/daily/loop guards on the next send.
+  await recordA2ASend(ctx, scope, from._id, to._id, content);
 
   // If the recipient is an external A2A agent, actually call it over the
   // protocol (the internal queue/inbox only serves our own Hermes agents).
