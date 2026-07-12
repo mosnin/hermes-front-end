@@ -280,17 +280,27 @@ export default defineSchema({
     ),
     content: v.string(),
     payload: v.optional(v.any()),
+    // Delivery lifecycle (at-least-once): queued → delivered (claimed by the
+    // transport) → acked (recipient confirmed processing). A delivered-but-
+    // unacked message is requeued by the redelivery sweep; after too many
+    // attempts it's marked expired and dead-lettered. "read" is kept for
+    // backward compatibility with older rows.
     status: v.union(
       v.literal("queued"),
       v.literal("delivered"),
+      v.literal("acked"),
       v.literal("read"),
+      v.literal("expired"),
     ),
     createdAt: v.number(),
     deliveredAt: v.optional(v.number()),
+    ackedAt: v.optional(v.number()),
+    redeliveries: v.optional(v.number()),
   })
     .index("by_space", ["spaceId"])
     .index("by_space_time", ["spaceId", "createdAt"])
     .index("by_recipient_status", ["toAgentId", "status"])
+    .index("by_status_delivered", ["status", "deliveredAt"])
     .index("by_thread", ["threadId"]),
 
   workflows: defineTable({

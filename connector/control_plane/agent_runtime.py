@@ -332,19 +332,30 @@ class AgentRuntime:
         except Exception as e:  # noqa: BLE001
             print(f"[runtime] reply failed: {e}")
 
+    def _handle_messages(self, messages: list) -> None:
+        """Process inbound A2A messages, acking each one only AFTER it was
+        handled — so a crash mid-processing leaves it unacked and the server
+        redelivers (at-least-once)."""
+        for msg in messages:
+            self._handle_message(msg)
+            msg_id = msg.get("id")
+            if msg_id:
+                try:
+                    self.client.a2a_ack([msg_id])
+                except Exception as e:  # noqa: BLE001 — server will redeliver
+                    print(f"[runtime] ack failed (will be redelivered): {e}")
+
     def _dispatch(self, payload: dict) -> None:
         """Handle a pushed {steps, messages} batch from the work stream."""
         for step in payload.get("steps", []):
             self._handle_step(step)
-        for msg in payload.get("messages", []):
-            self._handle_message(msg)
+        self._handle_messages(payload.get("messages", []))
 
     def _poll_once(self) -> None:
         """Legacy fallback: one round of pull-by-polling (older deployments)."""
         for step in self.client.workflow_inbox():
             self._handle_step(step)
-        for msg in self.client.a2a_inbox():
-            self._handle_message(msg)
+        self._handle_messages(self.client.a2a_inbox())
 
     def run(self) -> None:
         caps = ["chat", "workflow", "rag"]

@@ -350,6 +350,76 @@ export const pullInbox = internalMutation({
   handler: async (ctx, { agentId, limit }) => pullInboxFor(ctx, agentId, limit),
 });
 
+/**
+ * Recipient confirms it processed messages (at-least-once delivery). Only the
+ * addressee can ack, and only delivered messages transition — so a hostile or
+ * confused connector can't ack someone else's queue.
+ */
+export const ackMessages = internalMutation({
+  args: { agentId: v.id("agents"), ids: v.array(v.id("a2aMessages")) },
+  handler: async (ctx, { agentId, ids }) => {
+    let acked = 0;
+    const now = Date.now();
+    for (const id of ids.slice(0, 100)) {
+      const m = await ctx.db.get(id);
+      if (m && m.toAgentId === agentId && m.status === "delivered") {
+        await ctx.db.patch(id, { status: "acked", ackedAt: now });
+        acked++;
+      }
+    }
+    return { acked };
+  },
+});
+
+const REDELIVERY_WINDOW_MS = 2 * 60 * 1000; // unacked after 2m → requeue
+const MAX_REDELIVERIES = 5;
+
+/**
+ * Redelivery sweep (cron): a message claimed by the transport but never acked
+ * (dropped connection, crashed handler) goes back to "queued" so the next pull
+ * sees it again. After MAX_REDELIVERIES it's expired + dead-lettered instead of
+ * looping forever. Bounded by .take() so the sweep is O(batch).
+ */
+export const redeliverUnacked = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - REDELIVERY_WINDOW_MS;
+    const stale = await ctx.db
+      .query("a2aMessages")
+      .withIndex("by_status_delivered", (q) =>
+        q.eq("status", "delivered").lt("deliveredAt", cutoff),
+      )
+      .take(100);
+    let requeued = 0;
+    let expired = 0;
+    for (const m of stale) {
+      const tries = (m.redeliveries ?? 0) + 1;
+      if (tries > MAX_REDELIVERIES) {
+        await ctx.db.patch(m._id, { status: "expired" });
+        await ctx.db.insert("deadLetters", {
+          companyId: m.companyId,
+          spaceId: m.spaceId,
+          kind: "a2a_message",
+          agentId: m.toAgentId,
+          error: `A2A message never acked after ${MAX_REDELIVERIES} redeliveries`,
+          attempts: MAX_REDELIVERIES,
+          payload: { content: m.content.slice(0, 500), from: m.fromAgentId },
+          status: "open",
+          createdAt: Date.now(),
+        });
+        expired++;
+      } else {
+        await ctx.db.patch(m._id, {
+          status: "queued",
+          redeliveries: tries,
+        });
+        requeued++;
+      }
+    }
+    return { scanned: stale.length, requeued, expired };
+  },
+});
+
 export const directoryForSpace = internalQuery({
   args: { spaceId: v.id("spaces") },
   handler: async (ctx, { spaceId }) => {

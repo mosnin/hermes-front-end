@@ -221,6 +221,26 @@ http.route({
   }),
 });
 
+// POST /a2a/ack — recipient confirms it processed inbox messages. Body:
+// { ids: [...] }. Unacked deliveries are requeued by the redelivery sweep, so
+// acking is what makes delivery at-least-once instead of at-most-once.
+http.route({
+  path: "/a2a/ack",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    const ids = Array.isArray(body.ids) ? body.ids : [];
+    if (!ids.length) return json({ error: "ids required" }, 400);
+    const res = await ctx.runMutation(internal.a2a.ackMessages, {
+      agentId: agent._id,
+      ids,
+    });
+    return json({ ok: true, ...res });
+  }),
+});
+
 // --- workflow engine (connector executes dispatched steps) ------------------
 
 // POST /workflow/inbox — claim steps dispatched to this agent.

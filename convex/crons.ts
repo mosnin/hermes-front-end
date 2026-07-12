@@ -28,4 +28,8 @@ crons.interval("counter sweep", { hours: 1 }, internal.maintenance.sweepCounters
 // ceiling (broken scheduler chain, agent that never reported).
 crons.interval("stuck run sweep", { hours: 1 }, internal.engine.sweepStuckRuns, {});
 
+// Requeue delivered-but-unacked A2A messages (at-least-once delivery); expire
+// + dead-letter after too many redeliveries.
+crons.interval("a2a redelivery", { minutes: 1 }, internal.a2a.redeliverUnacked, {});
+
 export default crons;

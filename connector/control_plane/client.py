@@ -148,6 +148,14 @@ class ControlPlaneClient:
         resp = self._post("/a2a/inbox", {"limit": limit})
         return resp.get("messages", [])
 
+    def a2a_ack(self, ids: list[str]) -> dict[str, Any]:
+        """Confirm messages were processed. Without an ack, a delivered message
+        is requeued by the server after ~2 minutes (at-least-once delivery) —
+        ack AFTER handling, so a crash mid-handling triggers redelivery."""
+        if not ids:
+            return {"ok": True, "acked": 0}
+        return self._post("/a2a/ack", {"ids": ids})
+
     # -- Workflow engine ---------------------------------------------------
     def workflow_inbox(self) -> list[dict[str, Any]]:
         """Claim workflow steps dispatched to this agent (marks them running)."""
