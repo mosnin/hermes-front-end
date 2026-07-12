@@ -5,6 +5,12 @@ import { ToastProvider } from "@/components/toast";
 import { DialogProvider } from "@/components/dialog";
 import { CommandPalette } from "@/components/command-palette";
 
+// The dashboard is authenticated and entirely client-driven (Clerk + Convex
+// live queries). It must never be statically prerendered at build time — doing
+// so requires build-time auth secrets and produces nothing useful. Force every
+// dashboard route to render dynamically at request time.
+export const dynamic = "force-dynamic";
+
 export default function DashboardLayout({
   children,
 }: {
