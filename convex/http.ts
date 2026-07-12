@@ -634,13 +634,15 @@ http.route({
     const enc = new TextEncoder();
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const deadline = Date.now() + 25_000;
-    const FAST_MS = 1000; // tick rate right after work arrives
+    const BURST_MS = 250; // immediately after delivering work (drain bursts)
+    const FAST_MS = 1000; // baseline tick
     const IDLE_MAX_MS = 3000; // slowest idle tick (adaptive backoff)
 
     const stream = new ReadableStream({
       async start(controller) {
         controller.enqueue(enc.encode(": connected\n\n"));
         let idleTicks = 0;
+        let burst = false;
         try {
           while (Date.now() < deadline) {
             const { steps, messages } = await ctx.runMutation(
@@ -649,16 +651,20 @@ http.route({
             );
             if (steps.length || messages.length) {
               idleTicks = 0;
+              burst = true; // more may be right behind — drain at burst speed
               controller.enqueue(
                 enc.encode(`data: ${JSON.stringify({ steps, messages })}\n\n`),
               );
             } else {
+              burst = false;
               idleTicks++;
               controller.enqueue(enc.encode(": ping\n\n"));
             }
-            // Adaptive: fast while busy, backing off toward IDLE_MAX_MS when
-            // there's been nothing to do, to keep idle agents cheap.
-            const wait = Math.min(FAST_MS + idleTicks * 500, IDLE_MAX_MS);
+            // Adaptive: burst-drain right after activity, baseline while warm,
+            // backing off toward IDLE_MAX_MS when idle to keep agents cheap.
+            const wait = burst
+              ? BURST_MS
+              : Math.min(FAST_MS + idleTicks * 500, IDLE_MAX_MS);
             await sleep(wait);
           }
         } catch {

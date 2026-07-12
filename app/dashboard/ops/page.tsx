@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useQuery } from "convex/react";
+import { useState } from "react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, StatusDot } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
@@ -30,23 +30,30 @@ export default function OpsPage() {
   );
 
   const [exporting, setExporting] = useState(false);
-  const audit = useQuery(
-    api.audit.export_,
-    exporting && spaceId ? { spaceId, sinceDays: 30 } : "skip",
-  );
+  const exportSigned = useAction(api.audit.exportSigned);
 
-  useEffect(() => {
-    if (exporting && audit) {
-      const blob = new Blob([JSON.stringify(audit, null, 2)], { type: "application/json" });
+  const downloadAudit = async () => {
+    if (!spaceId || exporting) return;
+    setExporting(true);
+    try {
+      // Tamper-evident export: hash-chained entries + chain head. Record the
+      // head out-of-band to prove the log was never rewritten.
+      const signed = await exportSigned({ spaceId, sinceDays: 30 });
+      const blob = new Blob([JSON.stringify(signed, null, 2)], {
+        type: "application/json",
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `audit-${Date.now()}.json`;
+      a.download = `audit-chain-${Date.now()}.json`;
       a.click();
       URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Export failed");
+    } finally {
       setExporting(false);
     }
-  }, [exporting, audit]);
+  };
 
   return (
     <div className="p-8">
@@ -57,8 +64,8 @@ export default function OpsPage() {
             Spend & budget, agent health, alerts, and audit export for this Space.
           </p>
         </div>
-        <Button variant="outline" onClick={() => setExporting(true)} disabled={exporting}>
-          {exporting ? "Exporting…" : "Export audit (30d)"}
+        <Button variant="outline" onClick={downloadAudit} disabled={exporting}>
+          {exporting ? "Exporting…" : "Export signed audit (30d)"}
         </Button>
       </div>
 
