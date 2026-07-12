@@ -47,6 +47,35 @@ async function resolveAgentForStep(
   return pool[0] ?? null;
 }
 
+/** Capture a terminal failure in the dead-letter queue for inspection/replay. */
+async function recordDeadLetter(
+  ctx: MutationCtx,
+  run: Doc<"workflowRuns">,
+  args: {
+    kind: "step" | "run" | "stuck_run";
+    stepId?: string;
+    agentId?: Id<"agents">;
+    attempts?: number;
+    error: string;
+    payload?: unknown;
+  },
+): Promise<void> {
+  await ctx.db.insert("deadLetters", {
+    companyId: run.companyId,
+    spaceId: run.spaceId,
+    kind: args.kind,
+    workflowId: run.workflowId,
+    workflowRunId: run._id,
+    stepId: args.stepId,
+    agentId: args.agentId,
+    error: args.error,
+    attempts: args.attempts,
+    payload: args.payload,
+    status: "open",
+    createdAt: Date.now(),
+  });
+}
+
 async function failRun(
   ctx: MutationCtx,
   run: Doc<"workflowRuns">,
@@ -162,6 +191,10 @@ export const advanceRun = internalMutation({
 
     if (ready.length === 0) {
       if (!inFlight) {
+        await recordDeadLetter(ctx, run, {
+          kind: "run",
+          error: "no runnable steps (dependency cycle or all blocked)",
+        });
         await failRun(ctx, run, "no runnable steps (dependency cycle or all blocked)");
       }
       return;
@@ -242,7 +275,8 @@ export const completeStep = internalMutation({
     const maxAttempts = def?.maxAttempts ?? 2;
 
     if (!ok && step.attempts < maxAttempts) {
-      // Retry: re-queue the step for another dispatch.
+      // Retry with exponential backoff so a flapping agent isn't hammered.
+      const backoff = Math.min(1000 * 2 ** (step.attempts - 1), 30_000);
       await ctx.db.patch(step._id, { status: "pending" });
       await recordActivity(ctx, {
         companyId: run.companyId,
@@ -250,9 +284,9 @@ export const completeStep = internalMutation({
         workflowRunId: runId,
         type: "workflow",
         title: `Step retry: ${step.name}`,
-        detail: `attempt ${step.attempts}/${maxAttempts}`,
+        detail: `attempt ${step.attempts}/${maxAttempts}, backoff ${backoff}ms`,
       });
-      await ctx.scheduler.runAfter(0, internal.engine.advanceRun, { runId });
+      await ctx.scheduler.runAfter(backoff, internal.engine.advanceRun, { runId });
       return;
     }
 
@@ -276,6 +310,14 @@ export const completeStep = internalMutation({
     });
 
     if (!ok) {
+      await recordDeadLetter(ctx, run, {
+        kind: "step",
+        stepId,
+        agentId: step.agentId,
+        attempts: step.attempts,
+        error: output ?? "step failed",
+        payload: { stepName: step.name, instruction: step.instruction },
+      });
       await failRun(ctx, run, `step "${step.name}" failed after ${step.attempts} attempts`);
       return;
     }
@@ -341,6 +383,37 @@ export const reportResult = internalMutation({
       output,
     });
     return { ok: true };
+  },
+});
+
+/**
+ * Stuck-run watchdog. A run whose scheduler chain broke (or that wedged waiting
+ * on an agent that never reports) can sit in "running" forever. This sweep —
+ * driven by an hourly cron — fails any run running longer than a hard ceiling
+ * and dead-letters it so a human can inspect/replay. Bounded by .take().
+ */
+export const sweepStuckRuns = internalMutation({
+  args: { olderThanMs: v.optional(v.number()) },
+  handler: async (ctx, { olderThanMs }) => {
+    const ceiling = olderThanMs ?? 2 * 60 * 60 * 1000; // 2h backstop
+    const cutoff = Date.now() - ceiling;
+    const stuck = await ctx.db
+      .query("workflowRuns")
+      .withIndex("by_status_started", (q) =>
+        q.eq("status", "running").lt("startedAt", cutoff),
+      )
+      .take(50);
+    let failed = 0;
+    for (const run of stuck) {
+      await recordDeadLetter(ctx, run, {
+        kind: "stuck_run",
+        error: `run exceeded ${Math.round(ceiling / 60000)}m wall-clock without completing`,
+        payload: { hops: run.hops, stepsDone: run.stepsDone },
+      });
+      await failRun(ctx, run, "stuck run swept by watchdog");
+      failed++;
+    }
+    return { scanned: stuck.length, failed };
   },
 });
 

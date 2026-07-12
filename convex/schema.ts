@@ -342,6 +342,7 @@ export default defineSchema({
   })
     .index("by_space", ["spaceId"])
     .index("by_space_status", ["spaceId", "status"])
+    .index("by_status_started", ["status", "startedAt"])
     .index("by_workflow", ["workflowId"]),
 
   runSteps: defineTable({
@@ -745,6 +746,44 @@ export default defineSchema({
     done: v.boolean(),
     createdAt: v.number(),
   }).index("by_stream", ["streamId", "seq"]),
+
+  // ===========================================================================
+  // Dead-letter queue — failed workflow steps/runs captured with enough context
+  // to inspect and replay, instead of vanishing into a "failed" run. Every
+  // terminal failure writes one row; operators can replay from the Ops page.
+  // ===========================================================================
+  deadLetters: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    kind: v.string(), // "step" | "run" | "stuck_run"
+    workflowId: v.optional(v.id("workflows")),
+    workflowRunId: v.optional(v.id("workflowRuns")),
+    stepId: v.optional(v.string()),
+    agentId: v.optional(v.id("agents")),
+    error: v.string(),
+    attempts: v.optional(v.number()),
+    payload: v.optional(v.any()),
+    status: v.union(
+      v.literal("open"),
+      v.literal("replayed"),
+      v.literal("dismissed"),
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_space_status", ["spaceId", "status"])
+    .index("by_space_time", ["spaceId", "createdAt"]),
+
+  // ===========================================================================
+  // Idempotency keys — dedupe retried connector ingestion (a network blip after
+  // the server already processed a POST must not double-write). One row per
+  // (agent, key); handlers check-and-set before acting.
+  // ===========================================================================
+  idempotencyKeys: defineTable({
+    agentId: v.id("agents"),
+    key: v.string(),
+    createdAt: v.number(),
+  }).index("by_agent_key", ["agentId", "key"]),
 
   // ===========================================================================
   // Aggregate counters — O(1) rolling-window accounting so metering & guards

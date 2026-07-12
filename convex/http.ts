@@ -126,6 +126,15 @@ http.route({
     if (!body.threadKey || !body.content) {
       return json({ error: "threadKey and content required" }, 400);
     }
+    // Dedupe retried ingestion when the connector supplies an Idempotency-Key.
+    const idemKey = request.headers.get("Idempotency-Key") ?? undefined;
+    if (idemKey) {
+      const first = await ctx.runMutation(internal.connector.markIfFirst, {
+        agentId: agent._id,
+        key: idemKey,
+      });
+      if (!first) return json({ ok: true, deduped: true });
+    }
     const threadId = await ctx.runMutation(
       internal.threads.upsertFromConnector,
       {

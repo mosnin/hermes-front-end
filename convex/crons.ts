@@ -24,4 +24,8 @@ crons.daily(
 // counters table stays bounded regardless of message volume.
 crons.interval("counter sweep", { hours: 1 }, internal.maintenance.sweepCounters, {});
 
+// Fail + dead-letter workflow runs wedged in "running" past the wall-clock
+// ceiling (broken scheduler chain, agent that never reported).
+crons.interval("stuck run sweep", { hours: 1 }, internal.engine.sweepStuckRuns, {});
+
 export default crons;

@@ -90,13 +90,19 @@ export const search = action({
       filter: (q) => q.eq("spaceId", spaceId),
     });
     const ids = results.map((r) => r._id);
-    const docs = await ctx.runQuery(internal.skills.byIds, { spaceId, ids });
+    const docs: (Doc<"skills"> | null)[] = await ctx.runQuery(
+      internal.skills.byIds,
+      { spaceId, ids },
+    );
     const score = new Map<string, number>(
       results.map((r: { _id: string; _score: number }) => [r._id, r._score]),
     );
     return docs
-      .filter((d): d is NonNullable<typeof d> => d !== null)
-      .sort((a, b) => (score.get(b._id) ?? 0) - (score.get(a._id) ?? 0));
+      .filter((d): d is Doc<"skills"> => d !== null)
+      .sort(
+        (a: Doc<"skills">, b: Doc<"skills">) =>
+          (score.get(b._id) ?? 0) - (score.get(a._id) ?? 0),
+      );
   },
 });
 

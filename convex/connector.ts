@@ -2,6 +2,17 @@ import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 import { claimStepsFor } from "./engine";
 import { pullInboxFor } from "./a2a";
+import { firstSeen } from "./lib/idempotency";
+
+/**
+ * Idempotency gate for retried connector ingestion. Returns true if this is the
+ * first time we've seen (agent, key) — the caller should proceed — or false if
+ * it's a duplicate that should be dropped.
+ */
+export const markIfFirst = internalMutation({
+  args: { agentId: v.id("agents"), key: v.string() },
+  handler: async (ctx, { agentId, key }) => firstSeen(ctx, agentId, key),
+});
 
 /**
  * Combined work pull for the real-time long-poll transport.

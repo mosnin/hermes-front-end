@@ -42,12 +42,19 @@ class ControlPlaneClient:
             )
 
     # -- low-level ----------------------------------------------------------
-    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        headers: Optional[dict[str, str]] = None,
+    ) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, method="POST")
         req.add_header("Content-Type", "application/json")
         req.add_header("Authorization", f"Bearer {self.token}")
+        for k, v in (headers or {}).items():
+            req.add_header(k, v)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 body = resp.read().decode("utf-8")
@@ -104,7 +111,12 @@ class ControlPlaneClient:
         role: str = "assistant",
         thread_title: Optional[str] = None,
         tool_calls: Optional[Any] = None,
+        idempotency_key: Optional[str] = None,
     ) -> dict[str, Any]:
+        """Post a message to a thread. Pass a stable idempotency_key to make
+        retries safe (a duplicate is dropped server-side, returning
+        {"deduped": true})."""
+        headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
         return self._post(
             "/connector/message",
             {
@@ -114,6 +126,7 @@ class ControlPlaneClient:
                 "content": content,
                 "toolCalls": tool_calls,
             },
+            headers=headers,
         )
 
     # -- A2A (agent-to-agent) ----------------------------------------------
