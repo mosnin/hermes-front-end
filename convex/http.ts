@@ -596,6 +596,65 @@ http.route({
   }),
 });
 
+// POST /connector/pull — the real-time work transport. One held SSE connection
+// replaces the old ~2s busy-poll of /workflow/inbox + /a2a/inbox + heartbeat.
+// The server ticks a single combined mutation, pushing workflow steps and A2A
+// messages as they appear and backing off when idle. The connection is bounded
+// (~25s) so the agent reconnects; a wedged connection can never leak a
+// long-running server function.
+http.route({
+  path: "/connector/pull",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const enc = new TextEncoder();
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const deadline = Date.now() + 25_000;
+    const FAST_MS = 1000; // tick rate right after work arrives
+    const IDLE_MAX_MS = 3000; // slowest idle tick (adaptive backoff)
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        controller.enqueue(enc.encode(": connected\n\n"));
+        let idleTicks = 0;
+        try {
+          while (Date.now() < deadline) {
+            const { steps, messages } = await ctx.runMutation(
+              internal.connector.pullWork,
+              { agentId: agent._id },
+            );
+            if (steps.length || messages.length) {
+              idleTicks = 0;
+              controller.enqueue(
+                enc.encode(`data: ${JSON.stringify({ steps, messages })}\n\n`),
+              );
+            } else {
+              idleTicks++;
+              controller.enqueue(enc.encode(": ping\n\n"));
+            }
+            // Adaptive: fast while busy, backing off toward IDLE_MAX_MS when
+            // there's been nothing to do, to keep idle agents cheap.
+            const wait = Math.min(FAST_MS + idleTicks * 500, IDLE_MAX_MS);
+            await sleep(wait);
+          }
+        } catch {
+          // Client disconnected or transient error — just end the stream; the
+          // connector reconnects.
+        }
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  }),
+});
+
 // POST /connector/stream — an agent streams buffered chunks of a reply for
 // real-time UI rendering; done=true finalizes into a permanent message.
 http.route({

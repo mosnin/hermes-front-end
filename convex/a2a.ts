@@ -311,32 +311,40 @@ export const routeFromConnector = internalMutation({
   },
 });
 
+/** Pull queued inbox messages for an agent (marks them delivered). Shared by
+ * the poll endpoint, the SSE stream, and the combined long-poll. */
+export async function pullInboxFor(
+  ctx: MutationCtx,
+  agentId: Id<"agents">,
+  limit?: number,
+) {
+  const pending = await ctx.db
+    .query("a2aMessages")
+    .withIndex("by_recipient_status", (q) =>
+      q.eq("toAgentId", agentId).eq("status", "queued"),
+    )
+    .order("asc")
+    .take(limit ?? 50);
+  const now = Date.now();
+  const out = [];
+  for (const m of pending) {
+    await ctx.db.patch(m._id, { status: "delivered", deliveredAt: now });
+    const from = await ctx.db.get(m.fromAgentId);
+    out.push({
+      id: m._id,
+      from: { id: m.fromAgentId, name: from?.name ?? "unknown" },
+      kind: m.kind,
+      content: m.content,
+      payload: m.payload,
+      createdAt: m.createdAt,
+    });
+  }
+  return out;
+}
+
 export const pullInbox = internalMutation({
   args: { agentId: v.id("agents"), limit: v.optional(v.number()) },
-  handler: async (ctx, { agentId, limit }) => {
-    const pending = await ctx.db
-      .query("a2aMessages")
-      .withIndex("by_recipient_status", (q) =>
-        q.eq("toAgentId", agentId).eq("status", "queued"),
-      )
-      .order("asc")
-      .take(limit ?? 50);
-    const now = Date.now();
-    const out = [];
-    for (const m of pending) {
-      await ctx.db.patch(m._id, { status: "delivered", deliveredAt: now });
-      const from = await ctx.db.get(m.fromAgentId);
-      out.push({
-        id: m._id,
-        from: { id: m.fromAgentId, name: from?.name ?? "unknown" },
-        kind: m.kind,
-        content: m.content,
-        payload: m.payload,
-        createdAt: m.createdAt,
-      });
-    }
-    return out;
-  },
+  handler: async (ctx, { agentId, limit }) => pullInboxFor(ctx, agentId, limit),
 });
 
 export const directoryForSpace = internalQuery({

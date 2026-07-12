@@ -208,6 +208,39 @@ class ControlPlaneClient:
                 if time.time() > deadline:
                     break
 
+    def pull_work(self, handler, max_seconds: float = 25.0) -> bool:
+        """Real-time work transport: hold one SSE connection to /connector/pull
+        and dispatch pushed work as it arrives. `handler` is called with a dict
+        {"steps": [...], "messages": [...]} for each event. Also refreshes the
+        agent heartbeat server-side, so no separate ping loop is needed.
+
+        Returns True if the stream connected (even if it delivered nothing);
+        False if the endpoint is unavailable, so the caller can fall back to
+        polling on older deployments. The connection is bounded server-side
+        (~25s); reconnect in a loop.
+        """
+        url = f"{self.base_url}/connector/pull"
+        data = json.dumps({}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Authorization", f"Bearer {self.token}")
+        try:
+            resp = urllib.request.urlopen(req, timeout=max_seconds + 10)
+        except (urllib.error.HTTPError, urllib.error.URLError):
+            return False
+        with resp:
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue  # ": connected" / ": ping" keep-alives
+                try:
+                    payload = json.loads(line[5:].strip())
+                except json.JSONDecodeError:
+                    continue
+                if payload.get("steps") or payload.get("messages"):
+                    handler(payload)
+        return True
+
     def get_secrets(self) -> dict[str, str]:
         """Fetch this Space's secrets (name -> value) to use as credentials."""
         resp = self._post("/connector/secrets", {})

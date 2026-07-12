@@ -222,6 +222,46 @@ class AgentRuntime:
             return prompt
         return "\n\n".join(parts) + f"\n\nTask: {prompt}"
 
+    def _handle_step(self, step: dict) -> None:
+        """Execute one dispatched workflow step and report the result."""
+        print(f"[runtime] workflow step: {step['name']}")
+        self.client.activity("tool_call", f"thinking: {step['name']}")
+        instruction = step["instruction"]
+        out = llm_respond(self._augment(instruction), self.system)
+        # v1 heuristic: if the instruction names an MCP tool, call it and append
+        # the result to the step output.
+        tool_out = self.maybe_use_tools(instruction)
+        if tool_out:
+            out = f"{out}\n\n{tool_out}"
+        self.client.workflow_result(step["runId"], step["stepId"], ok=True, output=out[:4000])
+
+    def _handle_message(self, msg: dict) -> None:
+        """Reply to one inbound A2A message."""
+        sender = msg.get("from", {})
+        print(f"[runtime] A2A from {sender.get('name')}: {msg['content'][:60]}")
+        reply = llm_respond(self._augment(msg["content"]), self.system)
+        tool_out = self.maybe_use_tools(msg["content"])
+        if tool_out:
+            reply = f"{reply}\n\n{tool_out}"
+        try:
+            self.client.a2a_send(to=sender.get("id", ""), content=reply[:4000])
+        except Exception as e:  # noqa: BLE001
+            print(f"[runtime] reply failed: {e}")
+
+    def _dispatch(self, payload: dict) -> None:
+        """Handle a pushed {steps, messages} batch from the work stream."""
+        for step in payload.get("steps", []):
+            self._handle_step(step)
+        for msg in payload.get("messages", []):
+            self._handle_message(msg)
+
+    def _poll_once(self) -> None:
+        """Legacy fallback: one round of pull-by-polling (older deployments)."""
+        for step in self.client.workflow_inbox():
+            self._handle_step(step)
+        for msg in self.client.a2a_inbox():
+            self._handle_message(msg)
+
     def run(self) -> None:
         caps = ["chat", "workflow", "rag"]
         info = self.client.register(platform_name="runtime", capabilities=caps)
@@ -232,39 +272,29 @@ class AgentRuntime:
         if self.mcp_tools:
             caps.append("mcp")
 
+        # Real-time transport: hold one long-poll connection and process work as
+        # it's pushed. The server refreshes the heartbeat for us. If the endpoint
+        # is unavailable (older deployment), fall back to the 2s polling loop.
+        use_stream = True
         last_heartbeat = 0.0
         while True:
+            if use_stream:
+                try:
+                    connected = self.client.pull_work(self._dispatch)
+                except Exception as e:  # noqa: BLE001 — reconnect on any error
+                    print(f"[runtime] stream error, retrying: {e}")
+                    connected = True
+                if not connected:
+                    print("[runtime] /connector/pull unavailable — polling instead")
+                    use_stream = False
+                continue
+
+            # Fallback polling path (with its own heartbeat).
             now = time.time()
             if now - last_heartbeat > 30:
                 self.client.heartbeat()
                 last_heartbeat = now
-
-            # 1. Execute dispatched workflow steps.
-            for step in self.client.workflow_inbox():
-                print(f"[runtime] workflow step: {step['name']}")
-                self.client.activity("tool_call", f"thinking: {step['name']}")
-                instruction = step["instruction"]
-                out = llm_respond(self._augment(instruction), self.system)
-                # v1 heuristic: if the instruction names an MCP tool, call it
-                # and append the result to the step output.
-                tool_out = self.maybe_use_tools(instruction)
-                if tool_out:
-                    out = f"{out}\n\n{tool_out}"
-                self.client.workflow_result(step["runId"], step["stepId"], ok=True, output=out[:4000])
-
-            # 2. Reply to inbound A2A messages.
-            for msg in self.client.a2a_inbox():
-                sender = msg.get("from", {})
-                print(f"[runtime] A2A from {sender.get('name')}: {msg['content'][:60]}")
-                reply = llm_respond(self._augment(msg["content"]), self.system)
-                tool_out = self.maybe_use_tools(msg["content"])
-                if tool_out:
-                    reply = f"{reply}\n\n{tool_out}"
-                try:
-                    self.client.a2a_send(to=sender.get("id", ""), content=reply[:4000])
-                except Exception as e:  # noqa: BLE001
-                    print(f"[runtime] reply failed: {e}")
-
+            self._poll_once()
             time.sleep(2.0)
 
 

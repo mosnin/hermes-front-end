@@ -290,27 +290,31 @@ export const completeStep = internalMutation({
 });
 
 /** A connector claims its dispatched workflow steps (marks them running). */
+/** Claim all dispatched steps for an agent (marks them running). Shared by the
+ * poll endpoint and the combined long-poll so behaviour is identical. */
+export async function claimStepsFor(ctx: MutationCtx, agentId: Id<"agents">) {
+  const dispatched = await ctx.db
+    .query("runSteps")
+    .withIndex("by_agent_status", (q) =>
+      q.eq("agentId", agentId).eq("status", "dispatched"),
+    )
+    .collect();
+  const out = [];
+  for (const s of dispatched) {
+    await ctx.db.patch(s._id, { status: "running" });
+    out.push({
+      runId: s.workflowRunId,
+      stepId: s.stepId,
+      name: s.name,
+      instruction: s.instruction,
+    });
+  }
+  return out;
+}
+
 export const claimSteps = internalMutation({
   args: { agentId: v.id("agents") },
-  handler: async (ctx, { agentId }) => {
-    const dispatched = await ctx.db
-      .query("runSteps")
-      .withIndex("by_agent_status", (q) =>
-        q.eq("agentId", agentId).eq("status", "dispatched"),
-      )
-      .collect();
-    const out = [];
-    for (const s of dispatched) {
-      await ctx.db.patch(s._id, { status: "running" });
-      out.push({
-        runId: s.workflowRunId,
-        stepId: s.stepId,
-        name: s.name,
-        instruction: s.instruction,
-      });
-    }
-    return out;
-  },
+  handler: async (ctx, { agentId }) => claimStepsFor(ctx, agentId),
 });
 
 /** A connector reports a step result. Validates ownership, then completes. */
