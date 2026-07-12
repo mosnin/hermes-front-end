@@ -2,11 +2,19 @@ import { v } from "convex/values";
 import {
   query,
   mutation,
+  action,
   internalQuery,
   internalMutation,
+  internalAction,
 } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
 import { recordActivity, recordWorkEvent } from "./lib/events";
+import {
+  buildOutboundRequest,
+  interpretOutboundResponse,
+} from "./lib/channels";
 
 /** List chat bridges for a Space (newest first). */
 export const list = query({
@@ -99,6 +107,122 @@ export const getById = internalQuery({
   args: { bridgeId: v.id("bridges") },
   handler: async (ctx, { bridgeId }) => {
     return await ctx.db.get(bridgeId);
+  },
+});
+
+/** Record an outbound bridge delivery (activity + work event). */
+export const recordOutbound = internalMutation({
+  args: {
+    bridgeId: v.id("bridges"),
+    text: v.string(),
+    ok: v.boolean(),
+    detail: v.optional(v.string()),
+  },
+  handler: async (ctx, { bridgeId, text, ok, detail }) => {
+    const bridge = await ctx.db.get(bridgeId);
+    if (!bridge) return;
+    await ctx.db.patch(bridgeId, {
+      status: ok ? "connected" : "error",
+      updatedAt: Date.now(),
+    });
+    await recordActivity(ctx, {
+      companyId: bridge.companyId,
+      spaceId: bridge.spaceId,
+      agentId: bridge.agentId,
+      type: "message",
+      title: ok ? `${bridge.type} outbound` : `${bridge.type} send failed`,
+      detail: (ok ? text : `${detail ?? "error"}: ${text}`).slice(0, 140),
+    });
+    await recordWorkEvent(ctx, {
+      companyId: bridge.companyId,
+      spaceId: bridge.spaceId,
+      actorType: "agent",
+      agentId: bridge.agentId,
+      category: "integration",
+      action: ok ? "bridge_outbound" : "bridge_outbound_failed",
+      summary: `${bridge.type} → ${ok ? "delivered" : detail ?? "failed"}`,
+    });
+  },
+});
+
+/**
+ * Send a message OUT to a bridge's channel (Slack chat.postMessage, Telegram
+ * sendMessage, Discord webhook). Real network delivery via lib/channels; logs
+ * the result. Called by the /bridges/send connector endpoint and the UI
+ * test-send. Returns {ok, detail}.
+ */
+export const sendOutbound = internalAction({
+  args: { bridgeId: v.id("bridges"), text: v.string() },
+  handler: async (ctx, { bridgeId, text }): Promise<{ ok: boolean; detail?: string }> => {
+    const bridge = await ctx.runQuery(internal.bridges.getById, { bridgeId });
+    if (!bridge) return { ok: false, detail: "unknown bridge" };
+    const spec = buildOutboundRequest(bridge.type, bridge.config, text);
+    if ("error" in spec) {
+      await ctx.runMutation(internal.bridges.recordOutbound, {
+        bridgeId,
+        text,
+        ok: false,
+        detail: spec.error,
+      });
+      return { ok: false, detail: spec.error };
+    }
+    let result: { ok: boolean; detail?: string };
+    try {
+      const resp = await fetch(spec.url, {
+        method: "POST",
+        headers: spec.headers,
+        body: spec.body,
+      });
+      const bodyText = await resp.text().catch(() => "");
+      result = interpretOutboundResponse(bridge.type, resp.status, bodyText);
+    } catch (e) {
+      result = { ok: false, detail: String(e) };
+    }
+    await ctx.runMutation(internal.bridges.recordOutbound, {
+      bridgeId,
+      text,
+      ok: result.ok,
+      detail: result.detail,
+    });
+    return result;
+  },
+});
+
+/** UI/API test-send: post a message to a bridge's channel now. */
+export const send = action({
+  args: { spaceId: v.id("spaces"), bridgeId: v.id("bridges"), text: v.string() },
+  handler: async (ctx, { spaceId, bridgeId, text }): Promise<{ ok: boolean; detail?: string }> => {
+    // Authorize against the Space before dispatching the (unauth'd) action.
+    const bridge = await ctx.runQuery(internal.bridges.authForSpace, {
+      spaceId,
+      bridgeId,
+    });
+    if (!bridge) throw new Error("Not found");
+    return await ctx.runAction(internal.bridges.sendOutbound, { bridgeId, text });
+  },
+});
+
+/** Verify a bridge belongs to a Space the caller may operate; returns it. */
+export const authForSpace = internalQuery({
+  args: { spaceId: v.id("spaces"), bridgeId: v.id("bridges") },
+  handler: async (ctx, { spaceId, bridgeId }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
+    const row = await ctx.db.get(bridgeId);
+    if (!row || row.spaceId !== spaceId) return null;
+    return row;
+  },
+});
+
+/** Find a bridge routed to an agent (for connector outbound by agent). */
+export const forAgentSend = internalQuery({
+  args: { agentId: v.id("agents"), bridgeId: v.id("bridges") },
+  handler: async (ctx, { agentId, bridgeId }) => {
+    const row = await ctx.db.get(bridgeId);
+    if (!row) return null;
+    const agent = await ctx.db.get(agentId);
+    if (!agent || agent.spaceId !== row.spaceId) return null;
+    return row;
   },
 });
 

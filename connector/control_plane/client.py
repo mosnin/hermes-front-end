@@ -246,6 +246,13 @@ class ControlPlaneClient:
         resp = self._post("/connector/secrets", {})
         return {s["name"]: s["value"] for s in resp.get("secrets", [])}
 
+    def send_bridge(self, bridge_id: str, text: str) -> dict[str, Any]:
+        """Post a message OUT to a chat channel (Slack/Telegram/Discord) via a
+        bridge routed to this agent. Use for outreach replies and notifications."""
+        return self._post(
+            "/bridges/send", {"bridgeId": bridge_id, "text": text}
+        )
+
     def list_mcp(self) -> list[dict[str, Any]]:
         """Fetch the MCP servers assigned to this agent (name/url/transport/auth)."""
         resp = self._post("/connector/mcp", {})

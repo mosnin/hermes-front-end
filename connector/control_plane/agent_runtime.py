@@ -29,6 +29,11 @@ from .mcp_client import McpClient, connect_all
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-8"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 
+# Max tool-use round-trips per task. Ongoing outreach chains (contact lookup →
+# email → chat → calendar) need several hops; cap it so a confused agent can't
+# spin forever.
+MAX_TOOL_ITERS = 8
+
 
 def _http_json(url: str, headers: dict[str, str], payload: dict) -> dict:
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST")
@@ -203,6 +208,92 @@ class AgentRuntime:
             return {only_key: instruction}
         return {}
 
+    # -- agentic tool-use loop -------------------------------------------
+    def _anthropic_tools(self) -> list[dict]:
+        """Expose connected MCP tools in Anthropic tool-use schema."""
+        tools = []
+        for name, (_client, tool) in sorted(self.mcp_tools.items()):
+            schema = tool.get("inputSchema") or {"type": "object", "properties": {}}
+            tools.append(
+                {
+                    "name": name,
+                    "description": (tool.get("description") or name)[:1000],
+                    "input_schema": schema,
+                }
+            )
+        return tools
+
+    def _execute_tool(self, name: str, args: dict) -> str:
+        """Run one MCP tool call and return its result as text."""
+        entry = self.mcp_tools.get(name)
+        if not entry:
+            return f"error: no such tool '{name}'"
+        client, _tool = entry
+        print(f"[runtime] tool call: {name}({args})")
+        try:
+            result = client.call_tool(name, args or {})
+        except Exception as e:  # noqa: BLE001 — never let a tool crash the loop
+            return f"error: {e}"
+        return _stringify_tool_result(result)[:4000]
+
+    def run_agentic(self, prompt: str, system: str = "") -> str:
+        """Multi-step reasoning + tool use. When an Anthropic key and MCP tools
+        are both available, run a real tool-use loop so the agent can chain
+        several tools (e.g. look up a contact, send an email, check for a reply,
+        book a meeting) before answering. Otherwise fall back to a single LLM
+        call plus the naive heuristic tool pass — so the runtime still works with
+        no key or with OpenAI configured.
+        """
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not (anthropic_key and self.mcp_tools):
+            out = llm_respond(self._augment(prompt), system)
+            tool_out = self.maybe_use_tools(prompt)
+            return f"{out}\n\n{tool_out}" if tool_out else out
+
+        model = os.environ.get("HERMES_AGENT_MODEL", "").strip() or DEFAULT_ANTHROPIC_MODEL
+        tools = self._anthropic_tools()
+        messages: list[dict] = [{"role": "user", "content": self._augment(prompt)}]
+        for _ in range(MAX_TOOL_ITERS):
+            try:
+                data = _http_json(
+                    "https://api.anthropic.com/v1/messages",
+                    {
+                        "x-api-key": anthropic_key,
+                        "anthropic-version": "2023-06-01",
+                        "Content-Type": "application/json",
+                    },
+                    {
+                        "model": model,
+                        "max_tokens": 1024,
+                        "system": system or "You are a capable autonomous outreach agent. Use the available tools to complete ongoing jobs end to end.",
+                        "tools": tools,
+                        "messages": messages,
+                    },
+                )
+            except (urllib.error.HTTPError, urllib.error.URLError, KeyError, ValueError) as e:
+                return f"(LLM error: {e})"
+
+            content = data.get("content", [])
+            messages.append({"role": "assistant", "content": content})
+            if data.get("stop_reason") != "tool_use":
+                return "".join(b.get("text", "") for b in content if b.get("type") == "text") or "(done)"
+
+            # Execute every requested tool and feed the results back.
+            tool_results = []
+            for block in content:
+                if block.get("type") != "tool_use":
+                    continue
+                result_text = self._execute_tool(block.get("name", ""), block.get("input", {}))
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.get("id"),
+                        "content": result_text,
+                    }
+                )
+            messages.append({"role": "user", "content": tool_results})
+        return "(reached tool-iteration limit)"
+
     def _augment(self, prompt: str) -> str:
         """Pull relevant Space/company memory (RAG) to ground the response,
         and tell the LLM which MCP tools it has at its disposal."""
@@ -227,22 +318,15 @@ class AgentRuntime:
         print(f"[runtime] workflow step: {step['name']}")
         self.client.activity("tool_call", f"thinking: {step['name']}")
         instruction = step["instruction"]
-        out = llm_respond(self._augment(instruction), self.system)
-        # v1 heuristic: if the instruction names an MCP tool, call it and append
-        # the result to the step output.
-        tool_out = self.maybe_use_tools(instruction)
-        if tool_out:
-            out = f"{out}\n\n{tool_out}"
+        # Real multi-step tool use when tools are connected; single call otherwise.
+        out = self.run_agentic(instruction, self.system)
         self.client.workflow_result(step["runId"], step["stepId"], ok=True, output=out[:4000])
 
     def _handle_message(self, msg: dict) -> None:
         """Reply to one inbound A2A message."""
         sender = msg.get("from", {})
         print(f"[runtime] A2A from {sender.get('name')}: {msg['content'][:60]}")
-        reply = llm_respond(self._augment(msg["content"]), self.system)
-        tool_out = self.maybe_use_tools(msg["content"])
-        if tool_out:
-            reply = f"{reply}\n\n{tool_out}"
+        reply = self.run_agentic(msg["content"], self.system)
         try:
             self.client.a2a_send(to=sender.get("id", ""), content=reply[:4000])
         except Exception as e:  # noqa: BLE001

@@ -773,6 +773,32 @@ http.route({
   }),
 });
 
+// POST /bridges/send — a deployed agent posts a message OUT to a chat channel
+// (Slack/Telegram/Discord). Body: { bridgeId, text }. The bridge must belong to
+// the agent's Space.
+http.route({
+  path: "/bridges/send",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (!body.bridgeId || !body.text) {
+      return json({ error: "bridgeId and text required" }, 400);
+    }
+    const bridge = await ctx.runQuery(internal.bridges.forAgentSend, {
+      agentId: agent._id,
+      bridgeId: body.bridgeId as Id<"bridges">,
+    });
+    if (!bridge) return json({ error: "unknown bridge for this agent" }, 404);
+    const result = await ctx.runAction(internal.bridges.sendOutbound, {
+      bridgeId: bridge._id,
+      text: String(body.text),
+    });
+    return json({ ok: result.ok, detail: result.detail });
+  }),
+});
+
 // ===========================================================================
 // Public REST API — authenticated by an API key (hk_...) minted in Developer.
 // ===========================================================================
