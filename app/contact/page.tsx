@@ -1,0 +1,105 @@
+"use client";
+
+import { Mail, MessageSquare, Building2 } from "lucide-react";
+import { SiteHeader, SiteFooter } from "@/components/marketing/site-chrome";
+import { Reveal, Stagger, StaggerItem } from "@/components/marketing/motion";
+
+const CHANNELS = [
+  {
+    icon: Mail,
+    title: "Sales & enterprise",
+    body: "SSO/SAML, SCIM, custom guardrail policies, annual agreements.",
+    action: "sales@hermes-control.dev",
+    href: "mailto:sales@hermes-control.dev",
+  },
+  {
+    icon: MessageSquare,
+    title: "Support",
+    body: "Stuck connecting an agent, a workflow misbehaving, billing questions.",
+    action: "support@hermes-control.dev",
+    href: "mailto:support@hermes-control.dev",
+  },
+  {
+    icon: Building2,
+    title: "Partnerships",
+    body: "Framework adapters, MCP servers, deployment platforms.",
+    action: "partners@hermes-control.dev",
+    href: "mailto:partners@hermes-control.dev",
+  },
+];
+
+export default function ContactPage() {
+  return (
+    <div>
+      <SiteHeader />
+      <main className="mx-auto max-w-6xl px-6">
+        <section className="pt-20 pb-12 text-center">
+          <Reveal>
+            <h1 className="text-4xl font-bold tracking-tight">Contact</h1>
+            <p className="mx-auto mt-4 max-w-xl text-muted">
+              A human reads every message. Tell us what your fleet needs to do.
+            </p>
+          </Reveal>
+        </section>
+
+        <Stagger className="grid gap-4 pb-16 lg:grid-cols-3">
+          {CHANNELS.map((c) => (
+            <StaggerItem
+              key={c.title}
+              className="rounded-2xl border border-border bg-surface p-7 text-center"
+            >
+              <c.icon className="mx-auto mb-3 h-6 w-6 text-accent" />
+              <h2 className="font-semibold">{c.title}</h2>
+              <p className="mt-2 text-sm text-muted">{c.body}</p>
+              <a
+                href={c.href}
+                className="mt-4 inline-block rounded-lg border border-accent/50 px-4 py-2 text-sm text-accent transition hover:bg-accent/10"
+              >
+                {c.action}
+              </a>
+            </StaggerItem>
+          ))}
+        </Stagger>
+
+        <section className="pb-24">
+          <Reveal>
+            <div className="mx-auto max-w-xl rounded-2xl border border-border bg-surface p-8">
+              <h2 className="font-semibold">Write to us</h2>
+              <form
+                className="mt-5 space-y-3"
+                action="mailto:sales@hermes-control.dev"
+                method="post"
+                encType="text/plain"
+              >
+                <input
+                  name="name"
+                  placeholder="Name"
+                  className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent"
+                />
+                <input
+                  name="email"
+                  type="email"
+                  placeholder="Work email"
+                  className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent"
+                />
+                <textarea
+                  name="message"
+                  rows={5}
+                  placeholder="What should your agents be doing?"
+                  className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent"
+                />
+                <button
+                  type="submit"
+                  className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white shadow-[0_0_16px_rgba(255,91,4,0.35)] transition hover:brightness-110"
+                >
+                  Send
+                </button>
+              </form>
+            </div>
+          </Reveal>
+        </section>
+      </main>
+      <SiteFooter />
+    </div>
+  );
+}

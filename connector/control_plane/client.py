@@ -64,12 +64,19 @@ class ControlPlaneClient:
             raise RuntimeError(f"control plane {path} -> {e.code}: {detail}") from e
 
     # -- high-level API -----------------------------------------------------
-    def register(self, platform_name: Optional[str] = None, capabilities: Optional[list[str]] = None) -> dict[str, Any]:
+    def register(
+        self,
+        platform_name: Optional[str] = None,
+        capabilities: Optional[list[str]] = None,
+        framework: Optional[str] = None,
+    ) -> dict[str, Any]:
         return self._post(
             "/connector/register",
             {
                 "connectorVersion": CONNECTOR_VERSION,
                 "platform": platform_name or os.environ.get("HERMES_AGENT_PLATFORM"),
+                "framework": framework
+                or os.environ.get("HERMES_AGENT_FRAMEWORK", "hermes"),
                 "capabilities": capabilities or [],
                 "meta": {
                     "host": socket.gethostname(),

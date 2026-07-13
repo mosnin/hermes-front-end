@@ -3,8 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
-import { useMutation } from "convex/react";
+import { OrganizationSwitcher, UserButton, useUser, SignOutButton } from "@clerk/nextjs";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
   Activity,
@@ -167,7 +167,12 @@ function SpaceSwitcher() {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { active } = useActiveSpace();
+  const { active, spaceId } = useActiveSpace();
+  const { user } = useUser();
+  const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
+  const counts: Record<string, number | undefined> = {
+    "/dashboard/agents": agents?.length || undefined,
+  };
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-background p-3">
@@ -234,7 +239,17 @@ export function Sidebar() {
                   )}
                 >
                   <item.icon className="h-4 w-4" />
-                  {item.label}
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {counts[item.href] !== undefined && (
+                    <span
+                      className={cn(
+                        "rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
+                        isActive ? "bg-white/20 text-white" : "bg-surface-2 text-muted",
+                      )}
+                    >
+                      {counts[item.href]}
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -242,9 +257,32 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="mt-3 flex items-center gap-2 border-t border-border px-2 pt-3">
+      {/* Promo block (chirp "Marketplace") */}
+      <Link
+        href="/dashboard/fleet"
+        className="mt-3 block rounded-xl border border-accent/25 bg-gradient-to-br from-accent/15 to-transparent p-3 transition hover:border-accent/50"
+      >
+        <p className="text-[10px] uppercase tracking-wider text-muted">
+          Deploy your next agent
+        </p>
+        <p className="mt-0.5 flex items-center gap-2 text-sm font-medium text-accent">
+          <Rocket className="h-3.5 w-3.5" /> Fleet
+        </p>
+      </Link>
+
+      {/* Account card */}
+      <div className="mt-3 flex items-center gap-2.5 border-t border-border px-1 pt-3">
         <UserButton afterSignOutUrl="/" />
-        <span className="flex-1 text-xs text-muted">Account</span>
+        <div className="min-w-0 flex-1 leading-tight">
+          <p className="truncate text-sm font-medium">
+            {user?.firstName ?? user?.username ?? "Account"}
+          </p>
+          <SignOutButton>
+            <button className="text-xs text-muted underline-offset-2 hover:text-foreground hover:underline">
+              Logout
+            </button>
+          </SignOutButton>
+        </div>
         <NotificationBell />
       </div>
     </aside>

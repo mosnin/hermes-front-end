@@ -44,6 +44,7 @@ export const create = action({
     name: v.string(),
     description: v.optional(v.string()),
     platform: v.optional(v.string()),
+    framework: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args): Promise<{ agentId: string; token: string }> => {
@@ -63,6 +64,7 @@ export const insert = internalMutation({
     name: v.string(),
     description: v.optional(v.string()),
     platform: v.optional(v.string()),
+    framework: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     tokenHash: v.string(),
   },
@@ -279,6 +281,7 @@ export const recordHeartbeat = internalMutation({
     ),
     connectorVersion: v.optional(v.string()),
     capabilities: v.optional(v.array(v.string())),
+    framework: v.optional(v.string()),
     meta: v.optional(v.any()),
   },
   handler: async (ctx, { agentId, ...patch }) => {

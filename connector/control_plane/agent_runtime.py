@@ -24,6 +24,7 @@ import urllib.error
 import urllib.request
 
 from .client import ControlPlaneClient
+from .frameworks import build_executor, framework_name
 from .mcp_client import McpClient, connect_all
 
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-8"
@@ -119,10 +120,22 @@ class AgentRuntime:
     def __init__(self, client: ControlPlaneClient) -> None:
         self.client = client
         self.system = os.environ.get("HERMES_AGENT_SYSTEM_PROMPT", "")
+        # Framework adapter: None = built-in Hermes LLM runtime; otherwise a
+        # CliExecutor wrapping OpenClaw / Goose / any CLI agent.
+        self.framework = framework_name()
+        self.executor = build_executor()
         # MCP wiring (populated by _load_mcp on startup; empty if none assigned).
         self.mcp_clients: dict[str, McpClient] = {}
         # tool_name -> (McpClient, tool_dict{name, description, inputSchema})
         self.mcp_tools: dict[str, tuple[McpClient, dict]] = {}
+
+    def execute(self, instruction: str) -> str:
+        """Run one task through the configured brain: the external framework's
+        CLI when one is configured, else the built-in agentic LLM loop."""
+        if self.executor is not None:
+            print(f"[runtime] {self.framework}: {instruction[:80]}")
+            return self.executor.run(instruction)
+        return self.run_agentic(instruction, self.system)
 
     # -- MCP --------------------------------------------------------------
     def _load_mcp(self) -> None:
@@ -349,14 +362,14 @@ class AgentRuntime:
             )
             instruction = f"{upstream}\n\n---\n\n{instruction}"
         # Real multi-step tool use when tools are connected; single call otherwise.
-        out = self.run_agentic(instruction, self.system)
+        out = self.execute(instruction)
         self.client.workflow_result(step["runId"], step["stepId"], ok=True, output=out[:4000])
 
     def _handle_message(self, msg: dict) -> None:
         """Reply to one inbound A2A message."""
         sender = msg.get("from", {})
         print(f"[runtime] A2A from {sender.get('name')}: {msg['content'][:60]}")
-        reply = self.run_agentic(msg["content"], self.system)
+        reply = self.execute(msg["content"])
         try:
             self.client.a2a_send(to=sender.get("id", ""), content=reply[:4000])
         except Exception as e:  # noqa: BLE001
@@ -389,7 +402,11 @@ class AgentRuntime:
 
     def run(self) -> None:
         caps = ["chat", "workflow", "rag"]
-        info = self.client.register(platform_name="runtime", capabilities=caps)
+        if self.framework != "hermes":
+            caps.append(f"framework:{self.framework}")
+        info = self.client.register(
+            platform_name="runtime", capabilities=caps, framework=self.framework
+        )
         print(f"[runtime] registered as {info.get('name')} ({info.get('agentId')})")
 
         # Connect to the MCP servers assigned to this agent (best-effort).

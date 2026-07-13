@@ -97,6 +97,10 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     platform: v.optional(v.string()),
+    // Agent framework the runtime wraps: "hermes" | "openclaw" | "goose" |
+    // "cli" (any command-line agent) | custom. Purely informational routing —
+    // the connector protocol is framework-agnostic.
+    framework: v.optional(v.string()),
     // "hermes" (connector) or "a2a-external" (remote A2A agent by card URL).
     kind: v.optional(v.union(v.literal("hermes"), v.literal("a2a-external"))),
     status: v.union(

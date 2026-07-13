@@ -131,6 +131,19 @@ describe("HTTP gateway", () => {
     expect(errors[0].kind).toBe("guard_violation");
   });
 
+  test("register persists the agent's framework", async () => {
+    const { t, agentId, token } = await boot("org_gw5");
+    const reg = await post(t, "/connector/register", token, {
+      connectorVersion: "0.1.0",
+      framework: "goose",
+      capabilities: ["chat", "framework:goose"],
+    });
+    expect(reg.status).toBe(200);
+    const agent = await t.run(async (ctx) => ctx.db.get(agentId));
+    expect(agent?.framework).toBe("goose");
+    expect(agent?.status).toBe("online");
+  });
+
   test("public API rejects a revoked or malformed key", async () => {
     const { t } = await boot("org_gw4");
     const res = await t.fetch("/api/v1/agents", {

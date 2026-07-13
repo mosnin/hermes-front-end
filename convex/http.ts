@@ -61,6 +61,7 @@ http.route({
       status: "online",
       connectorVersion: body.connectorVersion,
       capabilities: body.capabilities,
+      framework: body.framework ? String(body.framework) : undefined,
       meta: body.meta,
     });
     await ctx.runMutation(internal.activity.append, {

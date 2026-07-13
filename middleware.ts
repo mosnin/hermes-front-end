@@ -4,6 +4,11 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // /dashboard (and the API the dashboard uses) requires a signed-in user.
 const isPublicRoute = createRouteMatcher([
   "/",
+  "/features(.*)",
+  "/pricing(.*)",
+  "/about(.*)",
+  "/changelog(.*)",
+  "/contact(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);

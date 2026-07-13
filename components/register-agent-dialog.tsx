@@ -6,10 +6,19 @@ import { api } from "@/convex/_generated/api";
 import { Button, Input, Modal } from "./ui";
 import { Check, Copy } from "lucide-react";
 import { useActiveSpace } from "./active-space";
+import { cn } from "@/lib/utils";
+
+const FRAMEWORKS = [
+  { id: "hermes", label: "Hermes", hint: "Built-in LLM runtime + MCP tools" },
+  { id: "openclaw", label: "OpenClaw", hint: "OpenClaw CLI adapter" },
+  { id: "goose", label: "Goose", hint: "Block's Goose CLI adapter" },
+  { id: "cli", label: "Any CLI", hint: "Your own command" },
+];
 
 /**
  * The "connect an agent" flow. Creating an agent returns a one-time connector
- * token; we show the exact env config the user drops into their deployed agent.
+ * token; we show the exact env config the user drops into their deployed agent
+ * — tailored to the framework they picked.
  */
 export function RegisterAgentDialog({
   open,
@@ -22,6 +31,7 @@ export function RegisterAgentDialog({
   const { spaceId } = useActiveSpace();
   const [name, setName] = useState("");
   const [platform, setPlatform] = useState("");
+  const [framework, setFramework] = useState("hermes");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ token: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -38,6 +48,7 @@ export function RegisterAgentDialog({
         spaceId,
         name: name.trim(),
         platform: platform.trim() || undefined,
+        framework,
       });
       setResult({ token: res.token });
     } finally {
@@ -48,21 +59,30 @@ export function RegisterAgentDialog({
   function reset() {
     setName("");
     setPlatform("");
+    setFramework("hermes");
     setResult(null);
     setCopied(false);
     onClose();
   }
 
-  const envBlock = result
-    ? `HERMES_CONTROL_PLANE_URL=${httpUrl}\nHERMES_CONNECTOR_TOKEN=${result.token}`
-    : "";
+  const envLines = [
+    `HERMES_CONTROL_PLANE_URL=${httpUrl}`,
+    `HERMES_CONNECTOR_TOKEN=${result?.token ?? ""}`,
+  ];
+  if (framework !== "hermes") {
+    envLines.push(`HERMES_AGENT_FRAMEWORK=${framework}`);
+  }
+  if (framework === "cli") {
+    envLines.push(`HERMES_AGENT_COMMAND='my-agent --task {instruction}'`);
+  }
+  const envBlock = envLines.join("\n");
 
   return (
     <Modal open={open} onClose={reset} title="Connect an agent">
       {!result ? (
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            Register a Hermes agent you&apos;ve deployed (AWS, local, anywhere).
+            Register an agent you&apos;ve deployed (AWS, local, anywhere).
             You&apos;ll get a one-time token to paste into its connector config.
           </p>
           <div>
@@ -73,6 +93,27 @@ export function RegisterAgentDialog({
               placeholder="Research Agent"
               autoFocus
             />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted">Framework</label>
+            <div className="grid grid-cols-2 gap-2">
+              {FRAMEWORKS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFramework(f.id)}
+                  className={cn(
+                    "rounded-lg border px-3 py-2 text-left transition",
+                    framework === f.id
+                      ? "border-accent bg-accent/10"
+                      : "border-border bg-surface-2 hover:border-muted",
+                  )}
+                >
+                  <p className="text-sm font-medium">{f.label}</p>
+                  <p className="text-[11px] text-muted">{f.hint}</p>
+                </button>
+              ))}
+            </div>
           </div>
           <div>
             <label className="mb-1 block text-xs text-muted">
@@ -115,8 +156,11 @@ export function RegisterAgentDialog({
             </Button>
           </div>
           <p className="text-xs text-muted">
-            Then run the connector from <code>connector/control_plane</code> (see
-            its README). The agent will appear here as soon as it checks in.
+            Then run <code>python -m connector.control_plane.agent_runtime</code>
+            {framework !== "hermes" && (
+              <> — it will drive your {FRAMEWORKS.find((f) => f.id === framework)?.label} agent via its CLI</>
+            )}
+            . The agent appears here as soon as it checks in.
           </p>
           <div className="flex justify-end">
             <Button onClick={reset}>Done</Button>
