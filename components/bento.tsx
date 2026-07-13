@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import Link from "next/link";
+import { motion } from "motion/react";
 import {
   ChevronDown,
   ChevronRight,
@@ -82,11 +83,11 @@ export function DotMatrixCard({
   return (
     <BentoCard title={title} action={action} className={className}>
       <div className="space-y-3">
-        {rows.map((r) => (
+        {rows.map((r, ri) => (
           <div key={r.label} className="flex items-center gap-4">
             <div className="flex flex-1 items-center gap-1.5">
               {Array.from({ length: cols }, (_, i) => (
-                <span
+                <motion.span
                   key={i}
                   className={cn(
                     "aspect-square min-w-0 flex-1 rounded-full",
@@ -95,6 +96,14 @@ export function DotMatrixCard({
                       : "bg-surface-2",
                   )}
                   style={{ maxWidth: 34 }}
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 420,
+                    damping: 24,
+                    delay: 0.05 * ri + 0.03 * i,
+                  }}
                 />
               ))}
             </div>
@@ -143,19 +152,27 @@ export function MediaCard({
         {subtitle && <p className="mt-1 text-sm text-white/70">{subtitle}</p>}
       </div>
       <div className="my-5 flex justify-center">
-        <Wrapper
-          href={(href ?? "#") as never}
-          className="grid h-16 w-16 place-items-center rounded-full bg-white/20 backdrop-blur transition hover:bg-white/30"
+        <motion.div
+          animate={{ scale: [1, 1.06, 1] }}
+          transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
         >
-          <Play className="ml-1 h-6 w-6 fill-white text-white" />
-        </Wrapper>
+          <Wrapper
+            href={(href ?? "#") as never}
+            className="grid h-16 w-16 place-items-center rounded-full bg-white/20 backdrop-blur transition hover:bg-white/30 active:scale-95"
+          >
+            <Play className="ml-1 h-6 w-6 fill-white text-white" />
+          </Wrapper>
+        </motion.div>
       </div>
       <div className="flex h-14 items-end justify-center gap-[3px]">
         {bars.map((b, i) => (
-          <span
+          <motion.span
             key={i}
-            className="w-[3px] rounded-full bg-white/85"
+            className="w-[3px] origin-bottom rounded-full bg-white/85"
             style={{ height: `${Math.max(8, (b / max) * 100)}%` }}
+            initial={{ scaleY: 0 }}
+            animate={{ scaleY: 1 }}
+            transition={{ delay: 0.2 + i * 0.018, type: "spring", stiffness: 320, damping: 22 }}
           />
         ))}
       </div>
@@ -232,8 +249,11 @@ export function ReviewListCard({
     <BentoCard title={title} className={className}>
       <div>
         {rows.map((r, i) => (
-          <div
+          <motion.div
             key={r.id}
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.08 * i, type: "spring", stiffness: 320, damping: 28 }}
             className={cn(
               "flex items-center gap-4 py-3.5",
               i > 0 && "border-t border-border",
@@ -258,7 +278,7 @@ export function ReviewListCard({
             <div className="flex w-28 shrink-0 items-center justify-end gap-3">
               {r.right}
             </div>
-          </div>
+          </motion.div>
         ))}
         {onAdd && (
           <button
@@ -312,11 +332,14 @@ export function SteppedChartCard({
   return (
     <BentoCard title={title} action={action} className={className}>
       <div className="grid auto-cols-fr grid-flow-col items-end gap-px" style={{ height: 150 }}>
-        {columns.map((c) => (
-          <div
+        {columns.map((c, i) => (
+          <motion.div
             key={c.label}
-            className={cn("rounded-sm", STEP_TONES[c.tone].block)}
+            className={cn("origin-bottom rounded-sm", STEP_TONES[c.tone].block)}
             style={{ height: `${Math.max(12, (c.value / max) * 100)}%` }}
+            initial={{ scaleY: 0, opacity: 0.4 }}
+            animate={{ scaleY: 1, opacity: 1 }}
+            transition={{ delay: 0.12 * i, type: "spring", stiffness: 220, damping: 26 }}
           />
         ))}
       </div>

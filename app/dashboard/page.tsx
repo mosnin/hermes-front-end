@@ -21,6 +21,7 @@ import { useActiveSpace } from "@/components/active-space";
 import { Onboarding } from "@/components/onboarding";
 import { timeAgo } from "@/lib/utils";
 import { AlertTriangle, ChevronLeft, Network, Plus } from "lucide-react";
+import { Stagger, StaggerItem } from "@/components/marketing/motion";
 
 const TABS = [
   { label: "Overview", href: "/dashboard", active: true },
@@ -259,14 +260,16 @@ export default function OverviewPage() {
         </div>
 
         {/* Bento row 1: skills board + (date chip / media card) */}
-        <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+        <Stagger className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+          <StaggerItem>
           <DotMatrixCard
             title="Fleet skills"
             rows={skillRows}
             axis={["None", "Half fleet", "Full fleet"]}
             action={<CardMenuLabel>Circles view</CardMenuLabel>}
           />
-          <div className="grid content-start gap-4">
+          </StaggerItem>
+          <StaggerItem className="grid content-start gap-4">
             <DateChipCard date={today} label="Ops session" />
             <MediaCard
               title="Activity pulse"
@@ -275,17 +278,20 @@ export default function OverviewPage() {
               meta={`${activity?.length ?? 0} events`}
               href="/dashboard/history"
             />
-          </div>
-        </div>
+          </StaggerItem>
+        </Stagger>
 
         {/* Bento row 2: agents review + throughput chart */}
-        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <Stagger className="mt-4 grid gap-4 xl:grid-cols-2">
+          <StaggerItem>
           <ReviewListCard
             title="Agents review"
             rows={reviewRows}
             onAdd={() => setOpen(true)}
             addLabel="Add new agent"
           />
+          </StaggerItem>
+          <StaggerItem>
           <SteppedChartCard
             title="Throughput"
             columns={dayColumns}
@@ -293,7 +299,8 @@ export default function OverviewPage() {
             insightHref="/dashboard/analytics"
             action={<CardMenuLabel>3 days</CardMenuLabel>}
           />
-        </div>
+          </StaggerItem>
+        </Stagger>
 
         {/* Instruments row: errors + network sensors, live feed */}
         <div className="mt-4 grid gap-4 xl:grid-cols-2">

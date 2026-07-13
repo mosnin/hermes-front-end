@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useMemo, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RingGauge, type RingColor } from "./ui";
@@ -71,12 +72,22 @@ export function AreaSpark({
         ))}
         {data.length > 0 && (
           <>
-            <path d={path.area} fill={c.fill} />
-            <path
+            <motion.path
+              d={path.area}
+              fill={c.fill}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.8, delay: 0.4 }}
+            />
+            {/* the line traces itself in */}
+            <motion.path
               d={path.line}
               fill="none"
               stroke={c.stroke}
               strokeWidth="1.6"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 1.1, ease: [0.3, 0.6, 0.3, 1] }}
               style={{ filter: `drop-shadow(0 0 4px ${c.fill.replace("0.1", "0.5")})` }}
             />
           </>
@@ -160,16 +171,28 @@ export function SensorCard({
   className?: string;
 }) {
   const [u, setU] = useState(units?.[0] ?? "");
+  const reduce = useReducedMotion();
   const tone: RingColor = alert ? "red" : color;
   return (
-    <div
+    <motion.div
       className={cn(
         "relative rounded-3xl border bg-surface p-5",
-        alert
-          ? "border-red-500/60 shadow-[0_0_24px_rgba(239,68,68,0.12)]"
-          : "border-border",
+        alert ? "border-red-500/60" : "border-border",
         className,
       )}
+      // Alert cards breathe: the red glow pulses until the condition clears.
+      animate={
+        alert && !reduce
+          ? {
+              boxShadow: [
+                "0 0 16px rgba(239,68,68,0.08)",
+                "0 0 32px rgba(239,68,68,0.22)",
+                "0 0 16px rgba(239,68,68,0.08)",
+              ],
+            }
+          : { boxShadow: alert ? "0 0 24px rgba(239,68,68,0.12)" : "none" }
+      }
+      transition={alert && !reduce ? { duration: 2.4, repeat: Infinity, ease: "easeInOut" } : undefined}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -206,6 +229,6 @@ export function SensorCard({
 
       {data && <AreaSpark data={data} color={tone} axis={axis} className="mt-3" />}
       {children}
-    </div>
+    </motion.div>
   );
 }

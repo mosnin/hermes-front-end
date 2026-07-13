@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { OrganizationSwitcher, UserButton, useUser, SignOutButton } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
+import { motion } from "motion/react";
 import { api } from "@/convex/_generated/api";
 import {
   Activity,
@@ -232,18 +233,26 @@ export function Sidebar() {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition",
+                    "group relative flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition",
                     isActive
-                      ? "bg-accent text-white shadow-[0_0_16px_rgba(255,91,4,0.3)]"
+                      ? "text-white"
                       : "text-muted hover:bg-surface-2 hover:text-foreground",
                   )}
                 >
-                  <item.icon className="h-4 w-4" />
-                  <span className="flex-1 truncate">{item.label}</span>
+                  {/* The active pill glides between nav items. */}
+                  {isActive && (
+                    <motion.span
+                      layoutId="sidebar-active-pill"
+                      className="absolute inset-0 rounded-lg bg-accent shadow-[0_0_16px_rgba(255,91,4,0.3)]"
+                      transition={{ type: "spring", stiffness: 420, damping: 36 }}
+                    />
+                  )}
+                  <item.icon className="relative h-4 w-4 transition-transform group-hover:scale-110" />
+                  <span className="relative flex-1 truncate">{item.label}</span>
                   {counts[item.href] !== undefined && (
                     <span
                       className={cn(
-                        "rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
+                        "relative rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
                         isActive ? "bg-white/20 text-white" : "bg-surface-2 text-muted",
                       )}
                     >

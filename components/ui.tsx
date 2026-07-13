@@ -1,6 +1,15 @@
 "use client";
 
-import { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  TextareaHTMLAttributes,
+  useEffect,
+  useId,
+  useState,
+} from "react";
+import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 
 export function Button({
@@ -20,7 +29,10 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition disabled:opacity-50",
+        // Micro-interaction: press compresses, release springs back (CSS so it
+        // composes with any button content; motion handles the bigger stuff).
+        "inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition active:scale-[0.97]",
+        "disabled:opacity-50",
         variants[variant],
         className,
       )}
@@ -79,7 +91,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cn(
-        "w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent",
+        "w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none transition placeholder:text-muted focus:border-accent focus:shadow-[0_0_12px_rgba(255,91,4,0.15)]",
         props.className,
       )}
     />
@@ -91,7 +103,7 @@ export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
     <textarea
       {...props}
       className={cn(
-        "w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-accent",
+        "w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none transition placeholder:text-muted focus:border-accent focus:shadow-[0_0_12px_rgba(255,91,4,0.15)]",
         props.className,
       )}
     />
@@ -109,20 +121,31 @@ export function Modal({
   title: string;
   children: ReactNode;
 }) {
-  if (!open) return null;
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-3xl border border-border bg-surface p-6 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="mb-4 text-lg font-semibold">{title}</h2>
-        {children}
-      </div>
-    </div>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"
+          onClick={onClose}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+        >
+          <motion.div
+            className="w-full max-w-lg rounded-3xl border border-border bg-surface p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            initial={{ opacity: 0, y: 16, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.98 }}
+            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+          >
+            <h2 className="mb-4 text-lg font-semibold">{title}</h2>
+            {children}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -155,7 +178,19 @@ export function StatusDot({ status }: { status?: string }) {
         : status === "pending"
           ? "bg-accent shadow-[0_0_8px_rgba(255,91,4,0.6)]"
           : "bg-zinc-600";
-  return <span className={cn("inline-block h-2 w-2 rounded-full", color)} />;
+  return (
+    <span className="relative inline-flex h-2 w-2">
+      {/* Live agents visibly breathe: an expanding ping ring behind the dot. */}
+      {status === "online" && (
+        <motion.span
+          className="absolute inset-0 rounded-full bg-lime-400"
+          animate={{ scale: [1, 2.4], opacity: [0.5, 0] }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
+        />
+      )}
+      <span className={cn("relative inline-block h-2 w-2 rounded-full", color)} />
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -173,9 +208,31 @@ const RING_COLORS = {
 
 export type RingColor = keyof typeof RING_COLORS;
 
+/** Animated count-up for numeric readings; passthrough for anything else. */
+function Reading({ value }: { value: ReactNode }) {
+  const reduce = useReducedMotion();
+  const target = typeof value === "number" ? value : null;
+  const [shown, setShown] = useState(target !== null && !reduce ? 0 : target);
+  useEffect(() => {
+    if (target === null) return;
+    if (reduce) {
+      setShown(target);
+      return;
+    }
+    const controls = animate(shown ?? 0, target, {
+      duration: 0.9,
+      ease: [0.22, 0.8, 0.3, 1],
+      onUpdate: (v) => setShown(Math.round(v)),
+    });
+    return () => controls.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, reduce]);
+  return <>{target === null ? value : shown}</>;
+}
+
 /**
  * Glowing ring gauge: dotted track + colored luminous arc with the reading in
- * the center (value + superscript unit), like a sensor dial.
+ * the center. The arc draws in from zero and the number counts up.
  */
 export function RingGauge({
   value,
@@ -192,6 +249,7 @@ export function RingGauge({
   size?: number;
   className?: string;
 }) {
+  const reduce = useReducedMotion();
   const c = RING_COLORS[color];
   const r = 44;
   const circ = 2 * Math.PI * r;
@@ -212,8 +270,8 @@ export function RingGauge({
           strokeWidth="2.5"
           strokeDasharray="1.5 4.5"
         />
-        {/* luminous arc */}
-        <circle
+        {/* luminous arc — draws in from zero */}
+        <motion.circle
           cx="50"
           cy="50"
           r={r}
@@ -221,13 +279,16 @@ export function RingGauge({
           stroke={c.stroke}
           strokeWidth="3.5"
           strokeLinecap="round"
-          strokeDasharray={`${arc} ${circ - arc}`}
+          strokeDasharray={circ}
+          initial={{ strokeDashoffset: reduce ? circ - arc : circ }}
+          animate={{ strokeDashoffset: circ - arc }}
+          transition={{ duration: 1.1, ease: [0.22, 0.8, 0.3, 1] }}
           style={{ filter: `drop-shadow(0 0 6px ${c.glow})` }}
         />
       </svg>
       <span className="text-center leading-none">
         <span className="font-semibold" style={{ fontSize: size / 4.6 }}>
-          {value}
+          <Reading value={value} />
         </span>
         {unit && (
           <sup className="ml-0.5 text-muted" style={{ fontSize: size / 9 }}>
@@ -239,7 +300,7 @@ export function RingGauge({
   );
 }
 
-/** Pill-tab segmented control (Overview / Device log … or °C / °F). */
+/** Pill-tab segmented control — the active pill morphs between options. */
 export function Segmented<T extends string>({
   options,
   value,
@@ -251,6 +312,9 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
   className?: string;
 }) {
+  // Scope the morphing pill to this instance — a shared layoutId would make
+  // two Segmented controls on one page animate into each other.
+  const pillId = useId();
   return (
     <div className={cn("inline-flex items-center gap-1", className)}>
       {options.map((o) => (
@@ -258,20 +322,27 @@ export function Segmented<T extends string>({
           key={o.value}
           onClick={() => onChange(o.value)}
           className={cn(
-            "rounded-lg px-3 py-1.5 text-sm transition",
+            "relative rounded-lg px-3 py-1.5 text-sm transition",
             o.value === value
-              ? "bg-accent text-white shadow-[0_0_14px_rgba(255,91,4,0.3)]"
+              ? "text-white"
               : "text-muted hover:bg-surface-2 hover:text-foreground",
           )}
         >
-          {o.label}
+          {o.value === value && (
+            <motion.span
+              layoutId={pillId}
+              className="absolute inset-0 rounded-lg bg-accent shadow-[0_0_14px_rgba(255,91,4,0.3)]"
+              transition={{ type: "spring", stiffness: 420, damping: 34 }}
+            />
+          )}
+          <span className="relative">{o.label}</span>
         </button>
       ))}
     </div>
   );
 }
 
-/** On/off switch (the orange chirp toggle). */
+/** On/off switch — the knob travels on a spring. */
 export function Toggle({
   checked,
   onChange,
@@ -292,15 +363,16 @@ export function Toggle({
       {label && <span className="text-sm text-muted">{label}</span>}
       <span
         className={cn(
-          "relative h-5 w-9 rounded-full transition",
-          checked ? "bg-accent shadow-[0_0_10px_rgba(255,91,4,0.4)]" : "bg-surface-2 border border-border",
+          "relative flex h-5 w-9 items-center rounded-full px-0.5 transition-colors",
+          checked
+            ? "justify-end bg-accent shadow-[0_0_10px_rgba(255,91,4,0.4)]"
+            : "justify-start border border-border bg-surface-2",
         )}
       >
-        <span
-          className={cn(
-            "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all",
-            checked ? "left-[18px]" : "left-0.5",
-          )}
+        <motion.span
+          layout
+          className="h-4 w-4 rounded-full bg-white"
+          transition={{ type: "spring", stiffness: 500, damping: 32 }}
         />
       </span>
     </button>

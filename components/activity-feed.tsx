@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "convex/react";
+import { AnimatePresence, motion } from "motion/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, EmptyState } from "./ui";
@@ -44,20 +45,32 @@ export function ActivityFeed({
 
   return (
     <ul className="divide-y divide-border">
-      {events.map((e) => (
-        <li key={e._id} className="flex items-start gap-3 py-3">
-          <Badge tone={typeTone[e.type] ?? "default"}>{e.type}</Badge>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{e.title}</p>
-            {e.detail && (
-              <p className="truncate text-xs text-muted">{e.detail}</p>
-            )}
-          </div>
-          <span className="shrink-0 text-xs text-muted">
-            {timeAgo(e.createdAt)}
-          </span>
-        </li>
-      ))}
+      {/* New events slide in from the top as they arrive over the live query;
+          popLayout keeps the rest of the list settling smoothly. */}
+      <AnimatePresence initial={false} mode="popLayout">
+        {events.map((e) => (
+          <motion.li
+            key={e._id}
+            layout
+            initial={{ opacity: 0, y: -14, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ type: "spring", stiffness: 380, damping: 32 }}
+            className="flex items-start gap-3 py-3"
+          >
+            <Badge tone={typeTone[e.type] ?? "default"}>{e.type}</Badge>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{e.title}</p>
+              {e.detail && (
+                <p className="truncate text-xs text-muted">{e.detail}</p>
+              )}
+            </div>
+            <span className="shrink-0 text-xs text-muted">
+              {timeAgo(e.createdAt)}
+            </span>
+          </motion.li>
+        ))}
+      </AnimatePresence>
     </ul>
   );
 }
