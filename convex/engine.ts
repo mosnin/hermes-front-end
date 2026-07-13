@@ -342,7 +342,12 @@ export const completeStep = internalMutation({
 
 /** A connector claims its dispatched workflow steps (marks them running). */
 /** Claim all dispatched steps for an agent (marks them running). Shared by the
- * poll endpoint and the combined long-poll so behaviour is identical. */
+ * poll endpoint and the combined long-poll so behaviour is identical.
+ *
+ * Each claimed step carries the OUTPUTS of the steps it depends on, so a chain
+ * like "find contacts → email them → book the demo" actually flows data: the
+ * emailing agent sees which contacts were found, not just a static instruction.
+ */
 export async function claimStepsFor(ctx: MutationCtx, agentId: Id<"agents">) {
   const dispatched = await ctx.db
     .query("runSteps")
@@ -351,13 +356,45 @@ export async function claimStepsFor(ctx: MutationCtx, agentId: Id<"agents">) {
     )
     .collect();
   const out = [];
+  // Cache per-run lookups — an agent usually claims steps from few runs.
+  const runSteps = new Map<string, Doc<"runSteps">[]>();
+  const runDeps = new Map<string, Map<string, string[]>>();
   for (const s of dispatched) {
     await ctx.db.patch(s._id, { status: "running" });
+
+    let deps = runDeps.get(s.workflowRunId);
+    if (!deps) {
+      deps = new Map();
+      const run = await ctx.db.get(s.workflowRunId);
+      const wf = run ? await ctx.db.get(run.workflowId) : null;
+      for (const def of wf?.steps ?? []) {
+        deps.set(def.id, def.dependsOn ?? []);
+      }
+      runDeps.set(s.workflowRunId, deps);
+    }
+
+    const wanted = deps.get(s.stepId) ?? [];
+    let context: { step: string; output: string }[] = [];
+    if (wanted.length) {
+      let siblings = runSteps.get(s.workflowRunId);
+      if (!siblings) {
+        siblings = await ctx.db
+          .query("runSteps")
+          .withIndex("by_run", (q) => q.eq("workflowRunId", s.workflowRunId))
+          .collect();
+        runSteps.set(s.workflowRunId, siblings);
+      }
+      context = siblings
+        .filter((p) => wanted.includes(p.stepId) && p.status === "done" && p.output)
+        .map((p) => ({ step: p.name, output: (p.output ?? "").slice(0, 2000) }));
+    }
+
     out.push({
       runId: s.workflowRunId,
       stepId: s.stepId,
       name: s.name,
       instruction: s.instruction,
+      context,
     });
   }
   return out;

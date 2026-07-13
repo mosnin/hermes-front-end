@@ -339,6 +339,15 @@ class AgentRuntime:
         print(f"[runtime] workflow step: {step['name']}")
         self.client.activity("tool_call", f"thinking: {step['name']}")
         instruction = step["instruction"]
+        # Chain data between steps: the engine ships the outputs of the steps
+        # this one depends on, so "email the contacts" actually sees which
+        # contacts the previous step found.
+        context = step.get("context") or []
+        if context:
+            upstream = "\n\n".join(
+                f"[output of '{c.get('step')}']\n{c.get('output', '')}" for c in context
+            )
+            instruction = f"{upstream}\n\n---\n\n{instruction}"
         # Real multi-step tool use when tools are connected; single call otherwise.
         out = self.run_agentic(instruction, self.system)
         self.client.workflow_result(step["runId"], step["stepId"], ok=True, output=out[:4000])

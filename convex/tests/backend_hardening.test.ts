@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { convexTest } from "convex-test";
 import schema, { DEFAULT_GUARD_CONFIG } from "../schema";
 import { api, internal } from "../_generated/api";
@@ -71,6 +71,78 @@ describe("real token-cost metering", () => {
     });
     const space = await owner.query(api.spaces.get, { spaceId });
     expect(space?.autonomyPaused).toBe(true);
+  });
+});
+
+describe("step output chaining", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("a claimed step carries the outputs of its dependencies", async () => {
+    vi.useFakeTimers();
+    const { t, owner, spaceId, agentId } = await boot("org_chain");
+    // Bring the agent online so workflow.start dispatches for real (no auto).
+    await t.mutation(internal.agents.recordHeartbeat, {
+      agentId,
+      status: "online",
+    });
+
+    const wfId = await owner.mutation(api.workflows.create, {
+      spaceId,
+      name: "Outreach chain",
+      steps: [
+        { id: "find", name: "Find contacts", instruction: "look up leads" },
+        {
+          id: "email",
+          name: "Send outreach",
+          instruction: "email the contacts found",
+          dependsOn: ["find"],
+        },
+      ],
+    });
+    const runId = (await owner.mutation(api.workflows.start, {
+      spaceId,
+      workflowId: wfId,
+      autoComplete: false,
+    })) as Id<"workflowRuns">;
+    // advanceRun is scheduled; run it now.
+    await t.mutation(internal.engine.advanceRun, { runId });
+
+    // The agent claims step 1 — no dependencies, empty context.
+    const first = await t.mutation(internal.engine.claimSteps, { agentId });
+    expect(first.length).toBe(1);
+    expect(first[0].stepId).toBe("find");
+    expect(first[0].context).toEqual([]);
+
+    // Agent reports step 1's result (the found contacts).
+    await t.mutation(internal.engine.completeStep, {
+      runId,
+      stepId: "find",
+      ok: true,
+      output: "alice@acme.com, bob@globex.com",
+    });
+    await t.mutation(internal.engine.advanceRun, { runId });
+
+    // Step 2's claim carries step 1's output.
+    const second = await t.mutation(internal.engine.claimSteps, { agentId });
+    expect(second.length).toBe(1);
+    expect(second[0].stepId).toBe("email");
+    expect(second[0].context.length).toBe(1);
+    expect(second[0].context[0].step).toBe("Find contacts");
+    expect(second[0].context[0].output).toContain("alice@acme.com");
+
+    // Finish the run and drain scheduled work (step timeouts etc.) so nothing
+    // fires after teardown.
+    await t.mutation(internal.engine.completeStep, {
+      runId,
+      stepId: "email",
+      ok: true,
+      output: "sent",
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const run = await t.run(async (ctx) => ctx.db.get(runId));
+    expect(run?.status).toBe("completed");
   });
 });
 
