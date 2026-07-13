@@ -39,7 +39,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-border bg-surface p-5",
+        "rounded-3xl border border-border bg-surface p-6",
         className,
       )}
     >
@@ -116,7 +116,7 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-2xl border border-border bg-surface p-6 shadow-2xl"
+        className="w-full max-w-lg rounded-3xl border border-border bg-surface p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="mb-4 text-lg font-semibold">{title}</h2>
@@ -136,7 +136,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="grid place-items-center rounded-2xl border border-dashed border-border bg-surface/50 p-12 text-center">
+    <div className="grid place-items-center rounded-3xl border border-dashed border-border bg-surface/50 p-12 text-center">
       <div>
         <p className="font-medium">{title}</p>
         <p className="mt-1 max-w-sm text-sm text-muted">{body}</p>

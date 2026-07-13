@@ -164,7 +164,7 @@ export function SensorCard({
   return (
     <div
       className={cn(
-        "relative rounded-2xl border bg-surface p-4",
+        "relative rounded-3xl border bg-surface p-5",
         alert
           ? "border-red-500/60 shadow-[0_0_24px_rgba(239,68,68,0.12)]"
           : "border-border",

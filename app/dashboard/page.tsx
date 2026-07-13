@@ -4,24 +4,23 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Card, StatusDot } from "@/components/ui";
+import { Badge, Button, Card, StatusDot, Toggle } from "@/components/ui";
 import { SensorCard } from "@/components/sensor-card";
+import {
+  CardMenuLabel,
+  DateChipCard,
+  DotMatrixCard,
+  MediaCard,
+  ReviewListCard,
+  SteppedChartCard,
+  type ReviewRow,
+} from "@/components/bento";
 import { ActivityFeed } from "@/components/activity-feed";
 import { RegisterAgentDialog } from "@/components/register-agent-dialog";
 import { useActiveSpace } from "@/components/active-space";
 import { Onboarding } from "@/components/onboarding";
-import { cn } from "@/lib/utils";
-import {
-  AlertTriangle,
-  Boxes,
-  ChevronLeft,
-  ListTodo,
-  MessagesSquare,
-  Network,
-  Plus,
-  Wallet,
-  Workflow,
-} from "lucide-react";
+import { timeAgo } from "@/lib/utils";
+import { AlertTriangle, ChevronLeft, Network, Plus } from "lucide-react";
 
 const TABS = [
   { label: "Overview", href: "/dashboard", active: true },
@@ -44,12 +43,19 @@ function bucket24h(times: number[], bins = 24): number[] {
 }
 
 const AXIS = ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Capabilities plotted on the fleet skills board.
+const SKILL_ROWS = [
+  { cap: "chat", label: "Chat" },
+  { cap: "workflow", label: "Jobs" },
+  { cap: "rag", label: "Memory" },
+  { cap: "mcp", label: "MCP" },
+];
 
 export default function OverviewPage() {
   const { spaceId, active } = useActiveSpace();
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
-  const threads = useQuery(api.threads.list, spaceId ? { spaceId } : "skip");
-  const tasks = useQuery(api.tasks.list, spaceId ? { spaceId } : "skip");
   const activity = useQuery(
     api.activity.feed,
     spaceId ? { spaceId, limit: 200 } : "skip",
@@ -63,39 +69,97 @@ export default function OverviewPage() {
   const [open, setOpen] = useState(false);
 
   const online = (agents ?? []).filter((a) => a.status === "online").length;
-  const total = agents?.length ?? 0;
-  const openTasks = (tasks ?? []).filter((t) => t.status !== "done").length;
   const errorCount = errors?.length ?? 0;
   const lastUpdate = new Date().toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
+  const today = new Date().toLocaleDateString([], {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 
-  // Real 24h series for the card sparklines.
+  // Real 24h series for waveform + sparklines.
   const series = useMemo(() => {
     const all = (activity ?? []).map((a) => a.createdAt);
     const a2a = (activity ?? [])
       .filter((a) => a.type === "a2a")
       .map((a) => a.createdAt);
-    const msgs = (activity ?? [])
-      .filter((a) => a.type === "message")
-      .map((a) => a.createdAt);
-    const wf = (activity ?? [])
-      .filter((a) => a.type === "workflow")
-      .map((a) => a.createdAt);
     const errs = (errors ?? []).map((e) => e.createdAt);
-    return {
-      all: bucket24h(all),
-      a2a: bucket24h(a2a),
-      msgs: bucket24h(msgs),
-      wf: bucket24h(wf),
-      errs: bucket24h(errs),
-    };
+    return { wave: bucket24h(all, 36), a2a: bucket24h(a2a), errs: bucket24h(errs) };
   }, [activity, errors]);
+
+  // Fleet skills: how many agents carry each capability (dots of 10).
+  const skillRows = useMemo(
+    () =>
+      SKILL_ROWS.map((s) => ({
+        label: s.label,
+        value: Math.min(
+          10,
+          (agents ?? []).filter((a) => (a.capabilities ?? []).includes(s.cap)).length,
+        ),
+      })).concat([
+        { label: "Online", value: Math.min(10, online) },
+      ]),
+    [agents, online],
+  );
+
+  // Throughput: activity events for the last three days (stepped columns).
+  const dayColumns = useMemo(() => {
+    const now = Date.now();
+    const counts = [2, 1, 0].map(
+      (d) =>
+        (activity ?? []).filter((a) => {
+          const age = now - a.createdAt;
+          return age >= d * DAY_MS && age < (d + 1) * DAY_MS;
+        }).length,
+    );
+    const names = [2, 1, 0].map((d) =>
+      d === 0
+        ? "Today"
+        : new Date(now - d * DAY_MS).toLocaleDateString([], { weekday: "long" }),
+    );
+    const tones = ["lime", "muted", "accent"] as const;
+    return counts.map((value, i) => ({
+      label: names[i],
+      sub: `${value} events`,
+      value,
+      tone: tones[i],
+    }));
+  }, [activity]);
+
+  const delta = useMemo(() => {
+    const [, yest, today] = dayColumns.map((c) => c.value);
+    if (!yest) return today > 0 ? "Activity is picking up today" : null;
+    const pct = Math.round(((today - yest) / yest) * 100);
+    return pct >= 0
+      ? `Fleet activity increased by ${pct}%`
+      : `Fleet activity decreased by ${-pct}%`;
+  }, [dayColumns]);
+
+  const reviewRows: ReviewRow[] = (agents ?? []).slice(0, 3).map((a) => ({
+    id: a._id,
+    glyph: a.name.slice(0, 2).toUpperCase(),
+    name: a.name,
+    role: a.framework ?? a.platform ?? "hermes",
+    pill: a.status === "online" ? "Active" : a.status,
+    href: `/dashboard/agents/${a._id}`,
+    right: (
+      <>
+        <span className="text-xs text-muted">
+          {a.lastHeartbeat ? timeAgo(a.lastHeartbeat) : "never"}
+        </span>
+        <span title="Reflects the connector heartbeat">
+          <Toggle checked={a.status === "online"} onChange={() => {}} />
+        </span>
+      </>
+    ),
+  }));
 
   return (
     <div className="flex h-full flex-col lg:flex-row">
-      {/* Detail panel (chirp left card) */}
+      {/* Detail panel */}
       <div className="w-full shrink-0 border-b border-border bg-surface p-5 lg:w-80 lg:border-b-0 lg:border-r">
         <div className="flex items-center gap-3">
           <span className="grid h-9 w-9 place-items-center rounded-xl border border-border bg-surface-2">
@@ -111,9 +175,7 @@ export default function OverviewPage() {
 
         <div className="mt-4 flex items-center justify-between">
           <span className="flex items-center gap-2 text-sm">
-            <Badge tone={active?.autonomyPaused ? "red" : "green"}>
-              {online}
-            </Badge>
+            <Badge tone={active?.autonomyPaused ? "red" : "green"}>{online}</Badge>
             <span className={active?.autonomyPaused ? "text-red-400" : "text-lime-400"}>
               {active?.autonomyPaused ? "Paused" : "Online"}
             </span>
@@ -133,9 +195,7 @@ export default function OverviewPage() {
         </button>
 
         <div className="mt-5">
-          <p className="mb-2 text-xs uppercase tracking-wider text-muted">
-            Agents
-          </p>
+          <p className="mb-2 text-xs uppercase tracking-wider text-muted">Agents</p>
           <ul className="space-y-1.5">
             {(agents ?? []).slice(0, 8).map((a) => (
               <li key={a._id}>
@@ -198,20 +258,45 @@ export default function OverviewPage() {
           </Link>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-2">
-          <SensorCard
-            icon={<Boxes className="h-4 w-4" />}
-            title="Agents"
-            lastUpdate={lastUpdate}
-            value={online}
-            unit={`/${total}`}
-            color={total > 0 && online === 0 ? "yellow" : "green"}
-            pct={total ? online / total : 0.02}
-            data={series.all}
-            axis={AXIS}
-            units={["up", "all"]}
-            onGear={() => {}}
+        {/* Bento row 1: skills board + (date chip / media card) */}
+        <div className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+          <DotMatrixCard
+            title="Fleet skills"
+            rows={skillRows}
+            axis={["None", "Half fleet", "Full fleet"]}
+            action={<CardMenuLabel>Circles view</CardMenuLabel>}
           />
+          <div className="grid content-start gap-4">
+            <DateChipCard date={today} label="Ops session" />
+            <MediaCard
+              title="Activity pulse"
+              subtitle={`with ${active?.name ?? "your fleet"}`}
+              bars={series.wave}
+              meta={`${activity?.length ?? 0} events`}
+              href="/dashboard/history"
+            />
+          </div>
+        </div>
+
+        {/* Bento row 2: agents review + throughput chart */}
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <ReviewListCard
+            title="Agents review"
+            rows={reviewRows}
+            onAdd={() => setOpen(true)}
+            addLabel="Add new agent"
+          />
+          <SteppedChartCard
+            title="Throughput"
+            columns={dayColumns}
+            insight={delta ?? undefined}
+            insightHref="/dashboard/analytics"
+            action={<CardMenuLabel>3 days</CardMenuLabel>}
+          />
+        </div>
+
+        {/* Instruments row: errors + network sensors, live feed */}
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
           <SensorCard
             icon={<AlertTriangle className="h-4 w-4" />}
             title="Errors"
@@ -239,82 +324,11 @@ export default function OverviewPage() {
             units={["24h", "1h"]}
             onGear={() => {}}
           />
-          <SensorCard
-            icon={<Workflow className="h-4 w-4" />}
-            title="Workflow runs"
-            lastUpdate={lastUpdate}
-            value={metrics?.runs.completed ?? 0}
-            unit="done"
-            color="accent"
-            pct={metrics?.runs.successRate ?? 0.02}
-            data={series.wf}
-            axis={AXIS}
-            units={["ok", "all"]}
-            onGear={() => {}}
-          />
-          <SensorCard
-            icon={<MessagesSquare className="h-4 w-4" />}
-            title="Threads"
-            lastUpdate={lastUpdate}
-            value={threads?.length ?? 0}
-            color="cyan"
-            pct={Math.min(1, (threads?.length ?? 0) / 20)}
-            data={series.msgs}
-            axis={AXIS}
-            onGear={() => {}}
-          />
-          <SensorCard
-            icon={<Wallet className="h-4 w-4" />}
-            title="Spend"
-            lastUpdate={lastUpdate}
-            value={`$${(metrics?.spend.windowUsd ?? 0).toFixed(0)}`}
-            unit="24h"
-            color="accent"
-            pct={Math.min(1, (metrics?.spend.windowUsd ?? 0) / 50)}
-            data={series.all}
-            axis={AXIS}
-            units={["usd"]}
-            onGear={() => {}}
-          />
         </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <div className="mt-4">
           <Card>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-sm font-medium">
-                <ListTodo className="h-4 w-4 text-muted" /> Open tasks
-                <Badge tone="yellow">{openTasks}</Badge>
-              </h2>
-              <Link href="/dashboard/tasks" className="text-xs text-accent">
-                Board
-              </Link>
-            </div>
-            <ul className="space-y-1.5">
-              {(tasks ?? [])
-                .filter((t) => t.status !== "done")
-                .slice(0, 5)
-                .map((t) => (
-                  <li
-                    key={t._id}
-                    className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm"
-                  >
-                    <span
-                      className={cn(
-                        "h-1.5 w-1.5 rounded-full",
-                        t.status === "in_progress" ? "bg-accent" : "bg-zinc-600",
-                      )}
-                    />
-                    <span className="flex-1 truncate">{t.title}</span>
-                    <span className="text-[10px] uppercase text-muted">{t.status}</span>
-                  </li>
-                ))}
-              {openTasks === 0 && (
-                <li className="text-sm text-muted">Nothing open.</li>
-              )}
-            </ul>
-          </Card>
-          <Card>
-            <h2 className="mb-3 text-sm font-medium">Live activity</h2>
+            <h2 className="mb-3 text-xl font-semibold tracking-tight">Live activity</h2>
             <ActivityFeed limit={8} />
           </Card>
         </div>
