@@ -1,25 +1,31 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Chirp-style theme: near-black surfaces, warm orange accent, mono type,
+   glowing instrument rings. Dark-only by design.
+--------------------------------------------------------------------------- */
 :root {
-  --background: #0a0b0f;
-  --surface: #12141b;
-  --surface-2: #181b24;
-  --border: #232838;
-  --foreground: #e7e9ee;
-  --muted: #8b90a0;
-  --accent: #6d5efc;
-  --accent-2: #00d3a7;
+  --background: #0e0e0e;
+  --surface: #161616;
+  --surface-2: #1f1f1f;
+  --border: #292929;
+  --foreground: #e8e6e3;
+  --muted: #8f8c86;
+  --accent: #ff5b04;
+  --accent-2: #a3e635;
 }
 
+/* The product is dark-only (instrument-panel aesthetic); a stray persisted
+   light preference must not break it. */
 [data-theme="light"] {
-  --background: #f7f8fa;
-  --surface: #ffffff;
-  --surface-2: #f0f1f5;
-  --border: #e2e5ec;
-  --foreground: #1a1d26;
-  --muted: #6b7180;
-  --accent: #6d5efc;
-  --accent-2: #00a886;
+  --background: #0e0e0e;
+  --surface: #161616;
+  --surface-2: #1f1f1f;
+  --border: #292929;
+  --foreground: #e8e6e3;
+  --muted: #8f8c86;
+  --accent: #ff5b04;
+  --accent-2: #a3e635;
 }
 
 @theme inline {
@@ -38,9 +44,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family: var(--font-mono), ui-monospace, "SF Mono", "JetBrains Mono",
+    Menlo, Consolas, monospace;
 }
 
 * {
@@ -48,10 +53,10 @@ body {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
-/* Thin, dark scrollbars to match the control-plane aesthetic. */
+/* Thin, dark scrollbars to match the instrument-panel aesthetic. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -62,4 +67,18 @@ body {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Glow helpers for rings, dots, and active elements. */
+.glow-accent {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.glow-green {
+  box-shadow: 0 0 10px rgba(163, 230, 53, 0.55);
+}
+.glow-red {
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.55);
+}
+.text-glow-accent {
+  text-shadow: 0 0 18px color-mix(in srgb, var(--accent) 60%, transparent);
 }

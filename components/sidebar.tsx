@@ -28,7 +28,6 @@ import {
   LayoutDashboard,
   ListTodo,
   MessagesSquare,
-  Moon,
   Network,
   Plug,
   Plus,
@@ -39,13 +38,11 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
-  Sun,
   Target,
   Workflow,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useActiveSpace } from "./active-space";
-import { useTheme } from "./theme";
 import { useDialog } from "./dialog";
 import { useToast } from "./toast";
 import { NotificationBell } from "./notification-bell";
@@ -120,7 +117,7 @@ function SpaceSwitcher() {
         className="flex w-full items-center justify-between rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
       >
         <span className="flex items-center gap-2 truncate">
-          <span className="h-2 w-2 rounded-full bg-accent" />
+          <span className="h-2 w-2 rounded-full bg-accent shadow-[0_0_8px_rgba(255,91,4,0.7)]" />
           {active?.name ?? "Loading…"}
         </span>
         <ChevronDown className="h-4 w-4 text-muted" />
@@ -171,13 +168,17 @@ function SpaceSwitcher() {
 export function Sidebar() {
   const pathname = usePathname();
   const { active } = useActiveSpace();
-  const { theme, toggle } = useTheme();
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface/50 p-3">
-      <Link href="/dashboard" className="mb-3 flex items-center gap-2 px-2 py-1 font-semibold">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent/20 text-accent">⬢</span>
-        Hermes
+    <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-background p-3">
+      <Link
+        href="/dashboard"
+        className="mb-3 flex items-center gap-2 px-2 py-1 text-lg font-bold lowercase tracking-tight"
+      >
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-sm text-white shadow-[0_0_14px_rgba(255,91,4,0.45)]">
+          ⬢
+        </span>
+        hermes
       </Link>
 
       <div className="mb-2 px-1">
@@ -214,7 +215,7 @@ export function Sidebar() {
       <nav className="flex flex-1 flex-col gap-3 overflow-y-auto">
         {SECTIONS.map((section) => (
           <div key={section.title}>
-            <p className="px-3 pb-1 text-[10px] uppercase tracking-wide text-muted">
+            <p className="px-3 pb-1 text-[10px] uppercase tracking-widest text-muted/70">
               {section.title}
             </p>
             {section.items.map((item) => {
@@ -228,7 +229,7 @@ export function Sidebar() {
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition",
                     isActive
-                      ? "bg-surface-2 text-foreground"
+                      ? "bg-accent text-white shadow-[0_0_16px_rgba(255,91,4,0.3)]"
                       : "text-muted hover:bg-surface-2 hover:text-foreground",
                   )}
                 >
@@ -245,13 +246,6 @@ export function Sidebar() {
         <UserButton afterSignOutUrl="/" />
         <span className="flex-1 text-xs text-muted">Account</span>
         <NotificationBell />
-        <button
-          onClick={toggle}
-          className="rounded-md p-1.5 text-muted hover:bg-surface-2 hover:text-foreground"
-          title="Toggle theme"
-        >
-          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
       </div>
     </aside>
   );

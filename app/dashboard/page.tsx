@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Button, Card, StatusDot } from "@/components/ui";
+import { Button, Card, RingGauge, StatusDot, type RingColor } from "@/components/ui";
 import { ActivityFeed } from "@/components/activity-feed";
 import { RegisterAgentDialog } from "@/components/register-agent-dialog";
 import { useActiveSpace } from "@/components/active-space";
@@ -21,14 +21,49 @@ export default function OverviewPage() {
   const [open, setOpen] = useState(false);
 
   const online = (agents ?? []).filter((a) => a.status === "online").length;
+  const total = agents?.length ?? 0;
   const openTasks = (tasks ?? []).filter((t) => t.status !== "done").length;
+  const doneTasks = (tasks?.length ?? 0) - openTasks;
 
-  const stats = [
-    { label: "Agents online", value: `${online}/${agents?.length ?? 0}` },
-    { label: "Threads", value: threads?.length ?? 0 },
-    { label: "Open tasks", value: openTasks },
-    { label: "Skills", value: skills?.length ?? 0 },
+  // Sensor-style dials: value + how full/healthy the ring reads.
+  const stats: {
+    label: string;
+    value: string | number;
+    unit?: string;
+    color: RingColor;
+    pct: number;
+  }[] = [
+    {
+      label: "Agents online",
+      value: online,
+      unit: `/${total}`,
+      color: total > 0 && online === 0 ? "red" : "green",
+      pct: total ? online / total : 0.02,
+    },
+    {
+      label: "Threads",
+      value: threads?.length ?? 0,
+      color: "accent",
+      pct: Math.min(1, (threads?.length ?? 0) / 20),
+    },
+    {
+      label: "Open tasks",
+      value: openTasks,
+      color: "yellow",
+      pct: tasks?.length ? openTasks / tasks.length : 0.02,
+    },
+    {
+      label: "Skills",
+      value: skills?.length ?? 0,
+      color: "cyan",
+      pct: Math.min(1, (skills?.length ?? 0) / 20),
+    },
   ];
+
+  const lastUpdate = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   return (
     <div className="p-8">
@@ -56,9 +91,12 @@ export default function OverviewPage() {
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (
-          <Card key={s.label}>
-            <p className="text-sm text-muted">{s.label}</p>
-            <p className="mt-1 text-3xl font-semibold">{s.value}</p>
+          <Card key={s.label} className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm">{s.label}</p>
+              <p className="mt-0.5 text-xs text-muted">Last update: {lastUpdate}</p>
+            </div>
+            <RingGauge value={s.value} unit={s.unit} color={s.color} pct={s.pct} size={88} />
           </Card>
         ))}
       </div>
