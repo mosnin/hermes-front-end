@@ -10,6 +10,39 @@ const DAY = 24 * 60 * 60 * 1000;
  * Bounded per tick (paginated by the by_updated index) so the sweep itself
  * stays O(batch), never scanning the whole table.
  */
+/**
+ * Retention sweep for tables that would otherwise grow without bound:
+ *   - idempotencyKeys: only meaningful within a retry window; kept 7 days.
+ *   - errors:          structured error stream; kept 30 days.
+ *   - streamChunks:    finalizeStream deletes completed streams, but a stream
+ *                      abandoned mid-flight (agent crash before done=true)
+ *                      leaks its chunks forever; kept 1 day.
+ * Each pass is bounded (.take) so the hourly tick is O(batch) — leftovers are
+ * picked up next hour.
+ */
+export const sweepRetention = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const POLICIES = [
+      { table: "idempotencyKeys", keepMs: 7 * DAY },
+      { table: "errors", keepMs: 30 * DAY },
+      { table: "streamChunks", keepMs: 1 * DAY },
+    ] as const;
+
+    const deleted: Record<string, number> = {};
+    for (const p of POLICIES) {
+      const stale = await ctx.db
+        .query(p.table)
+        .withIndex("by_time", (q) => q.lt("createdAt", now - p.keepMs))
+        .take(500);
+      for (const row of stale) await ctx.db.delete(row._id);
+      deleted[p.table] = stale.length;
+    }
+    return deleted;
+  },
+});
+
 export const sweepCounters = internalMutation({
   args: {},
   handler: async (ctx) => {

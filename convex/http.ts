@@ -3,6 +3,7 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
   sha256Hex,
+  timingSafeEqualHex,
   verifySlackSignature,
   verifyStripeSignature,
 } from "./lib/crypto";
@@ -300,7 +301,7 @@ http.route({
       !trigger ||
       trigger.kind !== "webhook" ||
       !trigger.enabled ||
-      trigger.webhookSecret !== body.secret
+      !timingSafeEqualHex(trigger.webhookSecret ?? "", String(body.secret))
     ) {
       return json({ error: "invalid trigger or secret" }, 403);
     }
@@ -724,6 +725,30 @@ http.route({
       });
     }
     return json({ ok: true });
+  }),
+});
+
+// POST /connector/usage — an agent reports real LLM usage for one call:
+// { model?, inputTokens?, outputTokens?, costUsd? }. Real numbers replace the
+// flat per-event estimates, so budgets and spend dashboards track actual
+// dollars (and the budget auto-pause fires on real spend).
+http.route({
+  path: "/connector/usage",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    const res = await ctx.runMutation(internal.connector.reportUsage, {
+      agentId: agent._id,
+      companyId: agent.companyId,
+      spaceId: agent.spaceId,
+      model: body.model ? String(body.model) : undefined,
+      inputTokens: Number(body.inputTokens ?? 0),
+      outputTokens: Number(body.outputTokens ?? 0),
+      costUsd: body.costUsd !== undefined ? Number(body.costUsd) : undefined,
+    });
+    return json(res);
   }),
 });
 

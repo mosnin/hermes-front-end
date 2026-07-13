@@ -276,6 +276,26 @@ class ControlPlaneClient:
         resp = self._post("/connector/secrets", {})
         return {s["name"]: s["value"] for s in resp.get("secrets", [])}
 
+    def report_usage(
+        self,
+        model: Optional[str] = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cost_usd: Optional[float] = None,
+    ) -> dict[str, Any]:
+        """Report real LLM usage for one call so the control plane meters
+        actual spend (budgets, auto-pause, dashboards) instead of estimates.
+        Pass cost_usd when you know it; otherwise the server estimates from
+        tokens at conservative default rates."""
+        payload: dict[str, Any] = {
+            "model": model,
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+        }
+        if cost_usd is not None:
+            payload["costUsd"] = cost_usd
+        return self._post("/connector/usage", payload)
+
     def send_bridge(self, bridge_id: str, text: str) -> dict[str, Any]:
         """Post a message OUT to a chat channel (Slack/Telegram/Discord) via a
         bridge routed to this agent. Use for outreach replies and notifications."""

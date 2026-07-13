@@ -36,6 +36,8 @@ export async function recordUsage(
     model?: string;
     kind: string;
     costUsd?: number;
+    inputTokens?: number;
+    outputTokens?: number;
   },
 ): Promise<void> {
   const cost = args.costUsd ?? COST[args.kind] ?? 0;
@@ -45,6 +47,8 @@ export async function recordUsage(
     agentId: args.agentId,
     model: args.model,
     kind: args.kind,
+    inputTokens: args.inputTokens,
+    outputTokens: args.outputTokens,
     costUsd: cost,
     createdAt: Date.now(),
   });

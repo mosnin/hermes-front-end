@@ -253,6 +253,8 @@ class AgentRuntime:
         model = os.environ.get("HERMES_AGENT_MODEL", "").strip() or DEFAULT_ANTHROPIC_MODEL
         tools = self._anthropic_tools()
         messages: list[dict] = [{"role": "user", "content": self._augment(prompt)}]
+        total_in = 0
+        total_out = 0
         for _ in range(MAX_TOOL_ITERS):
             try:
                 data = _http_json(
@@ -271,11 +273,17 @@ class AgentRuntime:
                     },
                 )
             except (urllib.error.HTTPError, urllib.error.URLError, KeyError, ValueError) as e:
+                self._report_usage(model, total_in, total_out)
                 return f"(LLM error: {e})"
+
+            usage = data.get("usage") or {}
+            total_in += int(usage.get("input_tokens") or 0)
+            total_out += int(usage.get("output_tokens") or 0)
 
             content = data.get("content", [])
             messages.append({"role": "assistant", "content": content})
             if data.get("stop_reason") != "tool_use":
+                self._report_usage(model, total_in, total_out)
                 return "".join(b.get("text", "") for b in content if b.get("type") == "text") or "(done)"
 
             # Execute every requested tool and feed the results back.
@@ -292,7 +300,20 @@ class AgentRuntime:
                     }
                 )
             messages.append({"role": "user", "content": tool_results})
+        self._report_usage(model, total_in, total_out)
         return "(reached tool-iteration limit)"
+
+    def _report_usage(self, model: str, input_tokens: int, output_tokens: int) -> None:
+        """Best-effort real-usage report so the control plane meters actual
+        spend (budgets + auto-pause) instead of flat estimates."""
+        if input_tokens <= 0 and output_tokens <= 0:
+            return
+        try:
+            self.client.report_usage(
+                model=model, input_tokens=input_tokens, output_tokens=output_tokens
+            )
+        except Exception as e:  # noqa: BLE001 — metering must never break work
+            print(f"[runtime] usage report failed: {e}")
 
     def _augment(self, prompt: str) -> str:
         """Pull relevant Space/company memory (RAG) to ground the response,

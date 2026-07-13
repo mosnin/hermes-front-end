@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { Scope } from "./lib/auth";
 import { assertRunWithinLimits, GuardViolation } from "./lib/guards";
+import { DEFAULT_GUARD_CONFIG } from "./schema";
 import { recordWorkEvent, recordActivity, recordNotification } from "./lib/events";
 import { recordUsage } from "./lib/metering";
 
@@ -203,7 +204,14 @@ export const advanceRun = internalMutation({
     const autoComplete = !!(run.input as { autoComplete?: boolean } | undefined)
       ?.autoComplete;
 
+    // Track hops locally: patching with the stale `run.hops` would advance the
+    // counter by only 1 no matter how many steps dispatch this tick, and the
+    // ceiling could overshoot by a full batch. Stop dispatching at the limit —
+    // the next tick's assertRunWithinLimits fails the run cleanly.
+    let hops = run.hops;
+    const maxHops = (scope.space.guardConfig ?? DEFAULT_GUARD_CONFIG).maxAgentHops;
     for (const step of ready) {
+      if (hops >= maxHops) break;
       const def = stepDefs.get(step.stepId);
       const agent = await resolveAgentForStep(ctx, run.spaceId, def ?? {});
       await ctx.db.patch(step._id, {
@@ -212,7 +220,8 @@ export const advanceRun = internalMutation({
         attempts: step.attempts + 1,
         startedAt: Date.now(),
       });
-      await ctx.db.patch(runId, { hops: run.hops + 1 });
+      hops++;
+      await ctx.db.patch(runId, { hops });
       await recordActivity(ctx, {
         companyId: run.companyId,
         spaceId: run.spaceId,

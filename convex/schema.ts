@@ -755,7 +755,9 @@ export default defineSchema({
     text: v.string(),
     done: v.boolean(),
     createdAt: v.number(),
-  }).index("by_stream", ["streamId", "seq"]),
+  })
+    .index("by_stream", ["streamId", "seq"])
+    .index("by_time", ["createdAt"]),
 
   // ===========================================================================
   // Dead-letter queue — failed workflow steps/runs captured with enough context
@@ -802,7 +804,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_space_time", ["spaceId", "createdAt"])
-    .index("by_trace", ["traceId"]),
+    .index("by_trace", ["traceId"])
+    .index("by_time", ["createdAt"]),
 
   // ===========================================================================
   // Idempotency keys — dedupe retried connector ingestion (a network blip after
@@ -813,7 +816,9 @@ export default defineSchema({
     agentId: v.id("agents"),
     key: v.string(),
     createdAt: v.number(),
-  }).index("by_agent_key", ["agentId", "key"]),
+  })
+    .index("by_agent_key", ["agentId", "key"])
+    .index("by_time", ["createdAt"]),
 
   // ===========================================================================
   // Aggregate counters — O(1) rolling-window accounting so metering & guards

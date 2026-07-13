@@ -32,4 +32,8 @@ crons.interval("stuck run sweep", { hours: 1 }, internal.engine.sweepStuckRuns, 
 // + dead-letter after too many redeliveries.
 crons.interval("a2a redelivery", { minutes: 1 }, internal.a2a.redeliverUnacked, {});
 
+// Retention: bound idempotencyKeys (7d), errors (30d), abandoned streamChunks
+// (1d) so no table grows without limit.
+crons.interval("retention sweep", { hours: 1 }, internal.maintenance.sweepRetention, {});
+
 export default crons;

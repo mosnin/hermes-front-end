@@ -3,6 +3,50 @@ import { internalMutation } from "./_generated/server";
 import { claimStepsFor } from "./engine";
 import { pullInboxFor } from "./a2a";
 import { firstSeen } from "./lib/idempotency";
+import { recordUsage } from "./lib/metering";
+
+// Fallback $/1M-token rates when the agent doesn't supply an exact cost.
+// Deliberately conservative generic rates — real costs should come from the
+// connector (costUsd), these just keep budget enforcement meaningful.
+const DEFAULT_RATE_PER_M = { input: 3, output: 15 };
+
+/**
+ * An agent reports REAL LLM usage for one call (model, tokens, and — ideally —
+ * the exact cost). This replaces the flat per-event estimates for Spaces whose
+ * agents report, making budget enforcement and the spend dashboards track
+ * actual dollars. Feeds the same O(1) monthly counter recordUsage maintains,
+ * so the auto-pause kill switch fires on real spend too.
+ */
+export const reportUsage = internalMutation({
+  args: {
+    agentId: v.id("agents"),
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    model: v.optional(v.string()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    costUsd: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const inTok = Math.max(0, args.inputTokens ?? 0);
+    const outTok = Math.max(0, args.outputTokens ?? 0);
+    const cost =
+      args.costUsd ??
+      (inTok / 1_000_000) * DEFAULT_RATE_PER_M.input +
+        (outTok / 1_000_000) * DEFAULT_RATE_PER_M.output;
+    await recordUsage(ctx, {
+      companyId: args.companyId,
+      spaceId: args.spaceId,
+      agentId: args.agentId,
+      model: args.model,
+      kind: "tokens",
+      inputTokens: inTok,
+      outputTokens: outTok,
+      costUsd: cost,
+    });
+    return { ok: true, costUsd: cost };
+  },
+});
 
 /**
  * Idempotency gate for retried connector ingestion. Returns true if this is the
