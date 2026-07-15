@@ -43,6 +43,7 @@ export const listMine = query({
           slug: space.slug,
           role,
           autonomyPaused: space.autonomyPaused ?? false,
+          shadowMode: space.shadowMode ?? false,
         });
       }
     }

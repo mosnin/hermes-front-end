@@ -19,6 +19,7 @@ type SpaceInfo = {
   slug: string;
   role: Role;
   autonomyPaused: boolean;
+  shadowMode?: boolean;
 };
 
 type ActiveSpaceValue = {

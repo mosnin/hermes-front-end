@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/theme";
 import { ToastProvider } from "@/components/toast";
 import { DialogProvider } from "@/components/dialog";
 import { CommandPalette } from "@/components/command-palette";
+import { GlobalActionsProvider } from "@/components/global-actions";
 
 // The dashboard is authenticated and entirely client-driven (Clerk + Convex
 // live queries). It must never be statically prerendered at build time — doing
@@ -21,11 +22,13 @@ export default function DashboardLayout({
       <ActiveSpaceProvider>
         <ToastProvider>
           <DialogProvider>
-            <div className="flex h-screen overflow-hidden">
-              <Sidebar />
-              <main className="flex-1 overflow-y-auto">{children}</main>
-            </div>
-            <CommandPalette />
+            <GlobalActionsProvider>
+              <div className="flex h-screen overflow-hidden">
+                <Sidebar />
+                <main className="flex-1 overflow-y-auto">{children}</main>
+              </div>
+              <CommandPalette />
+            </GlobalActionsProvider>
           </DialogProvider>
         </ToastProvider>
       </ActiveSpaceProvider>

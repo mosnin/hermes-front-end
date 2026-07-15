@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useActiveSpace } from "./active-space";
+import { useToast } from "./toast";
+import { runGlobalAction } from "./global-actions";
 import {
   Activity,
   BarChart3,
@@ -58,6 +60,7 @@ const NAV = [
   { label: "MCP servers", href: "/dashboard/mcp", icon: Server },
   { label: "Chat bridges", href: "/dashboard/bridges", icon: Cable },
   { label: "Approvals", href: "/dashboard/approvals", icon: ShieldCheck },
+  { label: "Alerts", href: "/dashboard/alerts", icon: Bell },
   { label: "Action ledger", href: "/dashboard/ledger", icon: ScrollText },
   { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
   { label: "Work history", href: "/dashboard/history", icon: History },
@@ -72,11 +75,22 @@ const NAV = [
   { label: "Space settings", href: "/dashboard/settings", icon: Settings },
 ];
 
-type Row = { label: string; sub?: string; href: string; group: string };
+type Row = {
+  label: string;
+  sub?: string;
+  href?: string;
+  run?: () => void | Promise<void>;
+  group: string;
+  danger?: boolean;
+};
 
 export function CommandPalette() {
   const router = useRouter();
-  const { spaceId } = useActiveSpace();
+  const { spaceId, active: activeSpace } = useActiveSpace();
+  const setAutonomyPaused = useMutation(api.spaces.setAutonomyPaused);
+  const setShadowMode = useMutation(api.spaces.setShadowMode);
+  const seed = useMutation(api.demo.seed);
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
@@ -105,6 +119,51 @@ export function CommandPalette() {
     open && spaceId && q.trim().length >= 2 ? { spaceId, query: q } : "skip",
   );
 
+  const actions: Row[] = useMemo(() => {
+    if (!spaceId) return [];
+    const sid = spaceId;
+    const paused = !!activeSpace?.autonomyPaused;
+    const shadow = !!activeSpace?.shadowMode;
+    const list: Row[] = [
+      {
+        label: "Connect an agent",
+        sub: "Register a new agent",
+        group: "Actions",
+        run: () => runGlobalAction("connect-agent"),
+      },
+      {
+        label: paused ? "Resume autonomy" : "Pause autonomy (kill switch)",
+        sub: paused ? "Re-enable dispatch" : "Halt all dispatch in this Space",
+        group: "Actions",
+        danger: !paused,
+        run: async () => {
+          await setAutonomyPaused({ spaceId: sid, paused: !paused });
+          toast(paused ? "Autonomy resumed" : "Autonomy paused", paused ? "success" : "error");
+        },
+      },
+      {
+        label: shadow ? "Disable shadow mode" : "Enable shadow mode",
+        sub: "Propose actions instead of executing",
+        group: "Actions",
+        run: async () => {
+          await setShadowMode({ spaceId: sid, shadow: !shadow });
+          toast(shadow ? "Shadow mode off" : "Shadow mode on", "success");
+        },
+      },
+      {
+        label: "Load demo data",
+        sub: "Seed this Space with sample agents & activity",
+        group: "Actions",
+        run: async () => {
+          await seed({ spaceId: sid });
+          toast("Demo data loaded", "success");
+        },
+      },
+    ];
+    return list.filter((a) => a.label.toLowerCase().includes(q.toLowerCase()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, spaceId, activeSpace?.autonomyPaused, activeSpace?.shadowMode]);
+
   const rows: Row[] = useMemo(() => {
     const nav: Row[] = NAV.filter((n) =>
       n.label.toLowerCase().includes(q.toLowerCase()),
@@ -121,12 +180,18 @@ export function CommandPalette() {
           ...r.memories.map((h) => ({ label: h.label, sub: h.sub, href: `/dashboard/knowledge`, group: "Knowledge" })),
         ]
       : [];
-    return [...nav, ...dyn];
-  }, [q, results]);
+    return [...actions, ...nav, ...dyn];
+  }, [q, results, actions]);
 
-  function go(href: string) {
+  function run(row: Row) {
     setOpen(false);
-    router.push(href);
+    if (row.href) {
+      router.push(row.href);
+    } else if (row.run) {
+      Promise.resolve(row.run()).catch((e) =>
+        toast(e instanceof Error ? e.message : "Action failed", "error"),
+      );
+    }
   }
 
   if (!open) return null;
@@ -160,7 +225,7 @@ export function CommandPalette() {
                 e.preventDefault();
                 setActive((a) => Math.max(a - 1, 0));
               } else if (e.key === "Enter" && rows[active]) {
-                go(rows[active].href);
+                run(rows[active]);
               }
             }}
             placeholder="Search agents, threads, tasks, skills… or jump to a page"
@@ -188,13 +253,13 @@ export function CommandPalette() {
                     <button
                       key={`${r.group}-${r.label}-${i}`}
                       onMouseEnter={() => setActive(i)}
-                      onClick={() => go(r.href)}
+                      onClick={() => run(r)}
                       className={cn(
                         "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm",
                         active === i ? "bg-surface-2" : "hover:bg-surface-2",
                       )}
                     >
-                      <span className="truncate">{r.label}</span>
+                      <span className={cn("truncate", r.danger && "text-red-400")}>{r.label}</span>
                       {r.sub && <span className="text-xs text-muted">{r.sub}</span>}
                     </button>
                   );
