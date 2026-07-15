@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, Input } from "@/components/ui";
+import { ScheduleCard } from "@/components/schedule-card";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { Power, EyeOff } from "lucide-react";
 
@@ -239,6 +240,10 @@ export default function SettingsPage() {
           </div>
         )}
       </Card>
+
+      <div className="mt-6">
+        <ScheduleCard />
+      </div>
     </div>
   );
 }

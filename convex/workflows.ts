@@ -12,6 +12,7 @@ import {
   assertAutonomyActive,
   assertWithinBudget,
   assertPlatformActive,
+  assertWithinSchedule,
   GuardViolation,
 } from "./lib/guards";
 import { recordWorkEvent, recordNotification } from "./lib/events";
@@ -207,6 +208,7 @@ export const start = mutation({
     requireRole(scope, "operator");
     await assertPlatformActive(ctx);
     assertAutonomyActive(scope);
+    assertWithinSchedule(scope);
     await assertWithinBudget(ctx, scope);
     const wf = await ctx.db.get(workflowId);
     if (!wf || wf.spaceId !== spaceId) throw new Error("Not found");

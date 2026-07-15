@@ -209,6 +209,40 @@ export const setShadowMode = mutation({
   },
 });
 
+/** Scheduled active window (business-hours autonomy). Admin only. */
+export const setSchedule = mutation({
+  args: {
+    spaceId: v.id("spaces"),
+    schedule: v.union(
+      v.object({
+        enabled: v.boolean(),
+        days: v.array(v.number()),
+        startMin: v.number(),
+        endMin: v.number(),
+        tzOffsetMinutes: v.number(),
+      }),
+      v.null(),
+    ),
+  },
+  handler: async (ctx, { spaceId, schedule }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "admin");
+    await ctx.db.patch(spaceId, { schedule: schedule ?? undefined });
+    await ctx.db.insert("workEvents", {
+      companyId: scope.companyId,
+      spaceId,
+      actorType: "user",
+      actorId: scope.userId,
+      category: "governance",
+      action: schedule?.enabled ? "schedule_enabled" : "schedule_disabled",
+      summary: schedule?.enabled
+        ? "Scheduled active window enabled"
+        : "Scheduled active window cleared",
+      createdAt: Date.now(),
+    });
+  },
+});
+
 // --- members & roles --------------------------------------------------------
 
 export const members = query({

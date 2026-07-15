@@ -2,6 +2,7 @@ import { MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 import { Scope } from "./auth";
 import { DEFAULT_GUARD_CONFIG } from "../schema";
+import { withinSchedule } from "./schedule";
 import {
   bumpCounter,
   readCounter,
@@ -30,6 +31,17 @@ function guards(scope: Scope) {
 export function assertAutonomyActive(scope: Scope): void {
   if (scope.space.autonomyPaused) {
     throw new GuardViolation("autonomy is paused (kill switch engaged)");
+  }
+}
+
+/**
+ * Scheduled active window — outside configured business hours, refuse new
+ * autonomous dispatch. Evaluated at guard time (no cron); a disabled/absent
+ * schedule is always active.
+ */
+export function assertWithinSchedule(scope: Scope): void {
+  if (!withinSchedule(scope.space.schedule, Date.now())) {
+    throw new GuardViolation("outside the Space's scheduled active hours");
   }
 }
 

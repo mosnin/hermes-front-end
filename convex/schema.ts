@@ -63,6 +63,19 @@ export default defineSchema({
     // Model router policy: { primary, fallbacks[], byCapability? }.
     modelPolicy: v.optional(v.any()),
     guardConfig: v.optional(guardConfigValidator),
+    // Scheduled active window (business-hours autonomy). Outside the window,
+    // autonomous dispatch is refused — evaluated at guard time, no cron needed.
+    // Minutes are from local midnight; tzOffsetMinutes shifts UTC to the
+    // operator's zone (e.g. -300 for US Eastern). days: 0=Sun … 6=Sat.
+    schedule: v.optional(
+      v.object({
+        enabled: v.boolean(),
+        days: v.array(v.number()),
+        startMin: v.number(),
+        endMin: v.number(),
+        tzOffsetMinutes: v.number(),
+      }),
+    ),
     createdAt: v.number(),
   })
     .index("by_company", ["companyId"])

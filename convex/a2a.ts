@@ -16,6 +16,7 @@ import {
   assertRateLimit,
   assertWithinBudget,
   assertPlatformActive,
+  assertWithinSchedule,
   recordA2ASend,
   GuardViolation,
 } from "./lib/guards";
@@ -124,6 +125,7 @@ async function runGuards(
 ): Promise<void> {
   await assertPlatformActive(ctx);
   assertAutonomyActive(scope);
+  assertWithinSchedule(scope);
   // Shadow mode: log the action as a proposal and block execution.
   if (scope.space.shadowMode) {
     await ctx.db.insert("actionLedger", {
