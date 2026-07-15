@@ -5,6 +5,7 @@ import { ToastProvider } from "@/components/toast";
 import { DialogProvider } from "@/components/dialog";
 import { CommandPalette } from "@/components/command-palette";
 import { GlobalActionsProvider } from "@/components/global-actions";
+import { ShortcutsHelp } from "@/components/shortcuts-help";
 
 // The dashboard is authenticated and entirely client-driven (Clerk + Convex
 // live queries). It must never be statically prerendered at build time — doing
@@ -23,11 +24,17 @@ export default function DashboardLayout({
         <ToastProvider>
           <DialogProvider>
             <GlobalActionsProvider>
+              <a href="#main-content" className="skip-link">
+                Skip to content
+              </a>
               <div className="flex h-screen overflow-hidden">
                 <Sidebar />
-                <main className="flex-1 overflow-y-auto">{children}</main>
+                <main id="main-content" className="flex-1 overflow-y-auto">
+                  {children}
+                </main>
               </div>
               <CommandPalette />
+              <ShortcutsHelp />
             </GlobalActionsProvider>
           </DialogProvider>
         </ToastProvider>
