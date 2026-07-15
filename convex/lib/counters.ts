@@ -1,4 +1,4 @@
-import { MutationCtx } from "../_generated/server";
+import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
 /**
@@ -15,6 +15,22 @@ export type CounterValue = { count: number; valueUsd: number };
 
 export async function readCounter(
   ctx: MutationCtx,
+  spaceId: Id<"spaces">,
+  scope: string,
+  bucket: string,
+): Promise<CounterValue> {
+  const row = await ctx.db
+    .query("counters")
+    .withIndex("by_space_scope_bucket", (q) =>
+      q.eq("spaceId", spaceId).eq("scope", scope).eq("bucket", bucket),
+    )
+    .unique();
+  return { count: row?.count ?? 0, valueUsd: row?.valueUsd ?? 0 };
+}
+
+/** Read-only counter lookup usable from a query context (no writes). */
+export async function readCounterQuery(
+  ctx: QueryCtx | MutationCtx,
   spaceId: Id<"spaces">,
   scope: string,
   bucket: string,

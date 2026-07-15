@@ -812,6 +812,30 @@ export default defineSchema({
     .index("by_time", ["createdAt"]),
 
   // ===========================================================================
+  // Alert rules — condition → route. Ops teams get paged when the fleet
+  // misbehaves (error spikes, budget burn, agents dropping, SLO breach) without
+  // watching a dashboard. Evaluated by the "alert eval" cron.
+  // ===========================================================================
+  alertRules: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    name: v.string(),
+    metric: v.string(), // errors_24h | budget_pct | agents_offline | run_success_rate | dead_letters_open | a2a_rate
+    comparator: v.union(v.literal("gt"), v.literal("lt")),
+    threshold: v.number(),
+    channel: v.string(), // "notification" | "bridge"
+    bridgeId: v.optional(v.id("bridges")),
+    enabled: v.boolean(),
+    cooldownMinutes: v.number(),
+    lastFiredAt: v.optional(v.number()),
+    lastValue: v.optional(v.number()),
+    createdBy: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_enabled", ["enabled"]),
+
+  // ===========================================================================
   // Platform admin audit — append-only record of every privileged platform
   // (super-admin) action. SOC2 CC6/CC7: privileged access is least-privilege,
   // logged, and attributable. There are intentionally NO update/delete

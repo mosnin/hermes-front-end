@@ -11,6 +11,7 @@ import {
   Activity,
   BarChart3,
   Bell,
+  BellRing,
   Boxes,
   Brain,
   Cable,
@@ -87,6 +88,7 @@ const SECTIONS: {
     title: "Insight",
     items: [
       { href: "/dashboard/approvals", label: "Approvals", icon: ShieldCheck },
+      { href: "/dashboard/alerts", label: "Alerts", icon: BellRing },
       { href: "/dashboard/ledger", label: "Action ledger", icon: ScrollText },
       { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
       { href: "/dashboard/history", label: "Work history", icon: History },
