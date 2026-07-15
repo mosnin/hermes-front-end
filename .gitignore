@@ -40,5 +40,4 @@ connector/**/__pycache__/
 connector/**/*.pyc
 connector/.venv/
 
-# Convex generated (regenerated at build time)
-convex/_generated/
+# convex/_generated is committed so builds don't depend on codegen running first
