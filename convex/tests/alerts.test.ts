@@ -62,6 +62,34 @@ describe("alert rules engine", () => {
     expect(res.fired).toBe(0);
   });
 
+  test("a rule cannot reference another tenant's bridge (isolation)", async () => {
+    const t = convexTest(schema, modules);
+    // Tenant B owns a bridge.
+    const bOwner = t.withIdentity({ subject: "b", org_id: "org_b" });
+    const bSpace = await bOwner.mutation(api.spaces.create, { name: "B" });
+    await bOwner.mutation(api.billing.setPlan, { spaceId: bSpace, plan: "team" });
+    const bBridge = await bOwner.mutation(api.bridges.connect, {
+      spaceId: bSpace,
+      type: "slack",
+      name: "b-team",
+    });
+
+    // Tenant A tries to point an alert at tenant B's bridge → refused.
+    const aOwner = t.withIdentity({ subject: "a", org_id: "org_a" });
+    const aSpace = await aOwner.mutation(api.spaces.create, { name: "A" });
+    await expect(
+      aOwner.mutation(api.alerts.create, {
+        spaceId: aSpace,
+        name: "leak",
+        metric: "errors_24h",
+        comparator: "gt",
+        threshold: 1,
+        channel: "bridge",
+        bridgeId: bBridge as Id<"bridges">,
+      }),
+    ).rejects.toThrow(/Bridge not found in this Space/);
+  });
+
   test("budget rule only alerts when a budget is set", async () => {
     const t = convexTest(schema, modules);
     const owner = t.withIdentity({ subject: "u", org_id: "org_alert2" });

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { convexTest } from "convex-test";
 import schema from "../schema";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 
 const modules = import.meta.glob("../**/*.*s");
@@ -97,6 +97,42 @@ describe("platform admin (SOC2)", () => {
     await expect(
       owner.mutation(api.admin.setCompanyAutonomy, { companyId, paused: false }),
     ).rejects.toThrow(/administrator access required/);
+  });
+
+  test("the global kill switch also blocks the AUTONOMOUS trigger path", async () => {
+    const t = convexTest(schema, modules);
+    const admin = t.withIdentity({ subject: ADMIN, org_id: "org_admin" });
+    const owner = t.withIdentity({ subject: "u", org_id: "org_trig" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "Trig" });
+    const wfId = await owner.mutation(api.workflows.create, {
+      spaceId,
+      name: "Auto",
+      steps: [{ id: "s1", name: "Do", instruction: "act" }],
+    });
+
+    // Engage the global kill switch.
+    await admin.mutation(api.admin.setFlag, {
+      key: "global_autonomy_paused",
+      enabled: true,
+    });
+
+    // A trigger-driven run must be declined (returns null), not dispatched.
+    const runId = await t.mutation(internal.workflows.startFromTrigger, {
+      workflowId: wfId,
+      trigger: "webhook",
+    });
+    expect(runId).toBeNull();
+
+    // Release the switch → the trigger path works again.
+    await admin.mutation(api.admin.setFlag, {
+      key: "global_autonomy_paused",
+      enabled: false,
+    });
+    const runId2 = await t.mutation(internal.workflows.startFromTrigger, {
+      workflowId: wfId,
+      trigger: "webhook",
+    });
+    expect(runId2).not.toBeNull();
   });
 
   test("the global kill switch blocks tenant autonomy", async () => {

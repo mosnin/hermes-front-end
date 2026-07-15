@@ -54,6 +54,16 @@ export const create = mutation({
     const scope = await resolveScope(ctx, args.spaceId);
     requireRole(scope, "operator");
     if (!METRICS[args.metric]) throw new Error("Unknown metric");
+    // Isolation: a bridge channel must reference a bridge in THIS Space — never
+    // another tenant's, which would let a rule inject messages into their
+    // channels using their credentials.
+    if (args.channel === "bridge") {
+      if (!args.bridgeId) throw new Error("bridge channel requires a bridge");
+      const bridge = await ctx.db.get(args.bridgeId);
+      if (!bridge || bridge.spaceId !== args.spaceId) {
+        throw new Error("Bridge not found in this Space");
+      }
+    }
     return await ctx.db.insert("alertRules", {
       companyId: scope.companyId,
       spaceId: args.spaceId,
@@ -62,9 +72,10 @@ export const create = mutation({
       comparator: args.comparator,
       threshold: args.threshold,
       channel: args.channel,
-      bridgeId: args.bridgeId,
+      bridgeId: args.channel === "bridge" ? args.bridgeId : undefined,
       enabled: true,
-      cooldownMinutes: args.cooldownMinutes ?? 30,
+      // Floor at 1 minute so cooldown: 0 can't re-fire (spam) every tick.
+      cooldownMinutes: Math.max(1, args.cooldownMinutes ?? 30),
       createdBy: scope.userId,
       createdAt: Date.now(),
     });
@@ -186,10 +197,16 @@ async function fire(
     summary: `${rule.name} — ${body}`,
   });
   if (rule.channel === "bridge" && rule.bridgeId) {
-    await ctx.scheduler.runAfter(0, internal.bridges.sendOutbound, {
-      bridgeId: rule.bridgeId,
-      text: `🚨 ${rule.name}: ${body}`,
-    });
+    // Defense in depth: re-verify the bridge still belongs to the rule's Space
+    // before dispatching, so a moved/mismatched bridge can never receive this
+    // Space's alerts (cross-tenant channel injection).
+    const bridge = await ctx.db.get(rule.bridgeId);
+    if (bridge && bridge.spaceId === rule.spaceId) {
+      await ctx.scheduler.runAfter(0, internal.bridges.sendOutbound, {
+        bridgeId: rule.bridgeId,
+        text: `🚨 ${rule.name}: ${body}`,
+      });
+    }
   }
 }
 

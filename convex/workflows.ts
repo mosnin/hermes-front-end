@@ -7,7 +7,7 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
-import { resolveScope, requireRole } from "./lib/auth";
+import { resolveScope, requireRole, Scope } from "./lib/auth";
 import {
   assertAutonomyActive,
   assertWithinBudget,
@@ -242,7 +242,22 @@ export const startFromTrigger = internalMutation({
     const space = await ctx.db.get(wf.spaceId);
     if (!space || space.autonomyPaused) return null;
     const g = space.guardConfig ?? DEFAULT_GUARD_CONFIG;
+    // The autonomous (trigger) path MUST honor the same safety controls as the
+    // human `start` path — otherwise the global kill switch, business-hours
+    // schedule, and monthly budget are silently bypassed for exactly the
+    // machine-driven traffic they exist to stop. Build a system scope and run
+    // the same guards; a GuardViolation quietly declines the trigger.
+    const scope: Scope = {
+      userId: "system",
+      companyId: space.companyId,
+      spaceId: space._id,
+      space,
+      role: "owner",
+    };
     try {
+      await assertPlatformActive(ctx);
+      assertWithinSchedule(scope);
+      await assertWithinBudget(ctx, scope);
       return await createRun(ctx, wf, {
         trigger,
         autoComplete: false,
