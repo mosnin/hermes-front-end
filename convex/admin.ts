@@ -181,6 +181,49 @@ export const setFlag = mutation({
   },
 });
 
+/** Cross-tenant recent error stream (system failures + trace ids; not tenant
+ * content). Read-only observability for the platform operator. */
+export const recentErrors = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    await requirePlatformAdmin(ctx);
+    return await ctx.db
+      .query("errors")
+      .withIndex("by_time")
+      .order("desc")
+      .take(Math.min(limit ?? 100, 300));
+  },
+});
+
+/**
+ * Break-glass: pause (or resume) ALL autonomy for a company by flipping every
+ * one of its Spaces. A targeted remediation lever short of the global switch.
+ * Audited as critical.
+ */
+export const setCompanyAutonomy = mutation({
+  args: { companyId: v.string(), paused: v.boolean() },
+  handler: async (ctx, { companyId, paused }) => {
+    const admin = await requirePlatformAdmin(ctx);
+    const spaces = await ctx.db
+      .query("spaces")
+      .withIndex("by_company", (q) => q.eq("companyId", companyId))
+      .take(500);
+    for (const s of spaces) {
+      if ((s.autonomyPaused ?? false) !== paused) {
+        await ctx.db.patch(s._id, { autonomyPaused: paused });
+      }
+    }
+    await auditAdmin(ctx, admin, {
+      action: paused ? "company_paused" : "company_resumed",
+      resource: "company_autonomy",
+      target: companyId,
+      detail: `${spaces.length} space(s)`,
+      severity: "critical",
+    });
+    return { spaces: spaces.length };
+  },
+});
+
 /**
  * SOC2 control posture — a live, evidence-backed compliance snapshot. Each
  * control reports its status from the actual system state (not a static

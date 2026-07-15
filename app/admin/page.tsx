@@ -17,6 +17,7 @@ import {
 export default function AdminOverview() {
   const stats = useQuery(api.admin.platformStats, {});
   const flags = useQuery(api.admin.flags, {});
+  const errors = useQuery(api.admin.recentErrors, { limit: 8 });
   const setFlag = useMutation(api.admin.setFlag);
   const toast = useToast();
 
@@ -138,6 +139,27 @@ export default function AdminOverview() {
           </div>
         </Card>
       </div>
+
+      <Card className="mt-6">
+        <h2 className="mb-3 font-semibold">Cross-tenant error stream</h2>
+        {(errors ?? []).length === 0 ? (
+          <p className="text-sm text-muted">
+            {errors === undefined ? "Loading…" : "No recent platform errors."}
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {(errors ?? []).map((e) => (
+              <li key={e._id} className="flex items-center gap-3 py-2.5 text-sm">
+                <span className="rounded-md bg-surface-2 px-2 py-0.5 text-xs text-muted">
+                  {e.source}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{e.message}</span>
+                <span className="font-mono text-[10px] text-muted">{e.traceId}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }

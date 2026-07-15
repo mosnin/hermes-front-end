@@ -66,6 +66,39 @@ describe("platform admin (SOC2)", () => {
     expect(trail[0].adminId).toBe(ADMIN);
   });
 
+  test("per-company break-glass pauses all of a company's spaces, audited", async () => {
+    const t = convexTest(schema, modules);
+    const admin = t.withIdentity({ subject: ADMIN, org_id: "org_admin" });
+    const owner = t.withIdentity({ subject: "u", org_id: "org_pausable" });
+    const s1 = await owner.mutation(api.spaces.create, { name: "One" });
+    const s2 = await owner.mutation(api.spaces.create, { name: "Two" });
+    const companyId = await t.run(async (ctx) => {
+      const s = await ctx.db.get(s1 as Id<"spaces">);
+      return s!.companyId;
+    });
+
+    const res = await admin.mutation(api.admin.setCompanyAutonomy, {
+      companyId,
+      paused: true,
+    });
+    expect(res.spaces).toBe(2);
+
+    const paused = await t.run(async (ctx) => {
+      const a = await ctx.db.get(s1 as Id<"spaces">);
+      const b = await ctx.db.get(s2 as Id<"spaces">);
+      return a?.autonomyPaused && b?.autonomyPaused;
+    });
+    expect(paused).toBe(true);
+
+    const trail = await admin.query(api.admin.auditTrail, {});
+    expect(trail.some((e) => e.action === "company_paused")).toBe(true);
+
+    // A non-admin cannot use the lever.
+    await expect(
+      owner.mutation(api.admin.setCompanyAutonomy, { companyId, paused: false }),
+    ).rejects.toThrow(/administrator access required/);
+  });
+
   test("the global kill switch blocks tenant autonomy", async () => {
     const t = convexTest(schema, modules);
     const admin = t.withIdentity({ subject: ADMIN, org_id: "org_admin" });
