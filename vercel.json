@@ -2,5 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "npm install",
-  "buildCommand": "npx convex deploy --cmd 'npm run build' || (echo '⚠ convex deploy failed (missing/expired CONVEX_DEPLOY_KEY, or missing CLERK_JWT_ISSUER_DOMAIN in the Convex env) — building the frontend only against NEXT_PUBLIC_CONVEX_URL. A genuine code/build error would fail here too.' && node scripts/gen-generated.mjs && npm run build)"
+  "buildCommand": "bash scripts/vercel-build.sh"
 }
