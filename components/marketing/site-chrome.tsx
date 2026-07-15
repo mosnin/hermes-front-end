@@ -86,6 +86,7 @@ const FOOTER_COLS: { title: string; links: { href: string; label: string }[] }[]
       { href: "/features", label: "Features" },
       { href: "/pricing", label: "Pricing" },
       { href: "/changelog", label: "Changelog" },
+      { href: "/status", label: "Status" },
     ],
   },
   {
