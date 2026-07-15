@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { resolveScope } from "./lib/auth";
+import { readCounterQuery, monthBucket } from "./lib/counters";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -10,6 +11,62 @@ const DAY = 24 * 60 * 60 * 1000;
  * history a Space accumulates — a metrics endpoint that melts under load is
  * worse than none.
  */
+/**
+ * Cost forecast + anomaly detection. Projects month-end spend from the
+ * month-to-date run-rate (O(1) usage counter) and flags an error/spend anomaly
+ * when today's rate materially exceeds the trailing 7-day baseline.
+ */
+export const forecast = query({
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    const now = new Date();
+    const mtdSpend = (
+      await readCounterQuery(ctx, spaceId, "usage", monthBucket())
+    ).valueUsd;
+
+    // Days elapsed (incl. today) and days in this month.
+    const dayOfMonth = now.getUTCDate();
+    const daysInMonth = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    const projectedSpend = dayOfMonth > 0 ? (mtdSpend / dayOfMonth) * daysInMonth : 0;
+    const budget = scope.space.guardConfig?.monthlyBudgetUsd ?? 0;
+
+    // Anomaly: errors today vs the mean of the prior 7 days.
+    const nowMs = Date.now();
+    const errs = await ctx.db
+      .query("errors")
+      .withIndex("by_space_time", (q) =>
+        q.eq("spaceId", spaceId).gte("createdAt", nowMs - 8 * DAY),
+      )
+      .take(4000);
+    const byDay = Array(8).fill(0);
+    for (const e of errs) {
+      const ageDays = Math.floor((nowMs - e.createdAt) / DAY);
+      if (ageDays >= 0 && ageDays < 8) byDay[ageDays]++;
+    }
+    const today = byDay[0];
+    const prior7 = byDay.slice(1);
+    const baseline = prior7.reduce((s, n) => s + n, 0) / 7;
+    // Anomaly when today is well above baseline AND above a small floor.
+    const anomaly = today >= 5 && today > baseline * 2.5;
+
+    return {
+      mtdSpendUsd: Math.round(mtdSpend * 10000) / 10000,
+      projectedSpendUsd: Math.round(projectedSpend * 100) / 100,
+      budgetUsd: budget,
+      projectedPct: budget > 0 ? projectedSpend / budget : null,
+      overBudget: budget > 0 && projectedSpend > budget,
+      dayOfMonth,
+      daysInMonth,
+      errorsToday: today,
+      errorBaseline: Math.round(baseline * 10) / 10,
+      anomaly,
+    };
+  },
+});
+
 export const summary = query({
   args: { spaceId: v.id("spaces"), windowHours: v.optional(v.number()) },
   handler: async (ctx, { spaceId, windowHours }) => {

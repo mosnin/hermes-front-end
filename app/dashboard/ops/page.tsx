@@ -20,6 +20,7 @@ export default function OpsPage() {
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
   const alerts = useQuery(api.health.alerts, spaceId ? { spaceId } : "skip");
   const metrics = useQuery(api.metrics.summary, spaceId ? { spaceId } : "skip");
+  const forecast = useQuery(api.metrics.forecast, spaceId ? { spaceId } : "skip");
   const errors = useQuery(
     api.observability.listErrors,
     spaceId ? { spaceId, limit: 10 } : "skip",
@@ -118,6 +119,51 @@ export default function OpsPage() {
               Window spend: ${metrics.spend.windowUsd.toFixed(2)}
             </span>
           </div>
+        </Card>
+      )}
+
+      {forecast && (
+        <Card className={`mb-6 ${forecast.anomaly || forecast.overBudget ? "border-amber-500/40" : ""}`}>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-semibold">Forecast & anomalies</h2>
+            {forecast.anomaly && (
+              <span className="rounded-md bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-400">
+                error anomaly
+              </span>
+            )}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-muted">Month-to-date</p>
+              <p className="text-2xl font-semibold">${forecast.mtdSpendUsd.toFixed(2)}</p>
+              <p className="text-xs text-muted">day {forecast.dayOfMonth}/{forecast.daysInMonth}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted">Projected month-end</p>
+              <p className={`text-2xl font-semibold ${forecast.overBudget ? "text-red-400" : ""}`}>
+                ${forecast.projectedSpendUsd.toFixed(2)}
+              </p>
+              <p className="text-xs text-muted">
+                {forecast.budgetUsd > 0
+                  ? `${Math.round((forecast.projectedPct ?? 0) * 100)}% of $${forecast.budgetUsd} budget`
+                  : "no budget set"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted">Errors today vs baseline</p>
+              <p className={`text-2xl font-semibold ${forecast.anomaly ? "text-amber-400" : ""}`}>
+                {forecast.errorsToday}
+                <span className="text-sm font-normal text-muted"> / ~{forecast.errorBaseline}</span>
+              </p>
+              <p className="text-xs text-muted">7-day daily average</p>
+            </div>
+          </div>
+          {forecast.overBudget && (
+            <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              At the current run-rate you&apos;ll exceed the monthly budget —
+              autonomy will auto-pause when it&apos;s reached.
+            </p>
+          )}
         </Card>
       )}
 
