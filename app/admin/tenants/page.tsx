@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Card, Badge, Input } from "@/components/ui";
+import { Card, Badge, Input, SkeletonRows } from "@/components/ui";
 import { Building2 } from "lucide-react";
 
 export default function AdminTenants() {
@@ -71,9 +71,14 @@ export default function AdminTenants() {
             </span>
           </div>
         ))}
-        {rows.length === 0 && (
+        {tenants === undefined && (
+          <div className="p-6">
+            <SkeletonRows rows={5} />
+          </div>
+        )}
+        {tenants !== undefined && rows.length === 0 && (
           <p className="px-6 py-10 text-center text-sm text-muted">
-            {tenants === undefined ? "Loading tenants…" : "No tenants match."}
+            No tenants match.
           </p>
         )}
       </Card>

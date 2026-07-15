@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Card, EmptyState, Input, Modal, Toggle } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, Modal, SkeletonRows, Toggle } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/marketing/motion";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
@@ -81,7 +81,9 @@ export default function AlertsPage() {
         )}
       </div>
 
-      {rules?.length === 0 ? (
+      {rules === undefined ? (
+        <SkeletonRows rows={3} className="rounded-3xl border border-border bg-surface p-6" />
+      ) : rules.length === 0 ? (
         <EmptyState
           title="No alert rules yet"
           body="Create a rule to be notified on error spikes, budget burn, agents dropping offline, or SLO breaches."

@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { AnimatePresence, motion } from "motion/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, EmptyState } from "./ui";
+import { Badge, EmptyState, SkeletonRows } from "./ui";
 import { timeAgo } from "@/lib/utils";
 import { useActiveSpace } from "./active-space";
 
@@ -32,7 +32,7 @@ export function ActivityFeed({
   );
 
   if (events === undefined) {
-    return <p className="text-sm text-muted">Loading activity…</p>;
+    return <SkeletonRows rows={limit && limit <= 6 ? limit : 5} />;
   }
   if (events.length === 0) {
     return (
