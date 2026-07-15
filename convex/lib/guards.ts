@@ -34,6 +34,24 @@ export function assertAutonomyActive(scope: Scope): void {
 }
 
 /**
+ * Platform-wide kill switch. When a platform admin engages
+ * `global_autonomy_paused`, no tenant may dispatch autonomous work. Checked at
+ * the points where autonomous work is *initiated* (send, workflow start) — one
+ * indexed read, not on every hot inner step.
+ */
+export async function assertPlatformActive(ctx: MutationCtx): Promise<void> {
+  const flag = await ctx.db
+    .query("platformFlags")
+    .withIndex("by_key", (q) => q.eq("key", "global_autonomy_paused"))
+    .unique();
+  if (flag?.enabled) {
+    throw new GuardViolation(
+      "platform autonomy is paused by an administrator (global kill switch)",
+    );
+  }
+}
+
+/**
  * Daily message/A2A budget — protects against runaway spend and chatter.
  * Reads an O(1) per-day counter instead of scanning 24h of messages.
  */

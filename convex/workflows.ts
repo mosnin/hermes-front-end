@@ -8,7 +8,12 @@ import {
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
-import { assertAutonomyActive, assertWithinBudget, GuardViolation } from "./lib/guards";
+import {
+  assertAutonomyActive,
+  assertWithinBudget,
+  assertPlatformActive,
+  GuardViolation,
+} from "./lib/guards";
 import { recordWorkEvent, recordNotification } from "./lib/events";
 import { assertWithinPlanCount } from "./lib/plans";
 import { DEFAULT_GUARD_CONFIG } from "./schema";
@@ -200,6 +205,7 @@ export const start = mutation({
   handler: async (ctx, { spaceId, workflowId, autoComplete }) => {
     const scope = await resolveScope(ctx, spaceId);
     requireRole(scope, "operator");
+    await assertPlatformActive(ctx);
     assertAutonomyActive(scope);
     await assertWithinBudget(ctx, scope);
     const wf = await ctx.db.get(workflowId);

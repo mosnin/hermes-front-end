@@ -170,6 +170,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { active, spaceId } = useActiveSpace();
   const { user } = useUser();
+  const adminStatus = useQuery(api.admin.status, {});
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
   const counts: Record<string, number | undefined> = {
     "/dashboard/agents": agents?.length || undefined,
@@ -265,6 +266,17 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* Platform admin — only rendered for allowlisted administrators. */}
+      {adminStatus?.isAdmin && (
+        <Link
+          href="/admin"
+          className="mt-2 flex items-center gap-3 rounded-lg border border-red-500/25 bg-red-500/5 px-3 py-2 text-sm text-red-300 transition hover:border-red-500/50"
+        >
+          <ShieldCheck className="h-4 w-4" />
+          <span className="flex-1">Platform admin</span>
+        </Link>
+      )}
 
       {/* Promo block (chirp "Marketplace") */}
       <Link

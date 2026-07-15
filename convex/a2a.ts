@@ -15,6 +15,7 @@ import {
   assertNotLooping,
   assertRateLimit,
   assertWithinBudget,
+  assertPlatformActive,
   recordA2ASend,
   GuardViolation,
 } from "./lib/guards";
@@ -121,6 +122,7 @@ async function runGuards(
   toAgentId: Id<"agents">,
   content: string,
 ): Promise<void> {
+  await assertPlatformActive(ctx);
   assertAutonomyActive(scope);
   // Shadow mode: log the action as a proposal and block execution.
   if (scope.space.shadowMode) {

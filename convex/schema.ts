@@ -812,6 +812,36 @@ export default defineSchema({
     .index("by_time", ["createdAt"]),
 
   // ===========================================================================
+  // Platform admin audit — append-only record of every privileged platform
+  // (super-admin) action. SOC2 CC6/CC7: privileged access is least-privilege,
+  // logged, and attributable. There are intentionally NO update/delete
+  // functions for this table anywhere in the codebase.
+  // ===========================================================================
+  adminAudit: defineTable({
+    adminId: v.string(), // Clerk subject of the platform admin
+    adminEmail: v.optional(v.string()),
+    action: v.string(), // "view" | "global_pause" | "impersonate_start" | ...
+    resource: v.optional(v.string()), // what was acted on
+    target: v.optional(v.string()), // companyId / spaceId / userId affected
+    detail: v.optional(v.string()),
+    severity: v.optional(v.string()), // "info" | "warning" | "critical"
+    createdAt: v.number(),
+  })
+    .index("by_time", ["createdAt"])
+    .index("by_admin", ["adminId"]),
+
+  // ===========================================================================
+  // Platform-wide flags (global kill switch, maintenance). Singleton-ish: one
+  // row keyed by `key`. Changing any flag is admin-audited.
+  // ===========================================================================
+  platformFlags: defineTable({
+    key: v.string(), // "global_autonomy_paused" | "maintenance_mode"
+    enabled: v.boolean(),
+    updatedBy: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
+  // ===========================================================================
   // Idempotency keys — dedupe retried connector ingestion (a network blip after
   // the server already processed a POST must not double-write). One row per
   // (agent, key); handlers check-and-set before acting.
