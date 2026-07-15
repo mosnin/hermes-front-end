@@ -196,7 +196,7 @@ export default function BillingPage() {
                 <Button
                   variant="outline"
                   onClick={() =>
-                    (window.location.href = "mailto:sales@hermes.dev")
+                    (window.location.href = "mailto:sales@cadre.to")
                   }
                 >
                   Contact sales

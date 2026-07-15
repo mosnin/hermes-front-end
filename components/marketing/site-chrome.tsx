@@ -25,7 +25,7 @@ export function Wordmark({ className }: { className?: string }) {
       <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-white shadow-[0_0_16px_rgba(255,91,4,0.45)]">
         ⬢
       </span>
-      hermes
+      cadre
     </Link>
   );
 }
@@ -136,7 +136,7 @@ export function SiteFooter() {
       </div>
       <div className="border-t border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5 text-xs text-muted">
-          <span className="lowercase">© {new Date().getFullYear()} hermes control plane</span>
+          <span className="lowercase">© {new Date().getFullYear()} cadre</span>
           <span>Convex · Clerk · A2A · MCP</span>
         </div>
       </div>

@@ -1,8 +1,8 @@
 {
-  "name": "hermes-control-plane",
+  "name": "cadre",
   "version": "0.1.0",
   "private": true,
-  "description": "Hermes Control Plane — a consumer + enterprise app to connect, orchestrate, and control Hermes agents. Next.js + Convex (real-time + vector search) + Clerk.",
+  "description": "Cadre — a consumer + enterprise app to connect, orchestrate, and control your agents. Next.js + Convex (real-time + vector search) + Clerk.",
   "scripts": {
     "dev": "next dev",
     "dev:all": "convex dev --once && concurrently -k \"next dev\" \"convex dev\"",

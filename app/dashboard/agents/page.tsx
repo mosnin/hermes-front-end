@@ -26,7 +26,7 @@ export default function AgentsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Agents</h1>
           <p className="text-sm text-muted">
-            Every Hermes agent connected to this Space.
+            Every agent connected to this Space.
           </p>
         </div>
         <div className="flex gap-2">
@@ -42,7 +42,7 @@ export default function AgentsPage() {
       {agents?.length === 0 ? (
         <EmptyState
           title="No agents connected"
-          body="Deploy a Hermes agent anywhere, then connect it here to give it threads, tasks, and skills."
+          body="Deploy an agent anywhere, then connect it here to give it threads, tasks, and skills."
           action={<Button onClick={() => setOpen(true)}>Connect your first agent</Button>}
         />
       ) : (

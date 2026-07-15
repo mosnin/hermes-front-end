@@ -1,10 +1,10 @@
-# Hermes Control Plane
+# Cadre
 
 A consumer + enterprise application to **connect, orchestrate, and control your
-Hermes agents** — easier than a terminal or a messaging app like Telegram or
+agents** — easier than a terminal or a messaging app like Telegram or
 Slack.
 
-Deploy your Hermes agents wherever you want (AWS, GCP, a VM, your laptop),
+Deploy your agents wherever you want (AWS, GCP, a VM, your laptop),
 connect them here, and give them **threads, tasks, skills, and integrations**.
 Watch **everything they do live**, and orchestrate **multiple agents** from one
 dashboard.

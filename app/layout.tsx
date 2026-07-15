@@ -12,9 +12,9 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hermes Control Plane",
+  title: "Cadre",
   description:
-    "Connect, orchestrate, and control your Hermes agents — threads, tasks, skills, integrations, and live activity.",
+    "Connect, orchestrate, and control your agents — threads, tasks, skills, integrations, and live activity.",
 };
 
 export default function RootLayout({

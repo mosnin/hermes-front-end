@@ -326,7 +326,7 @@ http.route({
     const origin = new URL(request.url).origin;
     return json({
       protocolVersion: "0.3.0",
-      name: "Hermes Control Plane",
+      name: "Cadre",
       description:
         "A2A gateway. Each connected agent exposes its own card at /a2a/card/{agentId}.",
       url: origin,

@@ -187,7 +187,7 @@ export function Sidebar() {
         <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-sm text-white shadow-[0_0_14px_rgba(255,91,4,0.45)]">
           ⬢
         </span>
-        hermes
+        cadre
       </Link>
 
       <div className="mb-2 px-1">

@@ -50,7 +50,7 @@ export default function AboutPage() {
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-muted">
               Agents are cheap now. Trustworthy, ongoing, observable agent
-              operations are not. Hermes Control Plane is the missing layer
+              operations are not. Cadre is the missing layer
               between "it ran once in a demo" and "it runs the department."
             </p>
           </Reveal>

@@ -81,7 +81,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             <ShieldCheck className="h-4 w-4" />
           </span>
           <div className="leading-tight">
-            <p className="text-sm font-bold lowercase tracking-tight">hermes</p>
+            <p className="text-sm font-bold lowercase tracking-tight">cadre</p>
             <p className="text-[10px] uppercase tracking-widest text-red-400/80">
               platform admin
             </p>

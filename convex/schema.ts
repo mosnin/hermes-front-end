@@ -38,7 +38,7 @@ export const DEFAULT_GUARD_CONFIG = {
 };
 
 /**
- * Hermes Control Plane — enterprise schema for an autonomous-company hub.
+ * Cadre — enterprise schema for an autonomous-company hub.
  *
  * Tenancy: Company (Clerk org/user) → Space (operating unit) → Squad.
  * Every domain row carries companyId + spaceId. Reads scope by spaceId after a

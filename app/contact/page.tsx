@@ -9,22 +9,22 @@ const CHANNELS = [
     icon: Mail,
     title: "Sales & enterprise",
     body: "SSO/SAML, SCIM, custom guardrail policies, annual agreements.",
-    action: "sales@hermes-control.dev",
-    href: "mailto:sales@hermes-control.dev",
+    action: "sales@cadre.to",
+    href: "mailto:sales@cadre.to",
   },
   {
     icon: MessageSquare,
     title: "Support",
     body: "Stuck connecting an agent, a workflow misbehaving, billing questions.",
-    action: "support@hermes-control.dev",
-    href: "mailto:support@hermes-control.dev",
+    action: "support@cadre.to",
+    href: "mailto:support@cadre.to",
   },
   {
     icon: Building2,
     title: "Partnerships",
     body: "Framework adapters, MCP servers, deployment platforms.",
-    action: "partners@hermes-control.dev",
-    href: "mailto:partners@hermes-control.dev",
+    action: "partners@cadre.to",
+    href: "mailto:partners@cadre.to",
   },
 ];
 
@@ -67,7 +67,7 @@ export default function ContactPage() {
               <h2 className="font-semibold">Write to us</h2>
               <form
                 className="mt-5 space-y-3"
-                action="mailto:sales@hermes-control.dev"
+                action="mailto:sales@cadre.to"
                 method="post"
                 encType="text/plain"
               >

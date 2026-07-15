@@ -8,7 +8,7 @@ export function buildAgentCard(agent: Doc<"agents">, rpcUrl: string) {
   return {
     protocolVersion: "0.3.0",
     name: agent.name,
-    description: agent.description ?? "A Hermes agent on the control plane.",
+    description: agent.description ?? "An agent on the Cadre control plane.",
     url: rpcUrl,
     preferredTransport: "JSONRPC",
     version: "1.0.0",
