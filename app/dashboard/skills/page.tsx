@@ -5,7 +5,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search } from "@/components/icons";
 
 type Skill = {
   _id: string;

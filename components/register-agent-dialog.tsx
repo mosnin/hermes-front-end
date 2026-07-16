@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Button, Input, Modal } from "./ui";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy } from "@/components/icons";
 import { useActiveSpace } from "./active-space";
 import { cn } from "@/lib/utils";
 

@@ -13,7 +13,7 @@ import {
   Pause,
   Play,
   Square,
-} from "lucide-react";
+} from "@/components/icons";
 
 const stepTone = {
   pending: "default",

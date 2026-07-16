@@ -20,7 +20,7 @@ import { RegisterAgentDialog } from "@/components/register-agent-dialog";
 import { useActiveSpace } from "@/components/active-space";
 import { Onboarding } from "@/components/onboarding";
 import { timeAgo } from "@/lib/utils";
-import { AlertTriangle, ChevronLeft, Network, Plus } from "lucide-react";
+import { AlertTriangle, ChevronLeft, Network, Plus } from "@/components/icons";
 import { Stagger, StaggerItem } from "@/components/marketing/motion";
 
 const TABS = [

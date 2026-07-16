@@ -16,7 +16,7 @@ import {
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { Megaphone, Pause, Play, Plus, Trash2 } from "lucide-react";
+import { Megaphone, Pause, Play, Plus, Trash2 } from "@/components/icons";
 
 const statusTone = {
   active: "green",

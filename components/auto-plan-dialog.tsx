@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { Button, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { Sparkles } from "lucide-react";
+import { Sparkles } from "@/components/icons";
 
 export function AutoPlanDialog({
   open,

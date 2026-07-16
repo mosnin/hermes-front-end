@@ -8,7 +8,7 @@ import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/compo
 import { useActiveSpace } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { Plus, Sparkles, Star } from "lucide-react";
+import { Plus, Sparkles, Star } from "@/components/icons";
 
 function Stars({ value }: { value: number }) {
   const rounded = Math.round(value);

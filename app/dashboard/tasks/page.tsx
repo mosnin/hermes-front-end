@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Plus } from "lucide-react";
+import { Plus } from "@/components/icons";
 
 const COLUMNS = [
   { key: "todo", label: "To do" },

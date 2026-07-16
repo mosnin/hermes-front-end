@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, Wrench } from "lucide-react";
+import { ChevronRight, Wrench } from "@/components/icons";
 import { cn, timeAgo } from "@/lib/utils";
 import { Markdown } from "./markdown";
 

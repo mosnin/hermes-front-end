@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { MessageSquare, Send, Hash } from "lucide-react";
+import { MessageSquare, Send, Hash } from "@/components/icons";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal } from "@/components/ui";

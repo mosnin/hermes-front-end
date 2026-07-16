@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "convex/react";
-import { Download, Search, ShieldAlert } from "lucide-react";
+import { Download, Search, ShieldAlert } from "@/components/icons";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";

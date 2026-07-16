@@ -7,7 +7,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { AutoPlanDialog } from "@/components/auto-plan-dialog";
-import { Plus, Sparkles, Target } from "lucide-react";
+import { Plus, Sparkles, Target } from "@/components/icons";
 
 const goalTone = { active: "green", at_risk: "yellow", done: "blue", archived: "default" } as const;
 

@@ -7,7 +7,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { Boxes, Plus, Trash2 } from "lucide-react";
+import { Boxes, Plus, Trash2 } from "@/components/icons";
 
 type Transport = "sse" | "http" | "stdio";
 type McpScope = "space" | "agent";

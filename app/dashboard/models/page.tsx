@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Button, Card, Input } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { Cpu, Plus, X } from "lucide-react";
+import { Cpu, Plus, X } from "@/components/icons";
 
 type ModelPolicy = {
   primary: string;

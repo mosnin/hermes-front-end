@@ -5,7 +5,7 @@ import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { Check, Sparkles } from "lucide-react";
+import { Check, Sparkles } from "@/components/icons";
 
 type PlanId = "free" | "team" | "enterprise";
 

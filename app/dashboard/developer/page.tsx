@@ -15,7 +15,7 @@ import {
 import { useToast } from "@/components/toast";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
-import { Copy, KeyRound, Plus, Terminal } from "lucide-react";
+import { Copy, KeyRound, Plus, Terminal } from "@/components/icons";
 
 export default function DeveloperPage() {
   const { spaceId } = useActiveSpace();

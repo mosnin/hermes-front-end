@@ -5,7 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Card, Badge, Input, SkeletonRows } from "@/components/ui";
 import { useToast } from "@/components/toast";
-import { Building2, Pause, Play } from "lucide-react";
+import { Building2, Pause, Play } from "@/components/icons";
 
 export default function AdminTenants() {
   const tenants = useQuery(api.admin.tenants, {});

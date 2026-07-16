@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { FileText, Link2, Plus, Search } from "lucide-react";
+import { FileText, Link2, Plus, Search } from "@/components/icons";
 
 type Memory = {
   _id: string;

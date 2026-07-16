@@ -16,7 +16,7 @@ import {
   Lock,
   ScrollText,
   ShieldCheck,
-} from "lucide-react";
+} from "@/components/icons";
 
 const NAV = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },

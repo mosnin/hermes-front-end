@@ -7,7 +7,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, Input } from "@/components/ui";
 import { ScheduleCard } from "@/components/schedule-card";
 import { useActiveSpace, useCan } from "@/components/active-space";
-import { Power, EyeOff } from "lucide-react";
+import { Power, EyeOff } from "@/components/icons";
 
 type Guards = {
   maxStepsPerRun: number;

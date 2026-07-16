@@ -7,7 +7,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { Cloud, Plus, Rocket, Trash2 } from "lucide-react";
+import { Cloud, Plus, Rocket, Trash2 } from "@/components/icons";
 
 const deployTone = {
   provisioning: "yellow",

@@ -10,7 +10,7 @@ import { ActivityFeed } from "@/components/activity-feed";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { ArrowLeft, Cpu, Trash2 } from "lucide-react";
+import { ArrowLeft, Cpu, Trash2 } from "@/components/icons";
 
 export default function AgentDetailPage({
   params,

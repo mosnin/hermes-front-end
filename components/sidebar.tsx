@@ -42,7 +42,7 @@ import {
   Sparkles,
   Target,
   Workflow,
-} from "lucide-react";
+} from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { useActiveSpace } from "./active-space";
 import { useDialog } from "./dialog";

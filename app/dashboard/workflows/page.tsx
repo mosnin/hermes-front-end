@@ -16,7 +16,7 @@ import {
   Trash2,
   X,
   Zap,
-} from "lucide-react";
+} from "@/components/icons";
 import { WorkflowTrace } from "@/components/workflow-trace";
 
 type StepDraft = { id: string; name: string; instruction: string; agentId: string };

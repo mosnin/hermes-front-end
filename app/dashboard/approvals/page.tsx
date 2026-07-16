@@ -8,7 +8,7 @@ import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/compo
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "@/components/icons";
 
 const FILTERS = [
   { key: "all", label: "All" },

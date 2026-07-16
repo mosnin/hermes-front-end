@@ -8,7 +8,7 @@ import { Stagger, StaggerItem } from "@/components/marketing/motion";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { BellRing, Plus, Trash2, Zap } from "lucide-react";
+import { BellRing, Plus, Trash2, Zap } from "@/components/icons";
 
 const METRICS = [
   { id: "errors_24h", label: "Errors (24h)", unit: "", dflt: 10, cmp: "gt" },

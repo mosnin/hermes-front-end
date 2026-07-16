@@ -12,7 +12,7 @@ import {
   Pause,
   Server,
   Workflow,
-} from "lucide-react";
+} from "@/components/icons";
 
 export default function AdminOverview() {
   const stats = useQuery(api.admin.platformStats, {});

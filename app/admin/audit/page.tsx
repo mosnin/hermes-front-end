@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Card, Badge } from "@/components/ui";
 import { timeAgo } from "@/lib/utils";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "@/components/icons";
 
 const SEV_TONE = {
   info: "default",

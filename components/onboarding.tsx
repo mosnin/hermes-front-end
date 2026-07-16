@@ -8,7 +8,7 @@ import { api } from "@/convex/_generated/api";
 import { Card, RingGauge } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { runGlobalAction } from "@/components/global-actions";
-import { CheckCircle2, Circle, Sparkles, X } from "lucide-react";
+import { CheckCircle2, Circle, Sparkles, X } from "@/components/icons";
 
 export function Onboarding() {
   const { spaceId } = useActiveSpace();

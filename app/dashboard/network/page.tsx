@@ -7,7 +7,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, StatusDot } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
-import { ArrowRight, Send } from "lucide-react";
+import { ArrowRight, Send } from "@/components/icons";
 
 export default function NetworkPage() {
   const { spaceId } = useActiveSpace();

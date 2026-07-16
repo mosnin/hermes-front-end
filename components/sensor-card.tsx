@@ -2,7 +2,7 @@
 
 import { ReactNode, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { Settings } from "lucide-react";
+import { Settings } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { RingGauge, type RingColor } from "./ui";
 

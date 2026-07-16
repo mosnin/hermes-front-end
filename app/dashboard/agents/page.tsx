@@ -8,7 +8,7 @@ import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot } from "@/comp
 import { RegisterAgentDialog } from "@/components/register-agent-dialog";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
-import { Globe, Plus } from "lucide-react";
+import { Globe, Plus } from "@/components/icons";
 
 export default function AgentsPage() {
   const { spaceId } = useActiveSpace();

@@ -8,7 +8,7 @@ import { Badge, Button, Card, EmptyState } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { Undo2 } from "lucide-react";
+import { Undo2 } from "@/components/icons";
 
 const FILTERS = [
   { key: "all", label: "All" },

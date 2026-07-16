@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Button, Card, Toggle } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { CalendarClock } from "lucide-react";
+import { CalendarClock } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

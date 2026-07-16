@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, Input, StatusDot } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
-import { Plus } from "lucide-react";
+import { Plus } from "@/components/icons";
 
 export default function AnalyticsPage() {
   const { spaceId } = useActiveSpace();

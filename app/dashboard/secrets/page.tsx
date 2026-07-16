@@ -8,7 +8,7 @@ import { Button, Card, EmptyState, Input, Modal } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { Copy, Eye, EyeOff, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Copy, Eye, EyeOff, KeyRound, Plus, Trash2 } from "@/components/icons";
 
 function RevealValue({
   spaceId,

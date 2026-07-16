@@ -8,7 +8,7 @@ import { ActivityFeed } from "@/components/activity-feed";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo, cn } from "@/lib/utils";
 import { MissionGraph, GraphEdge } from "@/components/mission-graph";
-import { Activity, Network, Radio, Users } from "lucide-react";
+import { Activity, Network, Radio, Users } from "@/components/icons";
 
 export default function MissionPage() {
   const { spaceId } = useActiveSpace();

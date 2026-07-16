@@ -14,7 +14,7 @@ import {
   type ChatMessage,
 } from "@/components/chat/message-bubble";
 import { Markdown } from "@/components/chat/markdown";
-import { ArrowLeft, Brain, Send, Square } from "lucide-react";
+import { ArrowLeft, Brain, Send, Square } from "@/components/icons";
 
 export default function ThreadDetailPage({
   params,

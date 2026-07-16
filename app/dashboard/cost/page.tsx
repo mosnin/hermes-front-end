@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Card } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Activity, AlertTriangle, DollarSign, Radio, Zap } from "lucide-react";
+import { Activity, AlertTriangle, DollarSign, Radio, Zap } from "@/components/icons";
 
 function usd(n: number): string {
   if (n >= 1) return `$${n.toFixed(2)}`;

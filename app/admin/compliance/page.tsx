@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Card, RingGauge } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/marketing/motion";
-import { CheckCircle2, AlertCircle, XCircle } from "lucide-react";
+import { CheckCircle2, AlertCircle, XCircle } from "@/components/icons";
 
 const STATUS_META = {
   pass: { icon: CheckCircle2, cls: "text-lime-400", label: "Pass" },
