@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { PagePath } from "@/components/page-header";
+import { OrbitGraphic } from "@/components/marketing/graphics";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 import {
@@ -130,6 +131,7 @@ export default function WorkflowsPage() {
           <h2 className="text-sm font-medium text-muted">Definitions</h2>
           {workflows?.length === 0 ? (
             <EmptyState
+              graphic={<OrbitGraphic />}
               title="No workflows yet"
               body="Compose a sequence of agent steps. Start a run and watch the engine drive it to completion."
               action={<Button onClick={() => setOpen(true)}>Create a workflow</Button>}

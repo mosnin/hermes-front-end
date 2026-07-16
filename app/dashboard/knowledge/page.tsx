@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
+import { KnowledgeGraphic } from "@/components/marketing/graphics";
 import { useActiveSpace } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { FileText, Link2, Plus, Search } from "@/components/icons";
@@ -176,6 +177,7 @@ export default function KnowledgePage() {
 
       {list.length === 0 ? (
         <EmptyState
+          graphic={<KnowledgeGraphic />}
           title={results ? "No matching memory" : "No memory yet"}
           body={
             results

@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, StatusDot } from "@/components/ui";
+import { MeshGraphic } from "@/components/marketing/graphics";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 import { ArrowRight, Send } from "@/components/icons";
@@ -54,6 +55,7 @@ export default function NetworkPage() {
 
       {agents.length < 2 ? (
         <EmptyState
+          graphic={<MeshGraphic />}
           title="Connect at least two agents"
           body="A2A needs two or more agents to coordinate. Connect another agent (or load demo data), then route messages between them here."
         />

@@ -153,14 +153,21 @@ export function EmptyState({
   title,
   body,
   action,
+  graphic,
 }: {
   title: string;
   body: string;
   action?: ReactNode;
+  graphic?: ReactNode;
 }) {
   return (
     <div className="grid place-items-center rounded-3xl border border-dashed border-border bg-surface/50 p-12 text-center">
-      <div>
+      <div className="flex flex-col items-center">
+        {graphic && (
+          <div className="mb-5 grid h-24 w-24 place-items-center rounded-2xl border border-border bg-[#0c0c0c]">
+            <div className="h-16 w-16">{graphic}</div>
+          </div>
+        )}
         <p className="font-medium">{title}</p>
         <p className="mt-1 max-w-sm text-sm text-muted">{body}</p>
         {action && <div className="mt-4 flex justify-center">{action}</div>}

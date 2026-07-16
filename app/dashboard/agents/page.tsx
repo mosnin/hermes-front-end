@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot } from "@/components/ui";
 import { PagePath } from "@/components/page-header";
+import { MeshGraphic } from "@/components/marketing/graphics";
 import { RegisterAgentDialog } from "@/components/register-agent-dialog";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
@@ -43,6 +44,7 @@ export default function AgentsPage() {
 
       {agents?.length === 0 ? (
         <EmptyState
+          graphic={<MeshGraphic />}
           title="No agents connected"
           body="Deploy an agent anywhere, then connect it here to give it threads, tasks, and skills."
           action={<Button onClick={() => setOpen(true)}>Connect your first agent</Button>}
