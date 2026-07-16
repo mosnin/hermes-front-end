@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Chirp-style theme: near-black surfaces, warm orange accent, mono type,
+   glowing instrument rings. Dark-only by design.
+--------------------------------------------------------------------------- */
+:root {
+  --background: #0e0e0e;
+  --surface: #161616;
+  --surface-2: #1f1f1f;
+  --border: #292929;
+  --foreground: #e8e6e3;
+  --muted: #8f8c86;
+  --accent: #ff5b04;
+  --accent-2: #a3e635;
+}
+
+/* The product is dark-only (instrument-panel aesthetic); a stray persisted
+   light preference must not break it. */
+[data-theme="light"] {
+  --background: #0e0e0e;
+  --surface: #161616;
+  --surface-2: #1f1f1f;
+  --border: #292929;
+  --foreground: #e8e6e3;
+  --muted: #8f8c86;
+  --accent: #ff5b04;
+  --accent-2: #a3e635;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  font-family: var(--font-mono), ui-monospace, "SF Mono", "JetBrains Mono",
+    Menlo, Consolas, monospace;
+}
+
+* {
+  border-color: var(--border);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* Keyboard focus: a clear accent ring on interactive elements (mouse users
+   don't see it thanks to :focus-visible). Accessibility, Apple-grade. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Skip-to-content link, visible only when focused. */
+.skip-link {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 200;
+  transform: translateY(-120%);
+  transition: transform 0.15s;
+  background: var(--accent);
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 0 0 0.5rem 0;
+  font-size: 0.85rem;
+}
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+/* Thin, dark scrollbars to match the instrument-panel aesthetic. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Glow helpers for rings, dots, and active elements. */
+.glow-accent {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.glow-green {
+  box-shadow: 0 0 10px rgba(163, 230, 53, 0.55);
+}
+.glow-red {
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.55);
+}
+.text-glow-accent {
+  text-shadow: 0 0 18px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* Skeleton shimmer for loading states (Apple-grade: no flash of empty). */
+@keyframes hermes-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--foreground) 6%, transparent),
+    transparent
+  );
+  animation: hermes-shimmer 1.5s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+  }
+}

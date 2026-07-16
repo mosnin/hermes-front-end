@@ -1,0 +1,38 @@
+{
+  "name": "cadre",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cadre — a consumer + enterprise app to connect, orchestrate, and control your agents. Next.js + Convex (real-time + vector search) + Clerk.",
+  "scripts": {
+    "dev": "next dev",
+    "dev:all": "convex dev --once && concurrently -k \"next dev\" \"convex dev\"",
+    "convex": "convex dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.12.0",
+    "@clerk/themes": "^2.1.37",
+    "convex": "^1.19.0",
+    "lucide-react": "^0.460.0",
+    "motion": "^12.42.2",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "^4.0.0",
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "concurrently": "^9.1.0",
+    "convex-test": "^0.0.35",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

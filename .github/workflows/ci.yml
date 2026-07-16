@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  # Always-on: the Python connector must at least compile.
+  connector:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile connector
+        run: python -m py_compile connector/control_plane/*.py
+
+  # Typecheck + build the web app. Convex codegen needs a deploy key, so this
+  # runs `convex deploy --cmd 'npm run build'` (same as Vercel) which generates
+  # the typed client, then builds. Skips gracefully until the secrets are added.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - name: Codegen + typecheck + build
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+        run: |
+          if [ -z "$CONVEX_DEPLOY_KEY" ]; then
+            echo "::warning::CONVEX_DEPLOY_KEY not set — skipping typecheck/build."
+            echo "Add CONVEX_DEPLOY_KEY (a Convex Preview deploy key) + Clerk keys"
+            echo "in repo Settings → Secrets to enable full CI."
+            exit 0
+          fi
+          npx convex deploy --cmd 'npm run build'

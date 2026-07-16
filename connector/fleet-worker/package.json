@@ -1,0 +1,19 @@
+{
+  "name": "hermes-fleet-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker + Containers app that boots one isolated container per Hermes agent for one-click fleet deploy.",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.0.18"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250601.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^4.0.0"
+  }
+}
