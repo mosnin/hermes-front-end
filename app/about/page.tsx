@@ -1,28 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { Compass, Eye, Shield, Zap } from "lucide-react";
 import { SiteHeader, SiteFooter } from "@/components/marketing/site-chrome";
 import { Reveal, Stagger, StaggerItem } from "@/components/marketing/motion";
 
 const PRINCIPLES = [
   {
-    icon: Zap,
     title: "Ongoing beats one-off",
-    body: "Most agent tools demo a single prompt and call it autonomy. Real value is an agent that runs a job for weeks — outreach, monitoring, operations — and keeps receipts.",
+    body: "Most agent tools demo a single prompt and call it autonomy. Real value is an agent that runs a job for weeks (outreach, monitoring, operations) and keeps receipts.",
   },
   {
-    icon: Shield,
     title: "Autonomy needs brakes",
-    body: "A fleet you can't stop isn't a product, it's a liability. Kill switch, shadow mode, budgets that pause on real spend — governance is the feature, not the fine print.",
+    body: "A fleet you can't stop isn't a product, it's a liability. Kill switch, shadow mode, budgets that pause on real spend. Governance is the feature, not the fine print.",
   },
   {
-    icon: Eye,
     title: "If it isn't observable, it didn't happen",
     body: "Every action lands in an immutable work record. Failures are captured with traces. The audit log exports as a hash chain an auditor can verify without trusting us.",
   },
   {
-    icon: Compass,
     title: "Your compute, your models",
     body: "Agents run on your infrastructure with your API keys. We orchestrate; we don't meter your intelligence.",
   },
@@ -40,7 +35,7 @@ export default function AboutPage() {
   return (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-6xl px-6">
+      <main className="mx-auto max-w-6xl px-5 sm:px-6">
         <section className="pt-20 pb-14 text-center">
           <Reveal>
             <h1 className="mx-auto max-w-2xl text-balance text-4xl font-bold tracking-tight">
@@ -58,12 +53,14 @@ export default function AboutPage() {
 
         <section className="pb-16">
           <Stagger className="grid gap-4 sm:grid-cols-2">
-            {PRINCIPLES.map((p) => (
+            {PRINCIPLES.map((p, i) => (
               <StaggerItem
                 key={p.title}
                 className="rounded-2xl border border-border bg-surface p-7"
               >
-                <p.icon className="mb-3 h-6 w-6 text-accent" />
+                <p className="mb-3 font-mono text-sm text-accent">
+                  {String(i + 1).padStart(2, "0")}
+                </p>
                 <h2 className="font-semibold">{p.title}</h2>
                 <p className="mt-2 text-sm text-muted">{p.body}</p>
               </StaggerItem>

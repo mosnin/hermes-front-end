@@ -15,7 +15,7 @@ const ENTRIES: {
     title: "Any agent framework",
     tags: ["new"],
     items: [
-      "OpenClaw and Goose adapters — run them as managed fleet members.",
+      "OpenClaw and Goose adapters. Run them as managed fleet members.",
       "Generic CLI adapter: any command that takes an instruction and prints a result.",
       "Framework badge on agents across the dashboard.",
     ],
@@ -57,7 +57,7 @@ const ENTRIES: {
     title: "Reliability layer",
     tags: ["new", "fixed"],
     items: [
-      "Real-time push transport (~1s latency) replaced the polling loop — ~90% cheaper idle agents.",
+      "Real-time push transport (~1s latency) replaced the polling loop, roughly 90% cheaper idle agents.",
       "Dead-letter queue with replay; retry backoff; stuck-run watchdog.",
       "O(1) counters replaced unbounded scans in metering and guards.",
     ],
@@ -80,7 +80,7 @@ export default function ChangelogPage() {
   return (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-3xl px-6">
+      <main className="mx-auto max-w-3xl px-5 sm:px-6">
         <section className="pt-20 pb-10">
           <Reveal>
             <h1 className="text-4xl font-bold tracking-tight">Changelog</h1>

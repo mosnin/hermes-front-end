@@ -4,7 +4,6 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { SiteHeader, SiteFooter } from "@/components/marketing/site-chrome";
 import { Reveal, Stagger, StaggerItem } from "@/components/marketing/motion";
-import { CheckCircle2, Wrench } from "lucide-react";
 
 export default function StatusPage() {
   const status = useQuery(api.status.page, {});
@@ -13,7 +12,7 @@ export default function StatusPage() {
   return (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-3xl px-6">
+      <main className="mx-auto max-w-3xl px-5 sm:px-6">
         <section className="pt-20 pb-8">
           <Reveal>
             <div
@@ -24,11 +23,15 @@ export default function StatusPage() {
               }`}
             >
               <span
-                className={`grid h-12 w-12 place-items-center rounded-2xl ${
-                  maintenance ? "bg-amber-400/10 text-amber-400" : "bg-lime-400/10 text-lime-400"
+                className={`relative grid h-12 w-12 place-items-center rounded-2xl ${
+                  maintenance ? "bg-amber-400/10" : "bg-lime-400/10"
                 }`}
               >
-                {maintenance ? <Wrench className="h-6 w-6" /> : <CheckCircle2 className="h-6 w-6" />}
+                <span
+                  className={`h-3 w-3 rounded-full ${
+                    maintenance ? "bg-amber-400" : "bg-lime-400 shadow-[0_0_10px_rgba(163,230,53,0.8)]"
+                  }`}
+                />
               </span>
               <div>
                 <h1 className="text-xl font-semibold">
@@ -37,7 +40,7 @@ export default function StatusPage() {
                 <p className="text-sm text-muted">
                   {status
                     ? `Updated ${new Date(status.updatedAt).toLocaleString()}`
-                    : "Checking status…"}
+                    : "Checking status"}
                 </p>
               </div>
             </div>

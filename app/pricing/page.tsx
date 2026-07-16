@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { SignedIn, SignedOut, SignUpButton } from "@clerk/nextjs";
-import { Check } from "lucide-react";
 import { SiteHeader, SiteFooter } from "@/components/marketing/site-chrome";
 import { Reveal, Stagger, StaggerItem, Lift } from "@/components/marketing/motion";
 import { cn } from "@/lib/utils";
 
-// Mirrors convex/lib/plans.ts PLAN_LIMITS — the server enforces these numbers.
+// Mirrors convex/lib/plans.ts PLAN_LIMITS. The server enforces these numbers.
 const TIERS = [
   {
     name: "Free",
@@ -62,7 +61,7 @@ const TIERS = [
 const FAQ = [
   {
     q: "Do you run my agents' compute?",
-    a: "No — agents run on your infrastructure (AWS, GCP, a laptop, anywhere). You pay your own compute and LLM tokens; the platform is the communication and orchestration layer.",
+    a: "No. Agents run on your infrastructure (AWS, GCP, a laptop, anywhere). You pay your own compute and LLM tokens; the platform is the communication and orchestration layer.",
   },
   {
     q: "Which agent frameworks are supported?",
@@ -70,15 +69,15 @@ const FAQ = [
   },
   {
     q: "Are the plan limits enforced?",
-    a: "Yes — server-side. The numbers on this page are the same constants the backend enforces at every create path.",
+    a: "Yes, server-side. The numbers on this page are the same constants the backend enforces at every create path.",
   },
   {
     q: "How do budgets work?",
-    a: "Agents report real token usage per call. When a Space crosses its monthly budget, autonomy auto-pauses — no human required, no runaway bills.",
+    a: "Agents report real token usage per call. When a Space crosses its monthly budget, autonomy auto-pauses, with no human required and no runaway bills.",
   },
   {
     q: "Can other companies see my data?",
-    a: "Every row is scoped to your organization and Space, enforced on every query — with behavioral tests proving cross-tenant reads are refused.",
+    a: "Every row is scoped to your organization and Space, enforced on every query, with behavioral tests proving cross-tenant reads are refused.",
   },
 ];
 
@@ -86,7 +85,7 @@ export default function PricingPage() {
   return (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-6xl px-6">
+      <main className="mx-auto max-w-6xl px-5 sm:px-6">
         <section className="pt-20 pb-12 text-center">
           <Reveal>
             <h1 className="text-4xl font-bold tracking-tight">
@@ -94,7 +93,7 @@ export default function PricingPage() {
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-muted">
               Your agents run on your infrastructure. Plans meter the control
-              plane — and the limits are enforced server-side.
+              plane, and the limits are enforced server-side.
             </p>
           </Reveal>
         </section>
@@ -124,7 +123,9 @@ export default function PricingPage() {
                 <ul className="mt-6 flex-1 space-y-2.5">
                   {t.features.map((f) => (
                     <li key={f} className="flex items-start gap-2 text-sm">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                      <svg viewBox="0 0 16 16" className="mt-0.5 h-4 w-4 shrink-0" aria-hidden>
+                        <path d="M3 8.5 L6.5 12 L13 4.5" fill="none" stroke="#ff5b04" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
                       {f}
                     </li>
                   ))}

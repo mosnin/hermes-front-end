@@ -1,26 +1,25 @@
 "use client";
 
-import { Mail, MessageSquare, Building2 } from "lucide-react";
 import { SiteHeader, SiteFooter } from "@/components/marketing/site-chrome";
 import { Reveal, Stagger, StaggerItem } from "@/components/marketing/motion";
 
 const CHANNELS = [
   {
-    icon: Mail,
+    tag: "~/sales",
     title: "Sales & enterprise",
     body: "SSO/SAML, SCIM, custom guardrail policies, annual agreements.",
     action: "sales@cadre.to",
     href: "mailto:sales@cadre.to",
   },
   {
-    icon: MessageSquare,
+    tag: "~/support",
     title: "Support",
     body: "Stuck connecting an agent, a workflow misbehaving, billing questions.",
     action: "support@cadre.to",
     href: "mailto:support@cadre.to",
   },
   {
-    icon: Building2,
+    tag: "~/partners",
     title: "Partnerships",
     body: "Framework adapters, MCP servers, deployment platforms.",
     action: "partners@cadre.to",
@@ -32,7 +31,7 @@ export default function ContactPage() {
   return (
     <div>
       <SiteHeader />
-      <main className="mx-auto max-w-6xl px-6">
+      <main className="mx-auto max-w-6xl px-5 sm:px-6">
         <section className="pt-20 pb-12 text-center">
           <Reveal>
             <h1 className="text-4xl font-bold tracking-tight">Contact</h1>
@@ -46,9 +45,9 @@ export default function ContactPage() {
           {CHANNELS.map((c) => (
             <StaggerItem
               key={c.title}
-              className="rounded-2xl border border-border bg-surface p-7 text-center"
+              className="rounded-2xl border border-border bg-surface p-7 text-center transition hover:border-accent/40"
             >
-              <c.icon className="mx-auto mb-3 h-6 w-6 text-accent" />
+              <p className="mb-3 font-mono text-xs text-accent">{c.tag}</p>
               <h2 className="font-semibold">{c.title}</h2>
               <p className="mt-2 text-sm text-muted">{c.body}</p>
               <a
