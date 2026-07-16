@@ -43,7 +43,7 @@ export default function AdminTenants() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Tenants</h1>
           <p className="text-sm text-muted">
-            Every company on the platform. Read-only — tenant data is never
+            Every company on the platform. Read-only, tenant data is never
             mutated from here.
           </p>
         </div>

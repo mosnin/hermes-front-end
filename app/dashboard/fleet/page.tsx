@@ -61,7 +61,7 @@ export default function FleetPage() {
       } else {
         // Not configured — surface the one-time tokens to connect manually.
         setTokens(res.deployed.map((d) => ({ name: d.name, token: d.token })));
-        toast("Agents created — Cloudflare not configured, connect manually", "info");
+        toast("Agents created, Cloudflare not configured, connect manually", "info");
       }
     } catch (e) {
       toast(e instanceof Error ? e.message : "Deploy failed", "error");
@@ -108,7 +108,7 @@ export default function FleetPage() {
           <Badge tone="green">configured</Badge>
         ) : (
           <span className="text-muted">
-            not configured — set <code>CLOUDFLARE_FLEET_WORKER_URL</code> +{" "}
+            not configured, set <code>CLOUDFLARE_FLEET_WORKER_URL</code> +{" "}
             <code>CLOUDFLARE_FLEET_SECRET</code> (deploy the worker in
             connector/fleet-worker). Agents still provision; connect them manually.
           </span>
@@ -219,7 +219,7 @@ export default function FleetPage() {
           {tokens && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
               <p className="mb-2 text-xs text-amber-300">
-                Cloudflare isn&apos;t configured — connect these agents manually with
+                Cloudflare isn&apos;t configured, connect these agents manually with
                 their one-time tokens:
               </p>
               <pre className="max-h-40 overflow-auto rounded bg-surface-2 p-2 text-[11px]">

@@ -71,7 +71,7 @@ export default function AlertsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Alerts</h1>
           <p className="text-sm text-muted">
-            Get paged when the fleet misbehaves — no dashboard-watching required.
+            Get paged when the fleet misbehaves, no dashboard-watching required.
           </p>
         </div>
         {canOperate && (

@@ -20,7 +20,7 @@ export default function AdminCompliance() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">SOC 2 controls</h1>
         <p className="text-sm text-muted">
-          Live control posture — each mapped to a Trust Service Criterion and
+          Live control posture, each mapped to a Trust Service Criterion and
           backed by real system state, not a static checklist.
         </p>
       </div>

@@ -214,7 +214,7 @@ export default function OverviewPage() {
             ))}
             {agents?.length === 0 && (
               <li className="rounded-lg border border-dashed border-border p-3 text-xs text-muted">
-                No agents yet — hit Actions to connect one.
+                No agents yet, hit Actions to connect one.
               </li>
             )}
           </ul>

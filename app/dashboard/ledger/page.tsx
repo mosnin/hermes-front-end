@@ -55,7 +55,7 @@ export default function LedgerPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Action ledger</h1>
         <p className="text-sm text-muted">
-          Every action agents take or propose — with rollback.
+          Every action agents take or propose, with rollback.
         </p>
       </div>
 
@@ -82,7 +82,7 @@ export default function LedgerPage() {
       ) : entries.length === 0 ? (
         <EmptyState
           title="No actions yet"
-          body="As agents take or propose actions, they land here — every one reversible by an admin."
+          body="As agents take or propose actions, they land here, every one reversible by an admin."
         />
       ) : (
         <div className="space-y-3">

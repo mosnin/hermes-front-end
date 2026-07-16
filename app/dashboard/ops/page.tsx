@@ -72,7 +72,7 @@ export default function OpsPage() {
 
       {usage?.autonomyPaused && (
         <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
-          ⏸ Autonomy is paused — possibly by the budget guard. Resume in Space
+          ⏸ Autonomy is paused, possibly by the budget guard. Resume in Space
           settings once reviewed.
         </div>
       )}
@@ -160,8 +160,8 @@ export default function OpsPage() {
           </div>
           {forecast.overBudget && (
             <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">
-              At the current run-rate you&apos;ll exceed the monthly budget —
-              autonomy will auto-pause when it&apos;s reached.
+              At the current run-rate you&apos;ll exceed the monthly budget.
+              Autonomy will auto-pause when it&apos;s reached.
             </p>
           )}
         </Card>

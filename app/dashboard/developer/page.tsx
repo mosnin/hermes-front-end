@@ -166,7 +166,7 @@ export default function DeveloperPage() {
           <h2 className="font-semibold">Using your key</h2>
         </div>
         <p className="mt-1 text-sm text-muted">
-          Pass your key as a bearer token. Keep it secret — anyone with the key
+          Pass your key as a bearer token. Keep it secret, anyone with the key
           can act on this Space.
         </p>
         <pre className="mt-3 overflow-x-auto rounded-lg border border-border bg-surface-2 p-3 text-xs">

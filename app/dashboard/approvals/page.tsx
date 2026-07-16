@@ -80,7 +80,7 @@ export default function ApprovalsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Approvals</h1>
           <p className="text-sm text-muted">
-            Human-in-the-loop gates. Off by default — used only for actions you
+            Human-in-the-loop gates. Off by default, used only for actions you
             designate high-risk.
           </p>
         </div>

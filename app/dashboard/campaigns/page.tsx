@@ -99,7 +99,7 @@ export default function CampaignsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Campaigns</h1>
           <p className="max-w-2xl text-sm text-muted">
-            Ongoing jobs your agents pursue continuously — e.g. outreach: find
+            Ongoing jobs your agents pursue continuously, e.g. outreach: find
             contacts, send, follow up, book demos. Not one-off tasks.
           </p>
         </div>
@@ -113,7 +113,7 @@ export default function CampaignsPage() {
       {campaigns && campaigns.length === 0 ? (
         <EmptyState
           title="No campaigns yet"
-          body="Launch a standing objective — like ongoing outreach — and assign an agent to pursue it on a cadence."
+          body="Launch a standing objective, like ongoing outreach, and assign an agent to pursue it on a cadence."
           action={
             canOperate ? (
               <Button onClick={() => setOpen(true)}>Create a campaign</Button>

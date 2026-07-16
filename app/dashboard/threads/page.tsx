@@ -21,7 +21,7 @@ export default function ThreadsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Threads</h1>
         <p className="text-sm text-muted">
-          Lines of work with your agents — created automatically as agents
+          Lines of work with your agents, created automatically as agents
           converse, or start one.
         </p>
       </div>

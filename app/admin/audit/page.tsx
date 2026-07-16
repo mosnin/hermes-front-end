@@ -21,7 +21,7 @@ export default function AdminAudit() {
         <h1 className="text-2xl font-semibold tracking-tight">Admin audit trail</h1>
         <p className="text-sm text-muted">
           Append-only record of every platform-admin action. There is no delete
-          or edit path — this is the tamper-evident record of privileged access.
+          or edit path, this is the tamper-evident record of privileged access.
         </p>
       </div>
 
@@ -42,7 +42,7 @@ export default function AdminAudit() {
               </p>
               <p className="truncate text-xs text-muted">
                 {e.adminEmail ?? e.adminId}
-                {e.detail ? ` — ${e.detail}` : ""}
+                {e.detail ? `, ${e.detail}` : ""}
               </p>
             </div>
             <Badge tone={SEV_TONE[(e.severity ?? "info") as keyof typeof SEV_TONE]}>

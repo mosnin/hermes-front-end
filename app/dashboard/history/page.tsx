@@ -34,7 +34,7 @@ export default function HistoryPage() {
         <h1 className="text-2xl font-semibold">Work history</h1>
         <p className="text-sm text-muted">
           The durable, immutable record of everything that happened in this
-          Space — the source of truth for what got done.
+          Space, the source of truth for what got done.
         </p>
       </div>
 

@@ -56,7 +56,7 @@ export default function MissionPage() {
           <h1 className="text-2xl font-semibold">Mission control</h1>
           <p className="text-sm text-muted">
             A live command center for every agent and the A2A coordination
-            flowing between them — in real time.
+            flowing between them, in real time.
           </p>
         </div>
       </div>

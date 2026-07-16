@@ -33,7 +33,7 @@ export default function AnalyticsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Analytics</h1>
         <p className="text-sm text-muted">
-          Throughput, completion, and cost for this Space — what got done.
+          Throughput, completion, and cost for this Space, what got done.
         </p>
       </div>
 

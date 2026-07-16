@@ -137,7 +137,7 @@ export default function IntegrationsPage() {
         <div className="space-y-4">
           <p className="text-sm text-muted">
             Bind a Composio trigger to a workflow. When the event fires, the
-            workflow runs — fully autonomous.
+            workflow runs, fully autonomous.
           </p>
           <Input
             value={trigSlug}

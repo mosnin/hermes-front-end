@@ -29,7 +29,7 @@ export default function CostPage() {
           label: "Always-on agents",
           value: `${est.alwaysOnAgents}/${est.totalAgents}`,
           icon: Radio,
-          hint: "status online — these drive the poll loop",
+          hint: "status online, these drive the poll loop",
         },
         {
           label: "Est. fn calls / month",
@@ -65,7 +65,7 @@ export default function CostPage() {
           An <span className="font-medium">estimate</span> of the operator&apos;s
           infrastructure cost (Convex function calls + writes) for this Space,
           modeled from observable activity. This is{" "}
-          <span className="font-medium">not the real Convex bill</span> — it is
+          <span className="font-medium">not the real Convex bill</span>, it is
           tunable via the assumption constants in{" "}
           <code className="rounded bg-surface-2 px-1 py-0.5 text-xs">
             convex/costs.ts
@@ -156,7 +156,7 @@ export default function CostPage() {
                 <span>
                   Always-on agents polling on a {est.assumptions.POLL_INTERVAL_SECONDS}s
                   loop are the dominant idle cost. Stretching the interval or
-                  moving to event-push slashes the projected bill — same fleet,
+                  moving to event-push slashes the projected bill, same fleet,
                   same work done.
                 </span>
               </div>

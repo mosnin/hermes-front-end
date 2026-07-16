@@ -80,7 +80,7 @@ export default function EvalsPage() {
         agentId: autoAgentId as Id<"agents">,
         dimension: autoDimension.trim() || undefined,
       });
-      toast(`Auto-eval: ${result.rating}/5 — ${result.comment}`, "success");
+      toast(`Auto-eval: ${result.rating}/5, ${result.comment}`, "success");
       setAutoOpen(false);
       setAutoAgentId("");
       setAutoDimension("");

@@ -104,14 +104,14 @@ export default function BridgesPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Chat bridges</h1>
         <p className="text-sm text-muted">
-          Control your agents from Slack, Telegram, or Discord — message a bot,
+          Control your agents from Slack, Telegram, or Discord, message a bot,
           your agent replies.
         </p>
       </div>
 
       <div className="mb-4 rounded-lg border border-border bg-surface/50 p-3 text-sm text-muted">
         Connecting a bridge registers the route here. The bot token and webhook
-        are provisioned by the bridge worker — a connector / fleet-worker-style
+        are provisioned by the bridge worker, a connector / fleet-worker-style
         deployment that relays messages between the chat platform and your agent.
       </div>
 

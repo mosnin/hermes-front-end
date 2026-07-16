@@ -93,7 +93,7 @@ export default function AuditPage() {
         <Card>
           <div className="flex items-center gap-3 text-sm text-muted">
             <ShieldAlert className="h-4 w-4 text-amber-400" />
-            Admins only — you don&apos;t have access to the audit log.
+            Admins only, you don&apos;t have access to the audit log.
           </div>
         </Card>
       ) : (

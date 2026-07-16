@@ -145,7 +145,7 @@ export default function ModelsPage() {
           </div>
           {caps.length === 0 ? (
             <p className="text-xs text-muted">
-              No overrides — every capability uses the primary model.
+              No overrides, every capability uses the primary model.
             </p>
           ) : (
             <div className="flex flex-col gap-2">

@@ -126,8 +126,8 @@ export default function McpPage() {
         <div>
           <h1 className="text-2xl font-semibold">MCP servers</h1>
           <p className="text-sm text-muted">
-            Plug in existing MCP servers — contact lookup, AgentMail, MiniChat,
-            Calendly, and more — so your agents can use their tools.
+            Plug in existing MCP servers, contact lookup, AgentMail, MiniChat,
+            Calendly, and more, so your agents can use their tools.
           </p>
         </div>
         <Button disabled={!canManage} onClick={() => openPreset()}>
@@ -174,7 +174,7 @@ export default function McpPage() {
       </div>
 
       <p className="mb-4 text-xs text-muted">
-        Preset URLs are placeholders — edit them to your real MCP endpoint
+        Preset URLs are placeholders, edit them to your real MCP endpoint
         before connecting.
       </p>
 

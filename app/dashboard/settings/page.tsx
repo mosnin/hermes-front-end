@@ -83,7 +83,7 @@ export default function SettingsPage() {
             <h2 className="font-semibold">Kill switch</h2>
             <p className="text-sm text-muted">
               {space.autonomyPaused
-                ? "Autonomy is paused — agents will not dispatch."
+                ? "Autonomy is paused, agents will not dispatch."
                 : "Autonomy is active. Agents and workflows run freely within guards."}
             </p>
           </div>
@@ -107,8 +107,8 @@ export default function SettingsPage() {
             <h2 className="font-semibold">Shadow mode</h2>
             <p className="text-sm text-muted">
               {space.shadowMode
-                ? "Shadow mode is on — agents propose actions to the ledger instead of executing them."
-                : "Shadow mode is off — agents execute actions directly. When on, agents propose actions to the ledger instead of executing them."}
+                ? "Shadow mode is on, agents propose actions to the ledger instead of executing them."
+                : "Shadow mode is off, agents execute actions directly. When on, agents propose actions to the ledger instead of executing them."}
             </p>
           </div>
           <Button
@@ -129,7 +129,7 @@ export default function SettingsPage() {
       <Card className="mb-4">
         <h2 className="mb-1 font-semibold">Autonomy guardrails</h2>
         <p className="mb-4 text-sm text-muted">
-          Safe-by-default limits that keep autonomous agents from running away —
+          Safe-by-default limits that keep autonomous agents from running away,
           no human approval required.
         </p>
         {guards && (

@@ -47,7 +47,7 @@ export default function NetworkPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Agent network</h1>
         <p className="text-sm text-muted">
-          Agents coordinate in real time through the A2A broker — guarded by
+          Agents coordinate in real time through the A2A broker, guarded by
           loop detection, budgets, and the Space kill switch.
         </p>
       </div>

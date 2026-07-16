@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Card, RingGauge, Toggle, Badge } from "@/components/ui";
 import { Stagger, StaggerItem } from "@/components/marketing/motion";
+import { AsciiRule, Cursor } from "@/components/marketing/ascii";
 import { useToast } from "@/components/toast";
 import {
   AlertTriangle,
@@ -13,6 +14,18 @@ import {
   Server,
   Workflow,
 } from "@/components/icons";
+
+/** Mono uppercase section label trailed by a box-drawing rule. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-3 flex items-center gap-3">
+      <span className="font-mono text-[11px] uppercase tracking-widest text-muted">
+        {children}
+      </span>
+      <AsciiRule className="flex-1" />
+    </div>
+  );
+}
 
 export default function AdminOverview() {
   const stats = useQuery(api.admin.platformStats, {});
@@ -42,6 +55,20 @@ export default function AdminOverview() {
   return (
     <div className="p-8">
       <div className="mb-6">
+        <p className="mb-2 flex items-center gap-2 font-mono text-xs text-muted">
+          <span className="text-red-400">cadre://platform</span>
+          <span className="text-border">·</span>
+          <span>all tenants</span>
+          <span className="text-border">·</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime-400 opacity-60" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-lime-400" />
+            </span>
+            live
+          </span>
+          <Cursor />
+        </p>
         <h1 className="text-2xl font-semibold tracking-tight">Platform overview</h1>
         <p className="text-sm text-muted">
           Cross-tenant health across the entire deployment. Read-only by design;
@@ -67,6 +94,7 @@ export default function AdminOverview() {
         ))}
       </Stagger>
 
+      <SectionLabel>fleet · controls</SectionLabel>
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <Card>
           <h2 className="mb-4 text-lg font-semibold">Fleet & reliability</h2>
@@ -140,26 +168,43 @@ export default function AdminOverview() {
         </Card>
       </div>
 
-      <Card className="mt-6">
-        <h2 className="mb-3 font-semibold">Cross-tenant error stream</h2>
-        {(errors ?? []).length === 0 ? (
-          <p className="text-sm text-muted">
-            {errors === undefined ? "Loading…" : "No recent platform errors."}
-          </p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {(errors ?? []).map((e) => (
-              <li key={e._id} className="flex items-center gap-3 py-2.5 text-sm">
-                <span className="rounded-md bg-surface-2 px-2 py-0.5 text-xs text-muted">
-                  {e.source}
-                </span>
-                <span className="min-w-0 flex-1 truncate">{e.message}</span>
-                <span className="font-mono text-[10px] text-muted">{e.traceId}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <div className="mt-6">
+        <SectionLabel>cross-tenant error stream</SectionLabel>
+        <div className="overflow-hidden rounded-2xl border border-border bg-[#0c0c0c]">
+          <div className="flex items-center gap-2 border-b border-border bg-surface/60 px-4 py-2.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#27c93f]" />
+            <span className="ml-2 font-mono text-xs text-muted">~/platform/errors.log</span>
+          </div>
+          <div className="p-4 font-mono text-sm leading-relaxed">
+            {(errors ?? []).length === 0 ? (
+              <p className="flex gap-2 text-muted">
+                <span className="select-none text-accent">$</span>
+                {errors === undefined
+                  ? "tail -f errors.log"
+                  : "tail -f errors.log  # no recent platform errors"}
+                {errors !== undefined && <Cursor />}
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {(errors ?? []).map((e) => (
+                  <li key={e._id} className="flex items-start gap-2.5">
+                    <span className="select-none text-red-400">✗</span>
+                    <span className="shrink-0 rounded bg-surface-2 px-1.5 text-xs text-muted">
+                      {e.source}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-foreground/90">
+                      {e.message}
+                    </span>
+                    <span className="shrink-0 text-[10px] text-muted">{e.traceId}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
