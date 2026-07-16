@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, Input, StatusDot } from "@/components/ui";
+import { PagePath } from "@/components/page-header";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 import { Plus } from "@/components/icons";
@@ -31,6 +32,7 @@ export default function AnalyticsPage() {
   return (
     <div className="p-8">
       <div className="mb-6">
+        <PagePath>analytics</PagePath>
         <h1 className="text-2xl font-semibold">Analytics</h1>
         <p className="text-sm text-muted">
           Throughput, completion, and cost for this Space, what got done.

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot } from "@/components/ui";
+import { PagePath } from "@/components/page-header";
 import { RegisterAgentDialog } from "@/components/register-agent-dialog";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
@@ -24,6 +25,7 @@ export default function AgentsPage() {
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
         <div>
+          <PagePath>agents</PagePath>
           <h1 className="text-2xl font-semibold">Agents</h1>
           <p className="text-sm text-muted">
             Every agent connected to this Space.

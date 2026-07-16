@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, StatusDot } from "@/components/ui";
+import { PagePath } from "@/components/page-header";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 
@@ -60,6 +61,7 @@ export default function OpsPage() {
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
         <div>
+          <PagePath>ops</PagePath>
           <h1 className="text-2xl font-semibold">Ops & scale</h1>
           <p className="text-sm text-muted">
             Spend & budget, agent health, alerts, and audit export for this Space.

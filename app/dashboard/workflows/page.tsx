@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
+import { PagePath } from "@/components/page-header";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 import {
@@ -112,6 +113,7 @@ export default function WorkflowsPage() {
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
         <div>
+          <PagePath>workflows</PagePath>
           <h1 className="text-2xl font-semibold">Workflows</h1>
           <p className="text-sm text-muted">
             Autonomous multi-agent workflows. Steps dispatch to agents and run
