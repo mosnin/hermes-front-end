@@ -123,10 +123,19 @@ export const Power = (p: IconProps) => (
 
 /* --- comms / feeds ----------------------------------------------------------- */
 export const Bell = (p: IconProps) => (
-  <Icon {...p}><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z" /><path d="M10 20a2 2 0 0 0 4 0" /></Icon>
+  <Icon {...p}>
+    <path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 3.8.6 6 1.9 7.5H4.6c1.3-1.5 1.9-3.7 1.9-7.5Z" />
+    <circle cx="12" cy="3" r="1.05" />
+    <path d="M10 20.5a2 2 0 0 0 4 0" />
+  </Icon>
 );
 export const BellRing = (p: IconProps) => (
-  <Icon {...p}><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z" /><path d="M10 20a2 2 0 0 0 4 0" /><path d="M20.5 5.5c1 1 1.5 2.3 1.5 3.5M3.5 5.5C2.5 6.5 2 7.8 2 9" /></Icon>
+  <Icon {...p}>
+    <path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 3.8.6 6 1.9 7.5H4.6c1.3-1.5 1.9-3.7 1.9-7.5Z" />
+    <circle cx="12" cy="3" r="1.05" />
+    <path d="M10 20.5a2 2 0 0 0 4 0" />
+    <path d="M19.8 4.2c1 1 1.6 2.3 1.7 3.6M4.2 4.2C3.2 5.2 2.6 6.5 2.5 7.8" />
+  </Icon>
 );
 export const MessageSquare = (p: IconProps) => (
   <Icon {...p}><path d="M4 5h16v11H9l-5 4V5Z" /></Icon>
@@ -187,7 +196,11 @@ export const Server = (p: IconProps) => (
   <Icon {...p}><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01" /></Icon>
 );
 export const Boxes = (p: IconProps) => (
-  <Icon {...p}><path d="M12 3l4 2v4l-4 2-4-2V5l4-2Z" /><path d="M6 11l4 2v4l-4 2-4-2v-4l4-2Z" /><path d="M18 11l4 2v4l-4 2-4-2v-4l4-2Z" /></Icon>
+  <Icon {...p}>
+    <path d="M12 3.3 19.6 7.5 12 11.7 4.4 7.5Z" />
+    <path d="M4.4 7.5V16.3L12 20.5 12 11.7" />
+    <path d="M19.6 7.5V16.3L12 20.5" />
+  </Icon>
 );
 export const Network = (p: IconProps) => (
   <Icon {...p}><rect x="9" y="3" width="6" height="5" rx="1" /><rect x="3" y="16" width="6" height="5" rx="1" /><rect x="15" y="16" width="6" height="5" rx="1" /><path d="M12 8v4M12 12H6v4M12 12h6v4" /></Icon>
@@ -256,7 +269,10 @@ export const Search = (p: IconProps) => (
   <Icon {...p}><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></Icon>
 );
 export const Settings = (p: IconProps) => (
-  <Icon {...p}><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" /></Icon>
+  <Icon {...p}>
+    <path d="M10.02 5.39 10.53 2.72 13.47 2.72 13.98 5.39 15.28 5.93 17.53 4.4 19.6 6.47 18.07 8.72 18.61 10.02 21.28 10.53 21.28 13.47 18.61 13.98 18.07 15.28 19.6 17.53 17.53 19.6 15.28 18.07 13.98 18.61 13.47 21.28 10.53 21.28 10.02 18.61 8.72 18.07 6.47 19.6 4.4 17.53 5.93 15.28 5.39 13.98 2.72 13.47 2.72 10.53 5.39 10.02 5.93 8.72 4.4 6.47 6.47 4.4 8.72 5.93Z" />
+    <circle cx="12" cy="12" r="2.95" />
+  </Icon>
 );
 export const Wrench = (p: IconProps) => (
   <Icon {...p}><path d="M15 6a4 4 0 0 0-5.3 5L4 16.7 7.3 20l5.7-5.7A4 4 0 0 0 18 9l-2.5 2.5L13 9l2.5-2.5A4 4 0 0 0 15 6Z" /></Icon>
