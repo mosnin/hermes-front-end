@@ -42,6 +42,22 @@ function Rise({
   );
 }
 
+/** Small circular "+" affordance sitting in the corner of a logo/portrait tile. */
+function CornerPlus({ dark }: { dark?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={`absolute bottom-4 right-4 grid h-7 w-7 place-items-center rounded-full ${
+        dark ? "bg-white/15 text-white" : "bg-[#1f1f1c]/8 text-[#55534e]"
+      }`}
+    >
+      <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <path d="M6 2v8M2 6h8" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
 function GetStartedPill({ big }: { big?: boolean }) {
   const cls = big
     ? "rounded-full bg-[#1f1f1c] px-6 py-3 text-[15px] font-medium text-white transition hover:bg-black"
@@ -103,6 +119,145 @@ const TRIO = [
   },
 ];
 
+/* Small inline icon set for the product-section feature rows, keeping each
+   section's list visually distinct instead of one repeated glyph. */
+const ICON_PROPS = { viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.5 } as const;
+
+function IconPlug({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M7 2.5v4M13 2.5v4" strokeLinecap="round" />
+      <path d="M5 6.5h10v3a5 5 0 0 1-10 0v-3z" />
+      <path d="M10 14.5v3" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconBolt({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M11 2 5.5 11h4l-1 7 7-9h-4l1-7z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconPulse({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M2 11h3.5l2-5 3 9 2-7 1.5 3H18" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconStream({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M4 14a8 8 0 0 1 12 0" strokeLinecap="round" />
+      <path d="M6.8 11.6a4.2 4.2 0 0 1 6.4 0" strokeLinecap="round" />
+      <circle cx="10" cy="15" r="1.1" />
+    </svg>
+  );
+}
+function IconFlow({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <circle cx="4.5" cy="5" r="2" />
+      <circle cx="4.5" cy="15" r="2" />
+      <circle cx="15.5" cy="10" r="2" />
+      <path d="M6.3 5.8 13.8 9M6.3 14.2 13.8 11" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconShieldCheck({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M10 2.5 16 4.6v4.6c0 4-2.6 6.7-6 8.3-3.4-1.6-6-4.3-6-8.3V4.6L10 2.5z" strokeLinejoin="round" />
+      <path d="M7.2 10 9.3 12l3.5-4.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconReplay({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M4 10a6 6 0 1 1 1.9 4.4" strokeLinecap="round" />
+      <path d="M4 14.5V10h4.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconClock({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <circle cx="10" cy="10.5" r="7.2" />
+      <path d="M10 6.5V10.5l3 2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconLock({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <rect x="4.5" y="9" width="11" height="8" rx="2.2" />
+      <path d="M6.7 9V6.5a3.3 3.3 0 0 1 6.6 0V9" />
+    </svg>
+  );
+}
+function IconCoin({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <circle cx="10" cy="10" r="7.2" />
+      <path d="M10 6v8M7.8 8.2c0-1.2 1-2 2.2-2s2.2.6 2.2 1.6c0 2.2-4.4 1.2-4.4 3.4 0 1 1 1.6 2.2 1.6s2.2-.8 2.2-2" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconDoc({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M6 2.5h6l3 3v12H6z" strokeLinejoin="round" />
+      <path d="M8.3 9.5h4.4M8.3 12.5h4.4M8.3 15h2.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconUsers({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <circle cx="7.3" cy="7" r="2.6" />
+      <path d="M2.5 16.5c.5-3 2.3-4.6 4.8-4.6s4.3 1.6 4.8 4.6" strokeLinecap="round" />
+      <circle cx="14.2" cy="6.3" r="2" />
+      <path d="M12.8 11.6c1.9.2 3.2 1.7 3.7 4.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconLayers({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M10 2.8 17 6.5 10 10.2 3 6.5z" strokeLinejoin="round" />
+      <path d="M3 10.5 10 14.2l7-3.7M3 14.3 10 18l7-3.7" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconChat({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M3 4.5h14v9H8.5L5 16.5V13.5H3z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconGrid({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <rect x="3" y="3" width="5.5" height="5.5" rx="1.2" />
+      <rect x="11.5" y="3" width="5.5" height="5.5" rx="1.2" />
+      <rect x="3" y="11.5" width="5.5" height="5.5" rx="1.2" />
+      <rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1.2" />
+    </svg>
+  );
+}
+function IconLink({ className }: { className?: string }) {
+  return (
+    <svg {...ICON_PROPS} className={className}>
+      <path d="M8.3 11.7 11.7 8.3" strokeLinecap="round" />
+      <path d="M9 6.2 10.6 4.6a3 3 0 0 1 4.2 4.2L13.2 10.4" strokeLinecap="round" />
+      <path d="M11 13.8 9.4 15.4a3 3 0 0 1-4.2-4.2L6.8 9.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const QUOTES = [
   {
     name: "Ops lead",
@@ -131,10 +286,15 @@ const SECTIONS = [
     sub: "Native, adapter, or CLI. Connected in minutes.",
     mock: <ConnectMock />,
     highlight: {
+      icon: IconPlug,
       title: "Adapters for any framework",
       body: "Hermes runs natively. OpenClaw and Goose plug in through first-class adapters, and anything with a command line joins through the generic CLI adapter.",
     },
-    points: ["One-line connector install", "Health and heartbeats built in", "Live token streaming"],
+    points: [
+      { label: "One-line connector install", icon: IconBolt },
+      { label: "Health and heartbeats built in", icon: IconPulse },
+      { label: "Live token streaming", icon: IconStream },
+    ],
     flip: false,
   },
   {
@@ -149,10 +309,15 @@ const SECTIONS = [
     sub: "Dependency-aware workflows with recovery built in.",
     mock: <OrchestrateMock />,
     highlight: {
+      icon: IconFlow,
       title: "Dependency-aware steps",
       body: "Each step receives the outputs of the steps it depends on. Retries with backoff, timeouts, and a stuck-run watchdog keep runs moving.",
     },
-    points: ["Human approval gates", "Dead-letter replay", "Cron, webhook, and event triggers"],
+    points: [
+      { label: "Human approval gates", icon: IconShieldCheck },
+      { label: "Dead-letter replay", icon: IconReplay },
+      { label: "Cron, webhook, and event triggers", icon: IconClock },
+    ],
     flip: true,
   },
   {
@@ -167,10 +332,15 @@ const SECTIONS = [
     sub: "Autonomy without the pager anxiety.",
     mock: <GovernMock />,
     highlight: {
+      icon: IconLock,
       title: "Kill switch and shadow mode",
       body: "Stop everything with one switch, or run agents in shadow mode where they propose actions to a ledger instead of executing them.",
     },
-    points: ["Budgets metered on real spend", "Tamper-evident audit export", "RBAC from viewer to owner"],
+    points: [
+      { label: "Budgets metered on real spend", icon: IconCoin },
+      { label: "Tamper-evident audit export", icon: IconDoc },
+      { label: "RBAC from viewer to owner", icon: IconUsers },
+    ],
     flip: false,
   },
   {
@@ -185,10 +355,15 @@ const SECTIONS = [
     sub: "MCP servers, chat bridges, and 250+ toolkits.",
     mock: <IntegrateMock />,
     highlight: {
+      icon: IconLayers,
       title: "MCP servers per agent",
       body: "Assign MCP servers to agents and they use those tools in real multi-step tool loops, scoped by the same guardrails as everything else.",
     },
-    points: ["Slack, Telegram, and Discord bridges", "Composio toolkits", "Spec-conformant A2A interop"],
+    points: [
+      { label: "Slack, Telegram, and Discord bridges", icon: IconChat },
+      { label: "Composio toolkits", icon: IconGrid },
+      { label: "Spec-conformant A2A interop", icon: IconLink },
+    ],
     flip: true,
   },
 ];
@@ -296,12 +471,16 @@ export default function HomePage() {
 
         <div className="mt-12 grid gap-4 md:grid-cols-[1fr_1fr_2.05fr]">
           <Rise className="grid">
-            <div className="grid min-h-[240px] place-items-center rounded-[22px] bg-[var(--site-card)] p-8">
+            <div className="relative grid min-h-[240px] place-items-center rounded-[22px] bg-[var(--site-card)] p-8">
               <span className="text-[30px] font-semibold tracking-tight text-[#8d8a83]">acme·co</span>
+              <CornerPlus />
             </div>
           </Rise>
           <Rise delay={0.06} className="grid">
-            <ImagePlaceholder label="Portrait" className="min-h-[240px] rounded-[22px]" />
+            <div className="relative">
+              <ImagePlaceholder label="Portrait" className="min-h-[240px] rounded-[22px]" />
+              <CornerPlus />
+            </div>
           </Rise>
           <Rise delay={0.12} className="grid">
             <div className="relative overflow-hidden rounded-[22px]">
@@ -332,12 +511,16 @@ export default function HomePage() {
             </div>
           </Rise>
           <Rise delay={0.06} className="grid">
-            <div className="grid min-h-[240px] place-items-center rounded-[22px] bg-[#1f1f1c] p-8">
+            <div className="relative grid min-h-[240px] place-items-center rounded-[22px] bg-[#1f1f1c] p-8">
               <span className="text-[26px] font-semibold tracking-tight text-white/85">nordic·ai</span>
+              <CornerPlus dark />
             </div>
           </Rise>
           <Rise delay={0.12} className="grid">
-            <ImagePlaceholder label="Portrait" className="min-h-[240px] rounded-[22px]" />
+            <div className="relative">
+              <ImagePlaceholder label="Portrait" className="min-h-[240px] rounded-[22px]" />
+              <CornerPlus />
+            </div>
           </Rise>
         </div>
       </section>
@@ -368,15 +551,12 @@ export default function HomePage() {
           <Rise>
             <SectionHead label={s.label} title={s.title} sub={s.sub} explore="/features" />
           </Rise>
-          <div className={`mt-12 grid items-start gap-10 lg:grid-cols-2 ${s.flip ? "" : ""}`}>
+          <div className="mt-12 grid items-start gap-10 lg:grid-cols-2">
             <Rise className={s.flip ? "lg:order-2" : ""}>{s.mock}</Rise>
             <Rise delay={0.08} className={s.flip ? "lg:order-1" : ""}>
               <div className="rounded-[18px] bg-[var(--site-card)] p-5">
                 <p className="flex items-center gap-2.5 text-[15.5px] font-medium text-[var(--site-ink)]">
-                  <svg viewBox="0 0 20 20" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="3" y="3" width="14" height="14" rx="3" />
-                    <path d="M7 10.2l2.2 2.2L13.5 8" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                  <s.highlight.icon className="h-[18px] w-[18px] shrink-0 text-[#33322e]" />
                   {s.highlight.title}
                 </p>
                 <p className="mt-2 pl-[30px] text-[13.5px] leading-relaxed text-[#75726c]">
@@ -385,12 +565,9 @@ export default function HomePage() {
               </div>
               <ul className="mt-2 space-y-1">
                 {s.points.map((pt) => (
-                  <li key={pt} className="flex items-center gap-2.5 px-5 py-3 text-[15.5px] text-[var(--site-ink)]">
-                    <svg viewBox="0 0 20 20" className="h-[18px] w-[18px] shrink-0 text-[#55534e]" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <circle cx="10" cy="10" r="7.5" />
-                      <path d="M6.8 10.2l2.2 2.2L13.4 8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    {pt}
+                  <li key={pt.label} className="flex items-center gap-2.5 px-5 py-3 text-[15.5px] text-[var(--site-ink)]">
+                    <pt.icon className="h-[18px] w-[18px] shrink-0 text-[#55534e]" />
+                    {pt.label}
                   </li>
                 ))}
               </ul>
@@ -416,13 +593,32 @@ export default function HomePage() {
             </div>
           </Rise>
           <Rise delay={0.1}>
-            <div className="flex items-center justify-start gap-4 md:justify-end">
+            <div className="flex items-center justify-start gap-5 md:justify-end">
               {["SOC 2", "GDPR", "ISO 27001"].map((b) => (
                 <span
                   key={b}
-                  className="grid h-[72px] w-[72px] place-items-center rounded-full border-[1.5px] border-[#c9c6bf] text-center text-[12px] font-semibold leading-tight text-[#75726c]"
+                  className="relative grid h-[76px] w-[76px] shrink-0 place-items-center rounded-full border-[1.5px] border-[#c9c6bf]"
                 >
-                  {b}
+                  <span
+                    aria-hidden
+                    className="absolute inset-[6px] rounded-full border border-dashed border-[#d6d3cc]"
+                  />
+                  {[0, 90, 180, 270].map((deg) => (
+                    <svg
+                      key={deg}
+                      viewBox="0 0 10 10"
+                      className="absolute left-1/2 top-1/2 h-2 w-2 text-[#c9c6bf]"
+                      style={{
+                        transform: `translate(-50%, -50%) rotate(${deg}deg) translateY(-31px) rotate(${-deg}deg)`,
+                      }}
+                      aria-hidden
+                    >
+                      <path d="M5 0l1.1 3.4H10L6.9 5.5 8 9 5 6.9 2 9l1.1-3.5L0 3.4h3.9z" fill="currentColor" />
+                    </svg>
+                  ))}
+                  <span className="relative px-2 text-center text-[11.5px] font-semibold leading-tight text-[#75726c]">
+                    {b}
+                  </span>
                 </span>
               ))}
             </div>

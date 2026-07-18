@@ -129,7 +129,7 @@ export function GovernMock() {
   const reduce = useReducedMotion();
   const rows = [
     { label: "Kill switch", state: "armed", ok: true },
-    { label: "Budget guard", state: "82% of cap", ok: true },
+    { label: "Budget guard", state: "82% of cap", ok: true, active: true },
     { label: "Shadow mode", state: "proposing", ok: true },
     { label: "Audit chain", state: "verified", ok: true },
     { label: "Runaway watch", state: "0 flags", ok: true },
@@ -144,7 +144,12 @@ export function GovernMock() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: reduce ? 0 : i * 0.08 }}
-            className="flex items-center justify-between rounded-xl bg-white/65 px-4 py-3 text-[14px]"
+            className={cn(
+              "flex items-center justify-between rounded-xl px-4 py-3 text-[14px]",
+              r.active
+                ? "bg-white text-[var(--site-ink)] shadow-[0_10px_24px_rgba(31,31,28,0.10)]"
+                : "bg-white/55 text-[#6c6a64]",
+            )}
           >
             <span className="flex items-center gap-2.5 text-[var(--site-ink)]">
               <span className="relative flex h-2 w-2">
@@ -157,7 +162,7 @@ export function GovernMock() {
                 )}
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
               </span>
-              {r.label}
+              <span className={r.active ? "font-medium" : ""}>{r.label}</span>
             </span>
             <span className="text-[13px] text-[#8a8781]">{r.state}</span>
           </motion.div>
@@ -172,20 +177,28 @@ export function IntegrateMock() {
   const reduce = useReducedMotion();
   const tiles = ["Slack", "Telegram", "Discord", "Composio", "MCP", "OpenAI", "Convex", "Clerk", "Webhook"];
   return (
-    <div className={cn(CARD, "!p-3")}>
-      <div className="grid grid-cols-3 overflow-hidden rounded-2xl">
-        {tiles.map((t, i) => (
-          <motion.div
-            key={t}
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-            transition={{ delay: reduce ? 0 : i * 0.06 }}
-            className="grid aspect-[3/2] place-items-center border border-white/60 bg-white/40 text-[14px] font-medium text-[#8a8781]"
-          >
-            {t}
-          </motion.div>
-        ))}
+    <div className={cn(CARD, "!p-4")}>
+      <div className="grid grid-cols-3 gap-2.5">
+        {tiles.map((t, i) => {
+          const active = t === "MCP";
+          return (
+            <motion.div
+              key={t}
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ delay: reduce ? 0 : i * 0.06, duration: 0.4 }}
+              className={cn(
+                "grid aspect-[3/2] place-items-center rounded-xl text-[14px] font-medium",
+                active
+                  ? "bg-white text-[var(--site-ink)] shadow-[0_10px_24px_rgba(31,31,28,0.10)]"
+                  : "bg-white/45 text-[#8a8781]",
+              )}
+            >
+              {t}
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );
@@ -229,17 +242,17 @@ export function ControlPlaneDiagram() {
           transition={{ type: "spring", stiffness: 200, damping: 22 }}
           className="relative grid place-items-center"
         >
-          {[0, 1, 2].map((r) => (
+          {[0, 1, 2, 3].map((r) => (
             <motion.span
               key={r}
               className="absolute rounded-[999px] border border-[#dcd9d2]"
-              style={{ width: 220 + r * 26, height: 128 + r * 26 }}
-              animate={reduce ? {} : { opacity: [0.6, 0.2, 0.6] }}
-              transition={{ duration: 3, repeat: Infinity, delay: r * 0.4 }}
+              style={{ width: 276 + r * 15, height: 106 + r * 15 }}
+              animate={reduce ? {} : { opacity: [0.55, 0.18, 0.55] }}
+              transition={{ duration: 3, repeat: Infinity, delay: r * 0.35 }}
             />
           ))}
-          <Painting scene="dusk" className="grid h-[120px] w-[210px] place-items-center rounded-[999px]">
-            <span className="relative text-[24px] font-semibold text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.35)]">
+          <Painting scene="dusk" className="grid h-[104px] w-[268px] place-items-center rounded-[999px]">
+            <span className="relative text-[21px] font-semibold text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.35)]">
               Control Plane
             </span>
           </Painting>
