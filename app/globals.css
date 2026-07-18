@@ -48,6 +48,40 @@ body {
     Menlo, Consolas, monospace;
 }
 
+/* ---------------------------------------------------------------------------
+   Logged-out site theme: warm paper white, near-black ink, quiet greys,
+   editorial grotesk. Scoped so the dark instrument-panel app is untouched.
+--------------------------------------------------------------------------- */
+.site-light {
+  --site-bg: #ffffff;
+  --site-band: #f5f4f0; /* warm off-white section band */
+  --site-card: #efede7; /* beige card fill */
+  --site-ink: #1f1f1c;
+  --site-body: #8a8781;
+  --site-line: #e7e5df;
+  background: var(--site-bg);
+  color: var(--site-ink);
+  font-family: var(--font-site), "Helvetica Neue", Arial, sans-serif;
+}
+.site-light ::selection {
+  background: #1f1f1c;
+  color: #fff;
+}
+.site-light :focus-visible {
+  outline: 2px solid #1f1f1c;
+}
+/* Slow logo marquee */
+@keyframes site-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.site-marquee {
+  animation: site-marquee 36s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-marquee { animation: none; }
+}
+
 * {
   border-color: var(--border);
 }

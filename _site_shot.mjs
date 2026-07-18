@@ -1,0 +1,14 @@
+import { chromium } from 'playwright-core';
+const [,, path='/', out='site.png', width='1142', full='1'] = process.argv;
+const DIR='/tmp/claude-0/-home-user-hermes-front-end/bee331e8-5968-5c5e-8e20-2fca33aaa0e9/scratchpad';
+const BASE='http://127.0.0.1:3100';
+const res=await fetch(BASE+path); let html=await res.text();
+html=html.replace('<head>', `<head><base href="${BASE}/">`);
+const b=await chromium.launch({executablePath:'/opt/pw-browsers/chromium'});
+const ctx=await b.newContext({viewport:{width:+width,height:900},deviceScaleFactor:1,javaScriptEnabled:false});
+const p=await ctx.newPage();
+await p.setContent(html,{waitUntil:'domcontentloaded',timeout:30000});
+await p.addStyleTag({content:`*{animation:none !important;transition:none !important} [style*="opacity"]{opacity:1 !important} [style*="transform"]{transform:none !important}`});
+await p.waitForTimeout(1200);
+await p.screenshot({path:`${DIR}/${out}`,fullPage:full==='1'});
+await b.close();console.log('shot',out);
