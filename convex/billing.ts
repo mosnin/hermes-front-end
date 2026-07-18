@@ -32,6 +32,20 @@ export const entitlements = query({
           .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
           .take(1000)
       ).length;
+    // Hosted (Cloudflare Container-backed) agents: vmProvider set and still
+    // provisioning/running. Same by_space index as `count`, filtered in JS
+    // since deploymentStatus isn't part of an index on its own.
+    const hostedAgents = (
+      await ctx.db
+        .query("agents")
+        .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+        .take(1000)
+    ).filter(
+      (a) =>
+        !!a.vmProvider &&
+        (a.deploymentStatus === "provisioning" ||
+          a.deploymentStatus === "running"),
+    ).length;
     return {
       plan: planOf(scope),
       limits,
@@ -40,6 +54,7 @@ export const entitlements = query({
         workflows: await count("workflows"),
         bridges: await count("bridges"),
         apiKeys: await count("apiKeys"),
+        hostedAgents,
       },
       matrix: PLAN_LIMITS,
     };

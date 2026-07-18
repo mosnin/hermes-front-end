@@ -15,12 +15,14 @@ import {
   Loader2,
   Lock,
   ScrollText,
+  Server,
   ShieldCheck,
 } from "@/components/icons";
 
 const NAV = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/admin/tenants", label: "Tenants", icon: Building2 },
+  { href: "/admin/fleet", label: "Fleet", icon: Server },
   { href: "/admin/compliance", label: "SOC 2 controls", icon: ShieldCheck },
   { href: "/admin/audit", label: "Admin audit", icon: ScrollText },
 ];

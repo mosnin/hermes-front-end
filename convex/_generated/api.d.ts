@@ -31,6 +31,7 @@ import type * as embeddings from "../embeddings.js";
 import type * as engine from "../engine.js";
 import type * as evals from "../evals.js";
 import type * as fleet from "../fleet.js";
+import type * as fleetMetering from "../fleetMetering.js";
 import type * as goals from "../goals.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
@@ -108,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   engine: typeof engine;
   evals: typeof evals;
   fleet: typeof fleet;
+  fleetMetering: typeof fleetMetering;
   goals: typeof goals;
   health: typeof health;
   http: typeof http;

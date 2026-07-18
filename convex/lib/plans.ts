@@ -14,6 +14,9 @@ export type PlanLimits = {
   maxWorkflows: number;
   maxBridges: number;
   maxApiKeys: number;
+  // Managed hosting: max Cloudflare Container-backed agents (vmProvider set,
+  // deploymentStatus provisioning/running) a Space may run concurrently.
+  hostedAgents: number;
   features: string[];
 };
 
@@ -23,6 +26,7 @@ export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
     maxWorkflows: 5,
     maxBridges: 1,
     maxApiKeys: 1,
+    hostedAgents: 0,
     features: ["core"],
   },
   team: {
@@ -30,6 +34,7 @@ export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
     maxWorkflows: 100,
     maxBridges: 10,
     maxApiKeys: 10,
+    hostedAgents: 5,
     features: ["core", "bridges", "api", "evals", "campaigns"],
   },
   enterprise: {
@@ -37,6 +42,7 @@ export const PLAN_LIMITS: Record<PlanName, PlanLimits> = {
     maxWorkflows: 100_000,
     maxBridges: 1_000,
     maxApiKeys: 1_000,
+    hostedAgents: 25,
     features: [
       "core",
       "bridges",
@@ -62,6 +68,11 @@ export function limitsOf(scope: Scope): PlanLimits {
 
 export function hasFeature(scope: Scope, feature: string): boolean {
   return limitsOf(scope).features.includes(feature);
+}
+
+/** Max concurrently hosted (Cloudflare Container-backed) agents for a Space's plan. */
+export function hostedAgentLimit(scope: Scope): number {
+  return limitsOf(scope).hostedAgents;
 }
 
 /** Throw a GuardViolation unless the plan includes a feature. */

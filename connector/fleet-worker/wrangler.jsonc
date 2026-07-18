@@ -10,17 +10,34 @@
   // Container-backed Durable Object: one instance per agent. The class name must
   // match the exported `AgentContainer` class in src/index.ts and the
   // `class_name` in the `containers` block below.
+  //
+  // `REGISTRY` is a plain (non-container) singleton Durable Object the worker
+  // uses to track spawned agent ids for `/list` — Cloudflare has no native
+  // "list all DO instances" call, so we keep a tiny side index ourselves.
   "durable_objects": {
-    "bindings": [{ "name": "AGENT", "class_name": "AgentContainer" }]
+    "bindings": [
+      { "name": "AGENT", "class_name": "AgentContainer" },
+      { "name": "REGISTRY", "class_name": "FleetRegistry" }
+    ]
   },
 
   // Containers run on SQLite-backed Durable Objects, so the migration must use
   // `new_sqlite_classes` (not `new_classes`).
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AgentContainer"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AgentContainer", "FleetRegistry"] }],
 
   // Cloudflare Containers — the agent image built from ./Dockerfile.
   // See https://developers.cloudflare.com/containers/ for the current schema;
   // `instance_type` and `max_instances` may gain options over time.
+  //
+  // COST ENVELOPE: these two knobs are the whole spend cap for this service.
+  // `instance_type: "basic"` is Cloudflare's low tier (fractional vCPU / ~1GB
+  // memory class at time of writing) — plenty for the outbound-only connector
+  // loop, and the cheapest per-instance-hour rate. `max_instances: 100` caps
+  // concurrently *running* containers fleet-wide (across all customers/Spaces)
+  // regardless of how many agents Convex thinks exist, so a bug or an abusive
+  // customer can't spin up unbounded billable containers. Raise this only
+  // alongside a real capacity/billing review; each unit is a running container
+  // billed for wall-clock time, not a free logical resource.
   "containers": [
     {
       // Must match the Durable Object class above.
@@ -33,7 +50,8 @@
       // Smallest tier is plenty for the outbound-only connector loop.
       // Options: "dev" | "basic" | "standard" (check docs for current tiers).
       "instance_type": "basic",
-      // Upper bound on concurrently running agent containers.
+      // Upper bound on concurrently running agent containers (see cost
+      // envelope note above).
       "max_instances": 100
     }
   ]

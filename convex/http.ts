@@ -912,6 +912,18 @@ http.route({
         stripeEvent: String(event.type),
       });
     }
+    // Subscription lapsed/canceled — stop billing customers from continuing to
+    // run hosted fleet agents on our infra. Separate from the plan downgrade
+    // above so a future event type can trigger this without also touching plan.
+    if (event.type === "customer.subscription.deleted") {
+      const spaceId = event.data?.object?.metadata?.spaceId;
+      if (spaceId) {
+        await ctx.runMutation(internal.stripe.lapseHostedFleet, {
+          spaceId: spaceId as Id<"spaces">,
+          stripeEvent: String(event.type),
+        });
+      }
+    }
     // Always 200 for recognized-but-ignored events so Stripe stops retrying.
     return json({ received: true });
   }),

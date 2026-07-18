@@ -40,4 +40,13 @@ crons.interval("retention sweep", { hours: 1 }, internal.maintenance.sweepRetent
 // and page the configured channel, respecting per-rule cooldowns.
 crons.interval("alert eval", { minutes: 3 }, internal.alerts.evaluateAll, {});
 
+// Managed hosting: meter one usage row per hosted (running) agent for the
+// current hour bucket. Idempotent per agent/hour; safe to run more than once.
+crons.interval(
+  "fleet agent-hour metering",
+  { hours: 1 },
+  internal.fleetMetering.runHourly,
+  {},
+);
+
 export default crons;

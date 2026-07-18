@@ -49,8 +49,8 @@ const PILLARS = [
     id: "frameworks",
     graphic: ChipGraphic,
     title: "Any agent framework",
-    body: "Hermes agents connect natively. OpenClaw and Goose run through first-class adapters. Anything else that takes an instruction on the command line and prints a result becomes a managed fleet member through the generic CLI adapter.",
-    points: ["Hermes native runtime", "OpenClaw adapter", "Goose adapter", "Generic CLI adapter"],
+    body: "Hermes agents connect natively. OpenClaw and Goose run through first-class adapters. Anything else that takes an instruction on the command line and prints a result becomes a managed fleet member through the generic CLI adapter. Don't want to run any of it yourself? Cadre Cloud deploys agents to isolated containers we manage, no servers or setup required.",
+    points: ["Hermes native runtime", "OpenClaw adapter", "Goose adapter", "Generic CLI adapter", "Cadre Cloud managed hosting (BYOK)"],
   },
   {
     id: "integrations",

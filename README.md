@@ -126,6 +126,18 @@ In the Vercel project, set these env vars (Settings → Environment Variables):
 Without `CONVEX_DEPLOY_KEY` the build fails on `@/convex/_generated/api` (codegen
 never ran) — that's the one required secret.
 
+## Managed hosting (Cadre Cloud)
+
+Beyond "bring your own agent," Spaces can one-click **deploy** hosted agents:
+we boot an isolated Cloudflare Container running the Hermes connector per
+agent (see [`connector/fleet-worker/`](./connector/fleet-worker/)) and bill
+per hosted agent (flat Stripe seat price + hourly agent-hour metering). The
+pipeline degrades gracefully when Cloudflare isn't configured — agents are
+still created for manual connector wiring. See
+[`docs/HOSTED_FLEET.md`](./docs/HOSTED_FLEET.md) for the full launch runbook
+(prerequisites, `wrangler deploy` steps, env vars, metering model, incident
+playbook).
+
 ## Layout
 
 ```

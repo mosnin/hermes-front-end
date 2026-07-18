@@ -26,14 +26,17 @@ control plane.
 
 ## Endpoints the control plane calls
 
-Every request must carry `Authorization: Bearer <FLEET_SECRET>`. These match
+`GET /health` is unauthenticated (for uptime checks). Every other request must
+carry `Authorization: Bearer <FLEET_SECRET>`. These match
 `convex/lib/cloudflare.ts` exactly:
 
-| Method · Path | Body | Returns |
-| --- | --- | --- |
-| `POST /spawn` | `{ token, controlPlaneUrl, region?, model?, name }` | `{ id }` |
-| `POST /terminate` | `{ id }` | `{ ok: true }` |
-| `POST /status` | `{ id }` | `{ status }` |
+| Method · Path | Auth | Body | Returns |
+| --- | --- | --- | --- |
+| `GET /health` | none | — | `{ ok: true }` |
+| `POST /spawn` | required | `{ token, controlPlaneUrl, region?, model?, modelApiKey?, name }` | `{ id }` |
+| `POST /terminate` | required | `{ id }` | `{ ok: true }` |
+| `POST /status` | required | `{ id }` | `{ status }` |
+| `POST /list` | required | — | `{ instances: [{ id, name?, spawnedAt, status }] }` |
 
 On `/spawn` the worker injects these env vars into the container (consumed by
 `agent_runtime.py` / `client.py`):
@@ -44,9 +47,27 @@ On `/spawn` the worker injects these env vars into the container (consumed by
 | `HERMES_CONNECTOR_TOKEN` | `token` |
 | `HERMES_AGENT_MODEL` | `model` |
 | `HERMES_AGENT_NAME` | `name` |
+| `HERMES_MODEL_API_KEY` | `modelApiKey` (BYOK passthrough, optional) |
 
 (`region` is accepted for forward-compat but Cloudflare schedules containers
 globally; it is currently unused.)
+
+`modelApiKey` is the customer's own model API key when they've brought their
+own key (BYOK). It is only ever placed into the `HERMES_MODEL_API_KEY`
+container env var — the worker never logs it and never echoes it back in a
+response.
+
+### `/list` and instance enumeration
+
+Cloudflare's Containers/Durable Objects API has no call to "list every DO
+instance of a class," so `/list` is backed by a small side registry: a
+singleton `FleetRegistry` Durable Object (see the `REGISTRY` binding in
+`wrangler.jsonc`) that the worker updates on `/spawn` (add) and `/terminate`
+(remove), storing only `{ id, name, spawnedAt }`. `/list` reads that registry
+and fans out to each instance's `/status` for a live status. This is a
+best-effort index maintained by this worker, not a Cloudflare-native listing —
+if an instance is ever removed out-of-band (e.g. manually via the dashboard),
+the registry entry can go stale until the next `/terminate` call for that id.
 
 ## The agent image (Dockerfile)
 
@@ -98,10 +119,14 @@ agent record + token so you can run the connector by hand.
 - One isolated container **per agent** — no shared process between tenants.
 - The worker authenticates every request with the shared `FLEET_SECRET`; rotate
   it via `npx wrangler secret put FLEET_SECRET`.
-- The connector token is injected as a container env var at boot, never logged
-  or persisted by the worker.
+- The connector token and BYOK `modelApiKey` are injected as container env vars
+  at boot (`HERMES_CONNECTOR_TOKEN`, `HERMES_MODEL_API_KEY`), never logged or
+  persisted by the worker — the `FleetRegistry` side index (used by `/list`)
+  only ever stores `{ id, name, spawnedAt }`, never secrets.
 - `terminate` calls `destroy()`, which fully tears the container down — pair it
   with the control plane's per-Space budget caps + kill switch.
+- `instance_type` and `max_instances` in `wrangler.jsonc` are the fleet-wide
+  cost cap; see the inline comment there before raising `max_instances`.
 
 ## API version notes
 
@@ -112,3 +137,9 @@ and the `containers` block with `image` / `instance_type` / `max_instances`). If
 you bump the `@cloudflare/containers` dependency and a method or field is
 renamed, the call sites flagged with comments in `src/index.ts` are the ones to
 revisit.
+
+`FleetRegistry` is a plain Durable Object (imported from the `cloudflare:workers`
+module, not `@cloudflare/containers`) that relies on Workers RPC — public
+methods on the class become callable directly on the stub returned by
+`env.REGISTRY.get(id)`, the same pattern already used for `AgentContainer`'s
+`startAgent`/`stopAgent`/`agentStatus`.

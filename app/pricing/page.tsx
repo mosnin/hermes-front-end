@@ -58,6 +58,18 @@ const TIERS = [
   },
 ];
 
+const ADDON = {
+  name: "Cadre Cloud",
+  blurb: "Don't want to run agents yourself? We'll host them.",
+  price: "from $X",
+  period: "/ agent / month",
+  features: [
+    "Isolated container per agent, no servers to manage",
+    "Bring your own keys (BYOK) — your LLM bill, not ours",
+    "Same guardrails, budgets, and audit trail as self-hosted",
+  ],
+};
+
 const FAQ = [
   {
     q: "Do you run my agents' compute?",
@@ -70,6 +82,10 @@ const FAQ = [
   {
     q: "Are the plan limits enforced?",
     a: "Yes, server-side. The numbers on this page are the same constants the backend enforces at every create path.",
+  },
+  {
+    q: "Do I have to self-host my agents?",
+    a: "No. Cadre Cloud runs agents for you on isolated containers we manage, no servers or setup on your end. Bring your own model keys and pay per hosted agent, on top of any plan.",
   },
   {
     q: "How do budgets work?",
@@ -174,6 +190,40 @@ export default function PricingPage() {
             </StaggerItem>
           ))}
         </Stagger>
+
+        <section className="pb-16">
+          <Reveal>
+            <div className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-7 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <span className="font-mono text-xs uppercase tracking-wider text-muted">add-on</span>
+                <h2 className="mt-1 text-lg font-semibold">{ADDON.name}</h2>
+                <p className="mt-1 text-sm text-muted">{ADDON.blurb}</p>
+                <ul className="mt-4 space-y-1.5">
+                  {ADDON.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-sm">
+                      <svg viewBox="0 0 16 16" className="mt-0.5 h-4 w-4 shrink-0" aria-hidden>
+                        <path d="M3 8.5 L6.5 12 L13 4.5" fill="none" stroke="#ff5b04" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="shrink-0 text-center sm:text-right">
+                <p className="text-3xl font-bold">
+                  {ADDON.price}
+                  <span className="ml-1 text-sm font-normal text-muted">{ADDON.period}</span>
+                </p>
+                <Link
+                  href="/contact"
+                  className="mt-4 inline-block rounded-lg border border-border px-4 py-2.5 text-sm font-medium transition hover:border-muted"
+                >
+                  Get early access
+                </Link>
+              </div>
+            </div>
+          </Reveal>
+        </section>
 
         <section className="pb-24">
           <Reveal className="mb-8 text-center">

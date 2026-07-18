@@ -6,17 +6,25 @@
  * Durable Object that extends the Cloudflare `Container` class and owns a
  * single Container instance running the Hermes connector image (see Dockerfile).
  *
- *   POST /spawn     { token, controlPlaneUrl, region?, model?, name } -> { id }
- *   POST /terminate { id }                                            -> { ok }
- *   POST /status    { id }                                            -> { status }
+ *   GET  /health     (no auth)                                        -> { ok }
+ *   POST /spawn      { token, controlPlaneUrl, region?, model?, modelApiKey?, name } -> { id }
+ *   POST /terminate  { id }                                            -> { ok }
+ *   POST /status     { id }                                            -> { status }
+ *   POST /list       (no body)                                         -> { instances }
  *
  * Containers API: https://developers.cloudflare.com/containers/
  * Uses the official `@cloudflare/containers` helper package (Container class,
  * getContainer helper). The package wraps the lower-level Durable Object +
  * Container runtime bindings; pin a known-good version in package.json.
+ *
+ * `modelApiKey` is BYOK passthrough: when a customer supplies their own model
+ * API key, the control plane forwards it here and we inject it into the
+ * container as HERMES_MODEL_API_KEY. It is never logged and never echoed back
+ * in any response.
  */
 
 import { Container } from "@cloudflare/containers";
+import { DurableObject } from "cloudflare:workers";
 
 export interface Env {
   /** Shared secret the control plane sends as `Authorization: Bearer <secret>`. */
@@ -26,6 +34,12 @@ export interface Env {
    * + `durable_objects` blocks). One DO instance == one agent container.
    */
   AGENT: DurableObjectNamespace<AgentContainer>;
+  /**
+   * Singleton Durable Object that tracks which agent ids we've spawned, so
+   * `/list` has something to enumerate. Cloudflare has no native "list all DO
+   * instances" API, so the worker keeps this small side registry itself.
+   */
+  REGISTRY: DurableObjectNamespace<FleetRegistry>;
 }
 
 /** Env injected into each agent container at boot (matches agent_runtime.py). */
@@ -34,7 +48,38 @@ interface SpawnConfig {
   controlPlaneUrl?: string;
   region?: string;
   model?: string;
+  modelApiKey?: string;
   name?: string;
+}
+
+/** Registry entry for one spawned agent, keyed by DO id string. */
+interface RegistryEntry {
+  name?: string;
+  spawnedAt: number;
+}
+
+/**
+ * Tiny singleton Durable Object that records which agent ids exist, purely so
+ * `/list` has something to enumerate (Cloudflare doesn't expose a "list all DO
+ * instances of this class" API). Addressed via `idFromName("registry")` so
+ * every call hits the same instance.
+ */
+export class FleetRegistry extends DurableObject<Env> {
+  async add(id: string, name?: string): Promise<void> {
+    const all = (await this.ctx.storage.get<Record<string, RegistryEntry>>("agents")) ?? {};
+    all[id] = { name, spawnedAt: Date.now() };
+    await this.ctx.storage.put("agents", all);
+  }
+
+  async remove(id: string): Promise<void> {
+    const all = (await this.ctx.storage.get<Record<string, RegistryEntry>>("agents")) ?? {};
+    delete all[id];
+    await this.ctx.storage.put("agents", all);
+  }
+
+  async list(): Promise<Record<string, RegistryEntry>> {
+    return (await this.ctx.storage.get<Record<string, RegistryEntry>>("agents")) ?? {};
+  }
 }
 
 function unauthorized(): Response {
@@ -79,15 +124,19 @@ export class AgentContainer extends Container<Env> {
     HERMES_CONNECTOR_TOKEN: "",
     HERMES_AGENT_MODEL: "",
     HERMES_AGENT_NAME: "",
+    HERMES_MODEL_API_KEY: "",
   };
 
   /** Start (or restart) the container with this agent's configuration. */
   async startAgent(cfg: SpawnConfig): Promise<void> {
+    // NOTE: cfg.modelApiKey (BYOK) is only ever placed in the env var below —
+    // never logged, never included in any response body.
     const envVars: Record<string, string> = {
       HERMES_CONTROL_PLANE_URL: cfg.controlPlaneUrl ?? "",
       HERMES_CONNECTOR_TOKEN: cfg.token ?? "",
       HERMES_AGENT_MODEL: cfg.model ?? "",
       HERMES_AGENT_NAME: cfg.name ?? "",
+      HERMES_MODEL_API_KEY: cfg.modelApiKey ?? "",
     };
     // Persist on the instance so restarts (e.g. after sleep) keep the config.
     this.envVars = { ...this.envVars, ...envVars };
@@ -143,14 +192,42 @@ export class AgentContainer extends Container<Env> {
   }
 }
 
+/** Singleton stub for the fleet registry — every call addresses the same DO. */
+function registryStub(env: Env) {
+  return env.REGISTRY.get(env.REGISTRY.idFromName("registry"));
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
-    // --- Auth: every request must carry the shared fleet secret. ---
+    const url = new URL(req.url);
+
+    // --- GET /health: unauthenticated liveness check for uptime monitors. ---
+    if (url.pathname === "/health" && req.method === "GET") {
+      return json({ ok: true });
+    }
+
+    // --- Auth: every other request must carry the shared fleet secret. ---
     const auth = req.headers.get("Authorization") ?? "";
     const presented = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     if (!env.FLEET_SECRET || presented !== env.FLEET_SECRET) return unauthorized();
 
-    const url = new URL(req.url);
+    // --- POST /list: enumerate known instance ids + status. ---
+    // Cloudflare's Containers API has no "list all DO instances" call, so this
+    // reads our own side registry (populated on /spawn, pruned on /terminate)
+    // and fans out to each instance for its live status.
+    if (url.pathname === "/list" && req.method === "POST") {
+      const entries = await registryStub(env).list();
+      const instances = await Promise.all(
+        Object.entries(entries).map(async ([id, meta]) => {
+          const status = await env.AGENT.get(env.AGENT.idFromString(id))
+            .agentStatus()
+            .catch(() => "unknown");
+          return { id, name: meta.name, spawnedAt: meta.spawnedAt, status };
+        }),
+      );
+      return json({ instances });
+    }
+
     if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
     const body = (await req.json().catch(() => ({}))) as Record<string, any>;
@@ -170,8 +247,11 @@ export default {
         controlPlaneUrl: body.controlPlaneUrl,
         region: body.region,
         model: body.model,
+        modelApiKey: body.modelApiKey,
         name: body.name,
       });
+      // Never log `body` here — it may carry `token`/`modelApiKey`.
+      await registryStub(env).add(id.toString(), body.name);
       return json({ id: id.toString() });
     }
 
@@ -180,6 +260,7 @@ export default {
       if (!body.id) return json({ error: "missing id" }, 400);
       const container = env.AGENT.get(env.AGENT.idFromString(body.id));
       await container.stopAgent();
+      await registryStub(env).remove(body.id);
       return json({ ok: true });
     }
 

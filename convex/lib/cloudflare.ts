@@ -34,6 +34,8 @@ export async function spawnAgent(args: {
   controlPlaneUrl: string;
   region?: string;
   model?: string;
+  /** BYOK passthrough: the customer's own model API key, if they supplied one. */
+  modelApiKey?: string;
   name: string;
 }): Promise<{ vmId: string }> {
   const data = await call("/spawn", {
@@ -41,6 +43,7 @@ export async function spawnAgent(args: {
     controlPlaneUrl: args.controlPlaneUrl,
     region: args.region,
     model: args.model,
+    modelApiKey: args.modelApiKey,
     name: args.name,
   });
   return { vmId: data.id ?? data.vmId ?? "" };
