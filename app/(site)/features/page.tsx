@@ -163,9 +163,9 @@ const PILLARS = [
     mock: <ConnectMock />,
     highlight: {
       title: "Adapters for any framework",
-      body: "Hermes runs natively. OpenClaw and Goose plug in through first-class adapters, and anything with a command line joins through the generic CLI adapter.",
+      body: "Hermes runs natively. OpenClaw and Goose plug in through first-class adapters, and anything with a command line joins through the generic CLI adapter. Don't want to run any of it yourself? Cadre Cloud deploys agents to isolated containers we manage, no servers or setup required.",
     },
-    points: ["One-line connector install", "Health and heartbeats built in", "Live token streaming"],
+    points: ["One-line connector install", "Health and heartbeats built in", "Live token streaming", "Cadre Cloud managed hosting (BYOK)"],
     flip: false,
   },
   {

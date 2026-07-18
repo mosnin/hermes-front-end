@@ -85,10 +85,26 @@ const TIERS = [
   },
 ];
 
+const ADDON = {
+  name: "Cadre Cloud",
+  blurb: "Don't want to run agents yourself? We'll host them.",
+  price: "from $X",
+  period: "/ agent / month",
+  features: [
+    "Isolated container per agent, no servers to manage",
+    "Bring your own keys (BYOK), your LLM bill, not ours",
+    "Same guardrails, budgets, and audit trail as self-hosted",
+  ],
+};
+
 const FAQ = [
   {
     q: "Do you run my agents' compute?",
-    a: "No. Agents run on your infrastructure, AWS, GCP, a laptop, anywhere. You pay your own compute and LLM tokens; the platform is the communication and orchestration layer.",
+    a: "By default, no. Agents run on your infrastructure, AWS, GCP, a laptop, anywhere, and you pay your own compute and LLM tokens. If you'd rather not host, the Cadre Cloud add-on runs them for you.",
+  },
+  {
+    q: "Do I have to self-host my agents?",
+    a: "No. Cadre Cloud runs agents for you on isolated containers we manage, no servers or setup on your end. Bring your own model keys and pay per hosted agent, on top of any plan.",
   },
   {
     q: "Which agent frameworks are supported?",
@@ -218,6 +234,38 @@ export default function PricingPage() {
             </Rise>
           ))}
         </div>
+
+        {/* Cadre Cloud add-on */}
+        <Rise>
+          <div className="mt-6 flex flex-col gap-6 rounded-[24px] bg-white p-7 ring-1 ring-inset ring-[var(--site-line)] sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <span className="inline-flex rounded-full bg-[var(--site-band)] px-3 py-1 text-[11.5px] font-medium uppercase tracking-wide text-[#75726c]">
+                Add-on
+              </span>
+              <h2 className="mt-3 text-[16.5px] font-medium text-[var(--site-ink)]">{ADDON.name}</h2>
+              <p className="mt-1 text-[14px] text-[var(--site-body)]">{ADDON.blurb}</p>
+              <ul className="mt-4 space-y-2.5">
+                {ADDON.features.map((f) => (
+                  <CheckRow key={f} label={f} />
+                ))}
+              </ul>
+            </div>
+            <div className="shrink-0 text-left sm:text-right">
+              <p className="text-[30px] font-medium tracking-[-0.01em] text-[var(--site-ink)]">
+                {ADDON.price}
+                <span className="ml-1.5 text-[14px] font-normal text-[var(--site-body)]">
+                  {ADDON.period}
+                </span>
+              </p>
+              <Link
+                href="/contact"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--site-line)] bg-white px-4 py-2 text-[14px] font-medium text-[var(--site-ink)] transition hover:border-[#d6d4cd]"
+              >
+                Get early access
+              </Link>
+            </div>
+          </div>
+        </Rise>
       </section>
 
       {/* FAQ */}
@@ -229,7 +277,7 @@ export default function PricingPage() {
             </h2>
           </Rise>
           <div className="mt-14 grid gap-x-14 sm:grid-cols-2">
-            {[FAQ.slice(0, 3), FAQ.slice(3)].map((col, colIdx) => (
+            {[FAQ.slice(0, 4), FAQ.slice(4)].map((col, colIdx) => (
               <div key={colIdx} className="divide-y divide-[var(--site-line)] border-t border-[var(--site-line)]">
                 {col.map((f, i) => (
                   <Rise key={f.q} delay={i * 0.06} className="py-7">
