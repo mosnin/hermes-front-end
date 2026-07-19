@@ -10,6 +10,7 @@ import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { Cloud, KeyRound, Plus, RefreshCw, Rocket, Trash2 } from "@/components/icons";
 import { TemplatesPanel } from "@/components/fleet/TemplatesPanel";
+import { AutoscalePanel } from "@/components/fleet/AutoscalePanel";
 
 const deployTone = {
   provisioning: "yellow",
@@ -226,7 +227,8 @@ export default function FleetPage() {
       </div>
 
       {spaceId && (
-        <div className="mt-4">
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <AutoscalePanel spaceId={spaceId} />
           <TemplatesPanel spaceId={spaceId} />
         </div>
       )}

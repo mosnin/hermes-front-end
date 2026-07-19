@@ -63,6 +63,33 @@ export type ApiUsage = {
   currentMinute: { requests: number };
 };
 
+/** Cursor-paginated list envelope shared by every `list*` route. Pass
+ * `cursor` back into the next call's `{ cursor }` option to page forward;
+ * `hasMore` is false once you've reached the end. */
+export type Page<T> = {
+  cursor: string | null;
+  hasMore: boolean;
+};
+
+export type PageOptions = { cursor?: string | null; limit?: number };
+
+export type ApiBulkDecideResult = { succeeded: number; failed: string[] };
+
+/** The full set of scopes an API key can be minted with. A key minted
+ * without `scopes` is unrestricted (backward compatible with keys minted
+ * before scoped keys existed). */
+export type ApiScope =
+  | "agents:read"
+  | "deploys:read"
+  | "tasks:read"
+  | "tasks:write"
+  | "messages:write"
+  | "workflows:read"
+  | "workflows:write"
+  | "approvals:read"
+  | "approvals:write"
+  | "usage:read";
+
 export class CadreApiError extends Error {
   code: string;
   status: number;

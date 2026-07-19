@@ -14,6 +14,7 @@ import { ArrowLeft, Cpu, Trash2 } from "@/components/icons";
 import { LogPane } from "@/components/fleet/LogPane";
 import { ConfigPushPanel } from "@/components/fleet/ConfigPushPanel";
 import { SnapshotPanel } from "@/components/fleet/SnapshotPanel";
+import { WatchdogPanel } from "@/components/fleet/WatchdogPanel";
 
 export default function AgentDetailPage({
   params,
@@ -104,6 +105,12 @@ export default function AgentDetailPage({
         <div className="mb-6 grid gap-4 lg:grid-cols-2">
           <ConfigPushPanel spaceId={spaceId} agentId={id} />
           <SnapshotPanel spaceId={spaceId} agentId={id} agentName={agent.name} />
+        </div>
+      )}
+
+      {agent.kind !== "a2a-external" && spaceId && agent.vmProvider && (
+        <div className="mb-6">
+          <WatchdogPanel spaceId={spaceId} agentId={id} agent={agent} />
         </div>
       )}
 

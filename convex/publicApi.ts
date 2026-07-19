@@ -135,61 +135,91 @@ export const usageSummary = internalQuery({
   },
 });
 
+// Pagination (feature 20 hardening): every list route in the public API is
+// cursor-paginated, same `{ numItems, cursor }` convention as
+// capabilities.publicDirectory / health / fleetMetering, so a Space with a
+// large fleet or task backlog can't blow past Convex's per-query read limits
+// on a single `/api/v1/*` call. `cursor`/`hasMore` round-trip verbatim
+// through the SDK.
+const API_PAGE_SIZE = 50;
+
+function paginationArgs() {
+  return { cursor: v.optional(v.union(v.string(), v.null())), limit: v.optional(v.number()) };
+}
+function pageSize(limit?: number) {
+  return Math.max(1, Math.min(limit ?? API_PAGE_SIZE, API_PAGE_SIZE));
+}
+
 export const listAgents = internalQuery({
-  args: { spaceId: v.id("spaces") },
-  handler: async (ctx, { spaceId }) => {
-    const rows = await ctx.db
+  args: { spaceId: v.id("spaces"), ...paginationArgs() },
+  handler: async (ctx, { spaceId, cursor, limit }) => {
+    const page = await ctx.db
       .query("agents")
       .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
-      .collect();
-    return rows.map((a) => ({
-      id: a._id,
-      name: a.name,
-      status: a.status,
-      kind: a.kind ?? "hermes",
-      framework: a.framework,
-      capabilities: a.capabilities ?? [],
-      deploymentStatus: a.deploymentStatus,
-    }));
+      .paginate({ numItems: pageSize(limit), cursor: cursor ?? null });
+    return {
+      agents: page.page.map((a) => ({
+        id: a._id,
+        name: a.name,
+        status: a.status,
+        kind: a.kind ?? "hermes",
+        framework: a.framework,
+        capabilities: a.capabilities ?? [],
+        deploymentStatus: a.deploymentStatus,
+      })),
+      cursor: page.continueCursor,
+      hasMore: !page.isDone,
+    };
   },
 });
 
 /** Deployed fleet agents (those provisioned onto a VM) — public "deploys" surface. */
 export const listDeploys = internalQuery({
-  args: { spaceId: v.id("spaces") },
-  handler: async (ctx, { spaceId }) => {
-    const rows = await ctx.db
+  args: { spaceId: v.id("spaces"), ...paginationArgs() },
+  handler: async (ctx, { spaceId, cursor, limit }) => {
+    // Filtered after the page read (vmId/deploymentStatus isn't independently
+    // indexed), so a page may come back sparse — the SDK follows `cursor`
+    // until `hasMore` is false, same as any other paginated route.
+    const page = await ctx.db
       .query("agents")
       .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
-      .collect();
-    return rows
-      .filter((a) => !!a.vmId || !!a.deploymentStatus)
-      .map((a) => ({
-        id: a._id,
-        name: a.name,
-        vmProvider: a.vmProvider,
-        vmId: a.vmId,
-        region: a.region,
-        deploymentStatus: a.deploymentStatus,
-        harness: a.harness,
-        status: a.status,
-      }));
+      .paginate({ numItems: pageSize(limit), cursor: cursor ?? null });
+    return {
+      deploys: page.page
+        .filter((a) => !!a.vmId || !!a.deploymentStatus)
+        .map((a) => ({
+          id: a._id,
+          name: a.name,
+          vmProvider: a.vmProvider,
+          vmId: a.vmId,
+          region: a.region,
+          deploymentStatus: a.deploymentStatus,
+          harness: a.harness,
+          status: a.status,
+        })),
+      cursor: page.continueCursor,
+      hasMore: !page.isDone,
+    };
   },
 });
 
 export const listTasks = internalQuery({
-  args: { spaceId: v.id("spaces") },
-  handler: async (ctx, { spaceId }) => {
-    const rows = await ctx.db
+  args: { spaceId: v.id("spaces"), ...paginationArgs() },
+  handler: async (ctx, { spaceId, cursor, limit }) => {
+    const page = await ctx.db
       .query("tasks")
       .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
-      .collect();
-    return rows.map((t) => ({
-      id: t._id,
-      title: t.title,
-      status: t.status,
-      priority: t.priority,
-    }));
+      .paginate({ numItems: pageSize(limit), cursor: cursor ?? null });
+    return {
+      tasks: page.page.map((t) => ({
+        id: t._id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+      })),
+      cursor: page.continueCursor,
+      hasMore: !page.isDone,
+    };
   },
 });
 
@@ -247,37 +277,48 @@ export const sendMessage = internalMutation({
 });
 
 export const listWorkflows = internalQuery({
-  args: { spaceId: v.id("spaces") },
-  handler: async (ctx, { spaceId }) => {
-    const rows = await ctx.db
+  args: { spaceId: v.id("spaces"), ...paginationArgs() },
+  handler: async (ctx, { spaceId, cursor, limit }) => {
+    const page = await ctx.db
       .query("workflows")
       .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
-      .collect();
-    return rows.map((w) => ({
-      id: w._id,
-      name: w.name,
-      enabled: w.enabled,
-      stepCount: w.steps.length,
-      updatedAt: w.updatedAt,
-    }));
+      .paginate({ numItems: pageSize(limit), cursor: cursor ?? null });
+    return {
+      workflows: page.page.map((w) => ({
+        id: w._id,
+        name: w.name,
+        enabled: w.enabled,
+        stepCount: w.steps.length,
+        updatedAt: w.updatedAt,
+      })),
+      cursor: page.continueCursor,
+      hasMore: !page.isDone,
+    };
   },
 });
 
 export const listWorkflowRuns = internalQuery({
-  args: { spaceId: v.id("spaces"), workflowId: v.optional(v.id("workflows")) },
-  handler: async (ctx, { spaceId, workflowId }) => {
-    let rows = await ctx.db
+  args: { spaceId: v.id("spaces"), workflowId: v.optional(v.id("workflows")), ...paginationArgs() },
+  handler: async (ctx, { spaceId, workflowId, cursor, limit }) => {
+    // workflowRuns has no compound (space, workflow) index, so the workflow
+    // filter is applied after the space-scoped page read — same tradeoff as
+    // listDeploys above (a page may come back sparse when filtered).
+    const page = await ctx.db
       .query("workflowRuns")
       .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .order("desc")
-      .take(100);
-    if (workflowId) rows = rows.filter((r) => r.workflowId === workflowId);
-    return rows.map((r) => ({
-      id: r._id,
-      workflowId: r.workflowId,
-      status: r.status,
-      startedAt: r.startedAt,
-      finishedAt: r.finishedAt,
-    }));
+      .paginate({ numItems: pageSize(limit), cursor: cursor ?? null });
+    const rows = workflowId ? page.page.filter((r) => r.workflowId === workflowId) : page.page;
+    return {
+      runs: rows.map((r) => ({
+        id: r._id,
+        workflowId: r.workflowId,
+        status: r.status,
+        startedAt: r.startedAt,
+        finishedAt: r.finishedAt,
+      })),
+      cursor: page.continueCursor,
+      hasMore: !page.isDone,
+    };
   },
 });

@@ -1,12 +1,15 @@
 import {
   ApiAgent,
   ApiApproval,
+  ApiBulkDecideResult,
   ApiDeploy,
   ApiTask,
   ApiUsage,
   ApiWorkflow,
   ApiWorkflowRun,
   CadreApiError,
+  Page,
+  PageOptions,
 } from "./types";
 
 export type CadreClientOptions = {
@@ -82,16 +85,41 @@ export class CadreClient {
     return (json as { data: T }).data;
   }
 
+  /** Build a `?cursor=&limit=` query string from pagination options, merged
+   * with any route-specific params already present. */
+  private static qs(params: Record<string, string | undefined>): string {
+    const search = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") search.set(k, v);
+    }
+    const s = search.toString();
+    return s ? `?${s}` : "";
+  }
+
   agents = {
-    list: (): Promise<{ agents: ApiAgent[] }> => this.request("GET", "/api/v1/agents"),
+    /** Cursor-paginated; pass `{ cursor }` from the previous page's
+     * `Page.cursor` to fetch the next one. */
+    list: (opts?: PageOptions): Promise<{ agents: ApiAgent[] } & Page<ApiAgent>> =>
+      this.request(
+        "GET",
+        `/api/v1/agents${CadreClient.qs({ cursor: opts?.cursor ?? undefined, limit: opts?.limit?.toString() })}`,
+      ),
   };
 
   deploys = {
-    list: (): Promise<{ deploys: ApiDeploy[] }> => this.request("GET", "/api/v1/deploys"),
+    list: (opts?: PageOptions): Promise<{ deploys: ApiDeploy[] } & Page<ApiDeploy>> =>
+      this.request(
+        "GET",
+        `/api/v1/deploys${CadreClient.qs({ cursor: opts?.cursor ?? undefined, limit: opts?.limit?.toString() })}`,
+      ),
   };
 
   tasks = {
-    list: (): Promise<{ tasks: ApiTask[] }> => this.request("GET", "/api/v1/tasks"),
+    list: (opts?: PageOptions): Promise<{ tasks: ApiTask[] } & Page<ApiTask>> =>
+      this.request(
+        "GET",
+        `/api/v1/tasks${CadreClient.qs({ cursor: opts?.cursor ?? undefined, limit: opts?.limit?.toString() })}`,
+      ),
     create: (input: { title: string; description?: string }): Promise<{ id: string }> =>
       this.request("POST", "/api/v1/tasks", input),
   };
@@ -104,21 +132,46 @@ export class CadreClient {
   };
 
   workflows = {
-    list: (): Promise<{ workflows: ApiWorkflow[] }> => this.request("GET", "/api/v1/workflows"),
-    run: (input: { workflowId: string }): Promise<{ runId: string }> =>
-      this.request("POST", "/api/v1/workflows/run", input),
-    runs: (workflowId?: string): Promise<{ runs: ApiWorkflowRun[] }> =>
+    list: (opts?: PageOptions): Promise<{ workflows: ApiWorkflow[] } & Page<ApiWorkflow>> =>
       this.request(
         "GET",
-        `/api/v1/workflows/runs${workflowId ? `?workflowId=${encodeURIComponent(workflowId)}` : ""}`,
+        `/api/v1/workflows${CadreClient.qs({ cursor: opts?.cursor ?? undefined, limit: opts?.limit?.toString() })}`,
+      ),
+    run: (input: { workflowId: string }): Promise<{ runId: string }> =>
+      this.request("POST", "/api/v1/workflows/run", input),
+    runs: (
+      workflowId?: string,
+      opts?: PageOptions,
+    ): Promise<{ runs: ApiWorkflowRun[] } & Page<ApiWorkflowRun>> =>
+      this.request(
+        "GET",
+        `/api/v1/workflows/runs${CadreClient.qs({
+          workflowId,
+          cursor: opts?.cursor ?? undefined,
+          limit: opts?.limit?.toString(),
+        })}`,
       ),
   };
 
   approvals = {
-    list: (status?: "pending" | "approved" | "rejected"): Promise<{ approvals: ApiApproval[] }> =>
-      this.request("GET", `/api/v1/approvals${status ? `?status=${status}` : ""}`),
+    list: (
+      status?: "pending" | "approved" | "rejected",
+      opts?: PageOptions,
+    ): Promise<{ approvals: ApiApproval[] } & Page<ApiApproval>> =>
+      this.request(
+        "GET",
+        `/api/v1/approvals${CadreClient.qs({
+          status,
+          cursor: opts?.cursor ?? undefined,
+          limit: opts?.limit?.toString(),
+        })}`,
+      ),
     decide: (approvalId: string, approve: boolean): Promise<{ ok: true }> =>
       this.request("POST", `/api/v1/approvals/${approvalId}/decide`, { approve }),
+    /** Best-effort per row: already-decided or cross-Space IDs land in
+     * `failed`, everything else is applied and counted in `succeeded`. */
+    bulkDecide: (approvalIds: string[], approve: boolean): Promise<ApiBulkDecideResult> =>
+      this.request("POST", "/api/v1/approvals/bulk-decide", { approvalIds, approve }),
   };
 
   usage = {

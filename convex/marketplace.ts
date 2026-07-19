@@ -40,30 +40,58 @@ export const listTemplates = query({
     spaceId: v.id("spaces"),
     category: v.optional(v.string()),
     featuredOnly: v.optional(v.boolean()),
+    search: v.optional(v.string()),
   },
-  handler: async (ctx, { spaceId, category, featuredOnly }) => {
+  handler: async (ctx, { spaceId, category, featuredOnly, search }) => {
     await resolveScope(ctx, spaceId);
 
-    const publicTemplates = category
-      ? await ctx.db
-          .query("agentTemplates")
-          .withIndex("by_visibility_category", (q) =>
-            q.eq("visibility", "public").eq("category", category),
-          )
-          .collect()
-      : await ctx.db
-          .query("agentTemplates")
-          .withIndex("by_visibility", (q) => q.eq("visibility", "public"))
-          .collect();
+    // "custom" is the UI's "Your Space" tab: it means "my private snapshots",
+    // not a literal `category === "custom"` filter, so it's handled
+    // separately from the public-template category filter below.
+    const wantsSpaceTab = category === "custom";
 
-    const spaceTemplates = await ctx.db
+    const publicTemplates =
+      category && !wantsSpaceTab
+        ? await ctx.db
+            .query("agentTemplates")
+            .withIndex("by_visibility_category", (q) =>
+              q.eq("visibility", "public").eq("category", category),
+            )
+            .collect()
+        : wantsSpaceTab
+          ? []
+          : await ctx.db
+              .query("agentTemplates")
+              .withIndex("by_visibility", (q) => q.eq("visibility", "public"))
+              .collect();
+
+    // Space-private snapshots: always eligible for "all" and "custom"; for a
+    // specific public category, only include a snapshot if it was itself
+    // saved under that category (snapshots default to "custom" — see
+    // snapshotAgent — so in practice this only surfaces user-recategorized
+    // snapshots, never bleeds into every category tab).
+    const spaceTemplatesRaw = await ctx.db
       .query("agentTemplates")
       .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .collect();
+    const spaceTemplates =
+      category && !wantsSpaceTab
+        ? spaceTemplatesRaw.filter((t) => (t.category ?? undefined) === category)
+        : spaceTemplatesRaw;
 
     let all = [...publicTemplates, ...spaceTemplates];
     if (featuredOnly) all = all.filter((t) => t.featured);
-    if (category) all = all.filter((t) => (t.category ?? undefined) === category || t.spaceId);
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      all = all.filter(
+        (t) =>
+          t.name.toLowerCase().includes(q) ||
+          (t.tagline ?? "").toLowerCase().includes(q) ||
+          (t.description ?? "").toLowerCase().includes(q) ||
+          (t.category ?? "").toLowerCase().includes(q) ||
+          (t.capabilities ?? []).some((c) => c.toLowerCase().includes(q)),
+      );
+    }
     return all.sort((a, b) => b.createdAt - a.createdAt);
   },
 });

@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea, Toggle } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Lock, Plus, ShieldAlert, ShieldCheck, Trash2 } from "@/components/icons";
+import { Lock, Plus, ShieldAlert, ShieldCheck, Trash2, Users, X } from "@/components/icons";
 
 type Profile = {
   _id: Id<"securityProfiles">;
@@ -17,6 +17,12 @@ type Profile = {
   secretScopes?: string[];
   toolAllowlist?: string[];
   isDefault?: boolean;
+};
+
+type AgentSummary = {
+  _id: Id<"agents">;
+  name: string;
+  status: string;
 };
 
 function csv(v?: string[]): string {
@@ -43,6 +49,7 @@ export default function SecurityProfilesPage() {
   const remove = useMutation(api.securityProfiles.remove);
 
   const [open, setOpen] = useState(false);
+  const [assigning, setAssigning] = useState<Profile | null>(null);
   const [editing, setEditing] = useState<Profile | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -188,6 +195,9 @@ export default function SecurityProfilesPage() {
 
               {canManage && (
                 <div className="mt-4 flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setAssigning(p)}>
+                    <Users className="h-4 w-4" /> Agents
+                  </Button>
                   <Button variant="outline" onClick={() => openEdit(p)}>
                     Edit
                   </Button>
@@ -260,6 +270,138 @@ export default function SecurityProfilesPage() {
           </div>
         </div>
       </Modal>
+
+      <AssignmentsModal
+        profile={assigning}
+        canManage={canManage}
+        onClose={() => setAssigning(null)}
+      />
     </div>
+  );
+}
+
+function AssignmentsModal({
+  profile,
+  canManage,
+  onClose,
+}: {
+  profile: Profile | null;
+  canManage: boolean;
+  onClose: () => void;
+}) {
+  const { spaceId } = useActiveSpace();
+  const assignedAgents = useQuery(
+    api.securityProfiles.agentsUsingProfile,
+    spaceId && profile ? { spaceId, profileId: profile._id } : "skip",
+  ) as { _id: Id<"agents">; name: string; status: string }[] | undefined;
+  const allAgents = useQuery(api.agents.list, spaceId && profile ? { spaceId } : "skip") as
+    | AgentSummary[]
+    | undefined;
+  const assign = useMutation(api.securityProfiles.assign);
+
+  const [selected, setSelected] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!profile) return null;
+
+  const assignedIds = new Set((assignedAgents ?? []).map((a) => a._id));
+  const candidates = (allAgents ?? []).filter((a) => !assignedIds.has(a._id));
+
+  async function addAgent() {
+    if (!spaceId || !profile || !selected) return;
+    setBusyId(selected);
+    setError(null);
+    try {
+      await assign({ spaceId, agentId: selected as Id<"agents">, profileId: profile._id });
+      setSelected("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to assign");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function removeAgent(agentId: Id<"agents">) {
+    if (!spaceId) return;
+    setBusyId(agentId);
+    setError(null);
+    try {
+      await assign({ spaceId, agentId, profileId: null });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to unassign");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <Modal open={!!profile} onClose={onClose} title={`Agents — ${profile.name}`}>
+      <div className="space-y-4">
+        {canManage && (
+          <div className="flex gap-2">
+            <select
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
+            >
+              <option value="">
+                {allAgents === undefined
+                  ? "Loading agents…"
+                  : candidates.length === 0
+                    ? "No unassigned agents"
+                    : "Select an agent to attach…"}
+              </option>
+              {candidates.map((a) => (
+                <option key={a._id} value={a._id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+            <Button onClick={addAgent} disabled={!selected || busyId === selected}>
+              Attach
+            </Button>
+          </div>
+        )}
+
+        {error && <p className="text-sm text-red-400">{error}</p>}
+
+        {assignedAgents === undefined ? (
+          <p className="text-sm text-muted">Loading…</p>
+        ) : assignedAgents.length === 0 ? (
+          <p className="text-sm text-muted">No agents are attached to this profile yet.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {assignedAgents.map((a) => (
+              <li
+                key={a._id}
+                className="flex items-center justify-between rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
+              >
+                <div className="flex items-center gap-2">
+                  <span>{a.name}</span>
+                  <Badge tone={a.status === "online" ? "green" : undefined}>{a.status}</Badge>
+                </div>
+                {canManage && (
+                  <button
+                    onClick={() => removeAgent(a._id)}
+                    disabled={busyId === a._id}
+                    className="rounded-lg p-1.5 text-muted hover:bg-surface-3 hover:text-red-400"
+                    title="Detach"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="flex justify-end">
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

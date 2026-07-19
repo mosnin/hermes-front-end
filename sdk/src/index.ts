@@ -9,4 +9,8 @@ export {
   type ApiWorkflowRun,
   type ApiApproval,
   type ApiUsage,
+  type ApiBulkDecideResult,
+  type ApiScope,
+  type Page,
+  type PageOptions,
 } from "./types";

@@ -4,12 +4,12 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, EmptyState, Input, StatusDot, Toggle } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot, Toggle } from "@/components/ui";
 import { MeshGraphic } from "@/components/marketing/graphics";
-import { useActiveSpace } from "@/components/active-space";
+import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { ArrowRight, Globe, Send } from "@/components/icons";
+import { ArrowRight, Globe, Plus, Send, Target, Trash2, Wrench } from "@/components/icons";
 
 export default function NetworkPage() {
   const { spaceId } = useActiveSpace();
@@ -169,7 +169,385 @@ export default function NetworkPage() {
         </div>
       )}
 
+      <CapabilityGrantsSection />
+      <RoutingPreviewSection />
       <DirectorySection />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Normalized tool layer (feature 12) — admin-only CRUD for capability tag ->
+// tool name grants that the router (feature 11) and connectors resolve
+// against. Space-scoped, RBAC'd on the backend; the UI here just gates
+// mutation controls behind `useCan("admin")` so operators can see, not edit.
+// ---------------------------------------------------------------------------
+
+const PROVIDERS: { value: "composio" | "mcp" | "builtin"; label: string }[] = [
+  { value: "composio", label: "Composio" },
+  { value: "mcp", label: "MCP" },
+  { value: "builtin", label: "Builtin" },
+];
+
+function CapabilityGrantsSection() {
+  const { spaceId } = useActiveSpace();
+  const canAdmin = useCan("admin");
+  const grants = useQuery(api.capabilities.listGrants, spaceId ? { spaceId } : "skip");
+  const known = useQuery(api.capabilities.listKnown, {});
+  const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
+  const upsertGrant = useMutation(api.capabilities.upsertGrant);
+  const removeGrant = useMutation(api.capabilities.removeGrant);
+  const toast = useToast();
+
+  const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<Id<"capabilityGrants"> | null>(null);
+  const [capability, setCapability] = useState("");
+  const [toolNamesText, setToolNamesText] = useState("");
+  const [provider, setProvider] = useState<"composio" | "mcp" | "builtin" | "">("");
+  const [restrictedAgents, setRestrictedAgents] = useState<Set<string>>(new Set());
+  const [enabled, setEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  function openNew() {
+    setEditingId(null);
+    setCapability("");
+    setToolNamesText("");
+    setProvider("");
+    setRestrictedAgents(new Set());
+    setEnabled(true);
+    setOpen(true);
+  }
+
+  function openEdit(g: NonNullable<typeof grants>[number]) {
+    setEditingId(g._id);
+    setCapability(g.capability);
+    setToolNamesText(g.toolNames.join(", "));
+    setProvider((g.provider as typeof provider) ?? "");
+    setRestrictedAgents(new Set(g.agentIds ?? []));
+    setEnabled(g.enabled);
+    setOpen(true);
+  }
+
+  async function save() {
+    if (!spaceId || !capability.trim()) return;
+    const toolNames = toolNamesText
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (!toolNames.length) {
+      toast("Add at least one tool name", "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      await upsertGrant({
+        spaceId,
+        grantId: editingId ?? undefined,
+        capability: capability.trim(),
+        toolNames,
+        provider: provider || undefined,
+        agentIds: restrictedAgents.size
+          ? (Array.from(restrictedAgents) as Id<"agents">[])
+          : undefined,
+        enabled,
+      });
+      toast(editingId ? "Grant updated" : "Grant created", "success");
+      setOpen(false);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to save grant", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleEnabled(g: NonNullable<typeof grants>[number], next: boolean) {
+    if (!spaceId) return;
+    try {
+      await upsertGrant({
+        spaceId,
+        grantId: g._id,
+        capability: g.capability,
+        toolNames: g.toolNames,
+        provider: g.provider as "composio" | "mcp" | "builtin" | undefined,
+        agentIds: g.agentIds,
+        enabled: next,
+      });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to update grant", "error");
+    }
+  }
+
+  async function del(g: NonNullable<typeof grants>[number]) {
+    if (!spaceId) return;
+    if (!confirm(`Remove the "${g.capability}" grant (${g.toolNames.length} tool(s))?`)) return;
+    try {
+      await removeGrant({ spaceId, grantId: g._id });
+      toast("Grant removed", "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to remove grant", "error");
+    }
+  }
+
+  return (
+    <div className="mt-8">
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold">Tool capability grants</h2>
+            <p className="text-sm text-muted">
+              Map harness-neutral capability tags (e.g. <code>browser</code>, <code>crm</code>) to
+              concrete Composio/MCP/builtin tool names. The router and connectors resolve these
+              per Space, optionally restricted to specific agents.
+            </p>
+          </div>
+          {canAdmin && (
+            <Button variant="ghost" onClick={openNew}>
+              <Plus className="h-4 w-4" /> New grant
+            </Button>
+          )}
+        </div>
+
+        {grants && grants.length === 0 ? (
+          <p className="text-sm text-muted">
+            No capability grants yet — agents that declare required capabilities will resolve to
+            zero tools until grants exist here.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {(grants ?? []).map((g) => (
+              <li key={g._id} className="flex items-center justify-between gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="blue">{g.capability}</Badge>
+                    {g.provider && <Badge>{g.provider}</Badge>}
+                    {g.agentIds && g.agentIds.length > 0 && (
+                      <Badge>{g.agentIds.length} agent(s) only</Badge>
+                    )}
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted">{g.toolNames.join(", ")}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Toggle
+                    checked={g.enabled}
+                    onChange={(v) => (canAdmin ? toggleEnabled(g, v) : undefined)}
+                  />
+                  {canAdmin && (
+                    <>
+                      <Button variant="ghost" onClick={() => openEdit(g)}>
+                        <Wrench className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" onClick={() => del(g)}>
+                        <Trash2 className="h-4 w-4 text-red-400" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Modal open={open} onClose={() => !saving && setOpen(false)} title={editingId ? "Edit grant" : "New capability grant"}>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs text-muted">Capability tag</label>
+            <Input
+              value={capability}
+              onChange={(e) => setCapability(e.target.value)}
+              placeholder="browser"
+              list="known-capabilities"
+            />
+            <datalist id="known-capabilities">
+              {(known ?? []).map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted">Tool names (comma-separated)</label>
+            <Input
+              value={toolNamesText}
+              onChange={(e) => setToolNamesText(e.target.value)}
+              placeholder="composio_browser_navigate, composio_browser_click"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted">Provider</label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as typeof provider)}
+              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
+            >
+              <option value="">Unspecified</option>
+              {PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted">
+              Restrict to agents (none = all agents in this Space)
+            </label>
+            <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
+              {(agents ?? []).map((a) => (
+                <label key={a._id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={restrictedAgents.has(a._id)}
+                    onChange={(e) => {
+                      const next = new Set(restrictedAgents);
+                      if (e.target.checked) next.add(a._id);
+                      else next.delete(a._id);
+                      setRestrictedAgents(next);
+                    }}
+                  />
+                  {a.name}
+                </label>
+              ))}
+              {agents?.length === 0 && <p className="text-xs text-muted">No agents yet.</p>}
+            </div>
+          </div>
+          <Toggle checked={enabled} onChange={setEnabled} label="Enabled" />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={!capability.trim() || !toolNamesText.trim() || saving}>
+              {saving ? "Saving…" : editingId ? "Save" : "Create"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Capability-based routing (feature 11) — an ops preview that runs the same
+// scorer the dispatch path uses (`router.route`) against arbitrary required
+// capabilities, so admins can sanity-check "which agent would this route to"
+// before wiring a workflow step or task to a set of tags.
+// ---------------------------------------------------------------------------
+
+function RoutingPreviewSection() {
+  const { spaceId } = useActiveSpace();
+  const known = useQuery(api.capabilities.listKnown, {});
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [harness, setHarness] = useState("");
+
+  const ranked = useQuery(
+    api.router.route,
+    spaceId && selected.size > 0
+      ? {
+          spaceId,
+          requiredCapabilities: Array.from(selected),
+          harness: harness || undefined,
+        }
+      : "skip",
+  );
+
+  function toggle(cap: string) {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(cap)) next.delete(cap);
+      else next.add(cap);
+      return next;
+    });
+  }
+
+  return (
+    <div className="mt-8">
+      <Card>
+        <div className="mb-3 flex items-center gap-2">
+          <Target className="h-4 w-4 text-muted" />
+          <h2 className="font-semibold">Capability routing preview</h2>
+        </div>
+        <p className="mb-3 text-sm text-muted">
+          Pick required capabilities to see how the router would score and rank this Space&apos;s
+          agents — the same scorer (capability match + health + recent cost + harness) used to
+          auto-assign tasks and workflow steps.
+        </p>
+        <div className="mb-4 flex flex-wrap gap-2">
+          {(known ?? []).map((c) => (
+            <button
+              key={c}
+              onClick={() => toggle(c)}
+              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                selected.has(c)
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-border text-muted hover:bg-surface-2"
+              }`}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+        <div className="mb-4 flex items-center gap-2">
+          <label className="text-xs text-muted">Harness filter</label>
+          <Input
+            value={harness}
+            onChange={(e) => setHarness(e.target.value)}
+            placeholder="e.g. hermes (optional)"
+            className="max-w-xs"
+          />
+        </div>
+
+        {selected.size === 0 ? (
+          <p className="text-sm text-muted">Select at least one capability to preview routing.</p>
+        ) : ranked === undefined ? (
+          <p className="text-sm text-muted">Scoring…</p>
+        ) : ranked.length === 0 ? (
+          <p className="text-sm text-muted">No agents in this Space yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th className="py-2 pr-3 font-medium">Agent</th>
+                  <th className="py-2 pr-3 font-medium">Score</th>
+                  <th className="py-2 pr-3 font-medium">Matched</th>
+                  <th className="py-2 pr-3 font-medium">Missing</th>
+                  <th className="py-2 pr-3 font-medium">Health</th>
+                  <th className="py-2 pr-3 font-medium">Recent cost</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {ranked.map((r, i) => (
+                  <tr key={r.agentId} className={i === 0 ? "bg-accent/5" : undefined}>
+                    <td className="py-2 pr-3 font-medium">
+                      {r.name} {i === 0 && <Badge tone="green">best</Badge>}
+                    </td>
+                    <td className="py-2 pr-3">{(r.score * 100).toFixed(0)}%</td>
+                    <td className="py-2 pr-3">
+                      <div className="flex flex-wrap gap-1">
+                        {r.matchedCapabilities.map((c) => (
+                          <Badge key={c} tone="blue">
+                            {c}
+                          </Badge>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <div className="flex flex-wrap gap-1">
+                        {r.missingCapabilities.map((c) => (
+                          <Badge key={c} tone="red">
+                            {c}
+                          </Badge>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-3 text-muted">{r.status}</td>
+                    <td className="py-2 pr-3 text-muted">${r.recentCostUsd.toFixed(4)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

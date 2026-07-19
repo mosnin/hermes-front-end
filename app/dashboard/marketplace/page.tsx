@@ -4,9 +4,9 @@ import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { EmptyState, Segmented, SkeletonRows } from "@/components/ui";
+import { EmptyState, Input, Segmented, SkeletonRows } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Boxes } from "@/components/icons";
+import { Boxes, Search } from "@/components/icons";
 import { TemplateCard, MarketplaceTemplate } from "@/components/marketplace/TemplateCard";
 import { TemplateDetailModal } from "@/components/marketplace/InstallDialog";
 
@@ -26,10 +26,17 @@ export default function MarketplacePage() {
   const { spaceId } = useActiveSpace();
   const [category, setCategory] = useState<CategoryValue>("all");
   const [openId, setOpenId] = useState<Id<"agentTemplates"> | null>(null);
+  const [search, setSearch] = useState("");
 
   const templates = useQuery(
     api.marketplace.listTemplates,
-    spaceId ? { spaceId, category: category === "all" ? undefined : category } : "skip",
+    spaceId
+      ? {
+          spaceId,
+          category: category === "all" ? undefined : category,
+          search: search.trim() || undefined,
+        }
+      : "skip",
   ) as MarketplaceTemplate[] | undefined;
 
   const featured = useMemo(
@@ -51,6 +58,18 @@ export default function MarketplacePage() {
         </p>
       </div>
 
+      <div className="mb-4 max-w-sm">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search templates…"
+            className="pl-9"
+          />
+        </div>
+      </div>
+
       <div className="mb-6 overflow-x-auto">
         <Segmented options={CATEGORIES} value={category} onChange={setCategory} />
       </div>
@@ -59,8 +78,12 @@ export default function MarketplacePage() {
         <SkeletonRows rows={6} />
       ) : templates.length === 0 ? (
         <EmptyState
-          title="No templates yet"
-          body="Curated templates will appear here once seeded, or save one of your own agents as a private template."
+          title={search.trim() ? "No templates match your search" : "No templates yet"}
+          body={
+            search.trim()
+              ? "Try a different search term, or clear the search to browse all templates."
+              : "Curated templates will appear here once seeded, or save one of your own agents as a private template."
+          }
           graphic={<Boxes className="h-full w-full text-muted" />}
         />
       ) : (

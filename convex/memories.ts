@@ -13,7 +13,14 @@ import { embed } from "./embeddings";
 
 const SCOPE = v.union(v.literal("space"), v.literal("company"));
 
-/** List memories visible in a Space: its own + company-wide. */
+// Bounded scan caps for the two merged indexes below — this query still
+// `.collect()`s within each cap rather than paginating (the dashboard list is
+// a recency feed, not a browse-everything view), but an unbounded `.collect()`
+// on a Space that's been actively ingesting for a long time would eventually
+// blow past Convex's read limits, so cap it defensively.
+const MEMORIES_LIST_CAP = 500;
+
+/** List memories visible in a Space: its own + company-wide (most recent first). */
 export const list = query({
   args: { spaceId: v.id("spaces") },
   handler: async (ctx, { spaceId }) => {
@@ -22,17 +29,19 @@ export const list = query({
       .query("memories")
       .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .order("desc")
-      .collect();
+      .take(MEMORIES_LIST_CAP);
     const company = await ctx.db
       .query("memories")
       .withIndex("by_company", (q) => q.eq("companyId", scope.companyId))
       .order("desc")
-      .collect();
+      .take(MEMORIES_LIST_CAP);
     // Company-wide memories from OTHER spaces (own already included above).
     const extra = company.filter(
       (m) => m.scope === "company" && m.spaceId !== spaceId,
     );
-    return [...own, ...extra].sort((a, b) => b.createdAt - a.createdAt);
+    return [...own, ...extra]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, MEMORIES_LIST_CAP);
   },
 });
 

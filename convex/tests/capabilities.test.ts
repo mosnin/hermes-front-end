@@ -176,6 +176,79 @@ describe("capabilities: A2A public directory (feature 15) double opt-in", () => 
   });
 });
 
+describe("capabilities: listKnown catalog (cycle 2)", () => {
+  test("returns the known capability tag catalog for UI pickers", async () => {
+    const t = convexTest(schema, modules);
+    const anon = t.withIdentity({ subject: "user_anyone", org_id: "org_known" });
+    const known = await anon.query(api.capabilities.listKnown, {});
+    expect(known).toContain("browser");
+    expect(known).toContain("code-gen");
+    expect(known.length).toBeGreaterThan(5);
+  });
+});
+
+describe("evals: benchmarkTrend (cycle 2)", () => {
+  test("aggregates one point per batch, oldest first, across repeated runs", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "user_owner", org_id: "org_trend" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "Trend" });
+    const agentId = (
+      await owner.action(api.agents.create, { spaceId, name: "Trend Agent" })
+    ).agentId as Id<"agents">;
+    const benchmarkId = await owner.mutation(api.evals.createBenchmark, {
+      spaceId,
+      name: "Trend bench",
+      prompt: "Say hi",
+    });
+
+    // No runs yet.
+    const empty = await owner.query(api.evals.benchmarkTrend, { spaceId, benchmarkId });
+    expect(empty).toHaveLength(0);
+
+    // Simulate two completed batches directly (avoids the OPENAI_API_KEY-gated action).
+    const batch1 = "batch-1";
+    const run1 = await t.run(async (ctx) => {
+      return await ctx.db.insert("evalRuns", {
+        companyId: "org_trend",
+        spaceId,
+        benchmarkId,
+        batchId: batch1,
+        agentId,
+        status: "completed",
+        qualityScore: 0.5,
+        costUsd: 0.01,
+        startedAt: 1000,
+        finishedAt: 1100,
+      });
+    });
+    expect(run1).toBeDefined();
+
+    const batch2 = "batch-2";
+    await t.run(async (ctx) => {
+      await ctx.db.insert("evalRuns", {
+        companyId: "org_trend",
+        spaceId,
+        benchmarkId,
+        batchId: batch2,
+        agentId,
+        status: "completed",
+        qualityScore: 0.9,
+        costUsd: 0.02,
+        startedAt: 2000,
+        finishedAt: 2100,
+      });
+    });
+
+    const trend = await owner.query(api.evals.benchmarkTrend, { spaceId, benchmarkId });
+    expect(trend).toHaveLength(2);
+    expect(trend[0].batchId).toBe(batch1);
+    expect(trend[0].avgQuality).toBe(0.5);
+    expect(trend[1].batchId).toBe(batch2);
+    expect(trend[1].avgQuality).toBe(0.9);
+    expect(trend[0].startedAt).toBeLessThan(trend[1].startedAt);
+  });
+});
+
 describe("router: capability-based routing (feature 11)", () => {
   test("routeBest picks the agent with the best capability + health score", async () => {
     const t = convexTest(schema, modules);

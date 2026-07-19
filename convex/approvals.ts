@@ -15,11 +15,18 @@ import { generateToken, sha256Hex } from "./lib/crypto";
 
 const DEFAULT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
-/** List approval requests for a Space, newest first; optionally filtered by status. */
+const LIST_CAP = 300;
+
+/** List approval requests for a Space, newest first; optionally filtered by
+ * status. Reactive dashboard query — capped rather than cursor-paginated
+ * (same convention as `notifications.list`); the approvals inbox is meant to
+ * stay small (pending gates get decided, not accumulated), so a generous
+ * fixed cap is the right tradeoff over a `useQuery`-unfriendly cursor UI. */
 export const list = query({
-  args: { spaceId: v.id("spaces"), status: v.optional(v.string()) },
-  handler: async (ctx, { spaceId, status }) => {
+  args: { spaceId: v.id("spaces"), status: v.optional(v.string()), limit: v.optional(v.number()) },
+  handler: async (ctx, { spaceId, status, limit }) => {
     await resolveScope(ctx, spaceId);
+    const cap = Math.max(1, Math.min(limit ?? LIST_CAP, LIST_CAP));
     if (status) {
       return await ctx.db
         .query("approvals")
@@ -27,13 +34,13 @@ export const list = query({
           q.eq("spaceId", spaceId).eq("status", status as never),
         )
         .order("desc")
-        .collect();
+        .take(cap);
     }
     return await ctx.db
       .query("approvals")
       .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .order("desc")
-      .collect();
+      .take(cap);
   },
 });
 
@@ -436,33 +443,49 @@ export const sweepExpiredTokens = internalMutation({
   },
 });
 
-/** Internal: for the public API surface (feature 20). */
+const API_PAGE_SIZE = 50;
+
+/** Internal: for the public API surface (feature 20). Cursor-paginated —
+ * same convention as publicApi.ts's list routes — so a Space with a long
+ * approval history can't blow past a single query's read cap. */
 export const listForApi = internalQuery({
-  args: { spaceId: v.id("spaces"), status: v.optional(v.string()) },
-  handler: async (ctx, { spaceId, status }) => {
-    const rows = status
+  args: {
+    spaceId: v.id("spaces"),
+    status: v.optional(v.string()),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { spaceId, status, cursor, limit }) => {
+    const numItems = Math.max(1, Math.min(limit ?? API_PAGE_SIZE, API_PAGE_SIZE));
+    const page = status
       ? await ctx.db
           .query("approvals")
           .withIndex("by_space_status", (q) =>
             q.eq("spaceId", spaceId).eq("status", status as never),
           )
           .order("desc")
-          .take(200)
+          .paginate({ numItems, cursor: cursor ?? null })
       : await ctx.db
           .query("approvals")
           .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
           .order("desc")
-          .take(200);
-    return rows.map((a) => ({
-      id: a._id,
-      kind: a.kind,
-      title: a.title,
-      detail: a.detail,
-      status: a.status,
-      riskLevel: a.riskLevel,
-      createdAt: a.createdAt,
-      decidedAt: a.decidedAt,
-    }));
+          .paginate({ numItems, cursor: cursor ?? null });
+    return {
+      approvals: page.page.map((a) => ({
+        id: a._id,
+        kind: a.kind,
+        title: a.title,
+        detail: a.detail,
+        status: a.status,
+        riskLevel: a.riskLevel,
+        preview: a.preview,
+        deliveredChannels: a.deliveredChannels,
+        createdAt: a.createdAt,
+        decidedAt: a.decidedAt,
+      })),
+      cursor: page.continueCursor,
+      hasMore: !page.isDone,
+    };
   },
 });
 
@@ -480,5 +503,35 @@ export const decideForApi = internalMutation({
       spaceId,
     });
     return { ok: true };
+  },
+});
+
+/** Internal: bulk decide via the public API (feature 20) — mirrors
+ * `bulkDecide` above but trusts spaceId/companyId from the resolved API key
+ * instead of a user session, and is best-effort per row like its UI twin. */
+export const bulkDecideForApi = internalMutation({
+  args: {
+    spaceId: v.id("spaces"),
+    companyId: v.string(),
+    approvalIds: v.array(v.id("approvals")),
+    approve: v.boolean(),
+  },
+  handler: async (ctx, { spaceId, companyId, approvalIds, approve }) => {
+    let succeeded = 0;
+    const failed: Id<"approvals">[] = [];
+    for (const approvalId of approvalIds.slice(0, 100)) {
+      const approval = await ctx.db.get(approvalId);
+      if (!approval || approval.spaceId !== spaceId || approval.status !== "pending") {
+        failed.push(approvalId);
+        continue;
+      }
+      await applyDecision(ctx, approval, approve, {
+        decidedBy: "api-key",
+        companyId,
+        spaceId,
+      });
+      succeeded++;
+    }
+    return { succeeded, failed };
   },
 });

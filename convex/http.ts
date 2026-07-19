@@ -1011,7 +1011,29 @@ type ApiAuth = {
   companyId: string;
   apiKeyId: Id<"apiKeys">;
   rateLimitPerMinute?: number;
+  scopes?: string[];
 };
+
+// Scope model (feature 20 hardening): each route declares the single scope
+// it needs (e.g. "tasks:write"). A key with no `scopes` array set (every key
+// minted before scoped keys existed, and any minted without explicit scopes)
+// is treated as full-access for backward compatibility — `apiKeys.scopes` is
+// in schema but `apiKeys.create` doesn't collect it from the mint UI yet;
+// cross-team request below extends it. Once a key does carry `scopes`, it is
+// strictly allow-listed: unlisted routes 403.
+const ALL_SCOPES = [
+  "agents:read",
+  "deploys:read",
+  "tasks:read",
+  "tasks:write",
+  "messages:write",
+  "workflows:read",
+  "workflows:write",
+  "approvals:read",
+  "approvals:write",
+  "usage:read",
+] as const;
+type ApiScope = (typeof ALL_SCOPES)[number];
 
 function apiError(code: string, message: string, status: number) {
   return json({ error: { code, message } }, status);
@@ -1037,20 +1059,31 @@ async function authApiKey(
     companyId: row.companyId,
     apiKeyId: row._id,
     rateLimitPerMinute: row.rateLimitPerMinute,
+    scopes: row.scopes,
   };
 }
 
 /**
- * Auth + rate-limit gate shared by every /api/v1/* handler. Returns either a
- * resolved `ApiAuth` to proceed with, or a ready-to-return error Response.
+ * Auth + rate-limit + scope gate shared by every /api/v1/* handler. Returns
+ * either a resolved `ApiAuth` to proceed with, or a ready-to-return error
+ * Response. `requiredScope` is checked before the rate limit is recorded so
+ * a 403 never counts against the key's quota.
  */
 async function gate(
   ctx: { runQuery: any; runMutation: any },
   request: Request,
   route: string,
+  requiredScope?: ApiScope,
 ): Promise<ApiAuth | Response> {
   const auth = await authApiKey(ctx, request);
   if (!auth) return apiError("unauthorized", "missing or invalid API key", 401);
+  if (requiredScope && auth.scopes && !auth.scopes.includes(requiredScope)) {
+    return apiError(
+      "forbidden",
+      `this key is not scoped for '${requiredScope}'`,
+      403,
+    );
+  }
   const rl = await ctx.runMutation(internal.publicApi.recordRequest, {
     apiKeyId: auth.apiKeyId,
     companyId: auth.companyId,
@@ -1077,16 +1110,30 @@ async function gate(
   return auth;
 }
 
+/** Parse the shared `?cursor=&limit=` pagination query params. */
+function paginationParams(url: URL): { cursor?: string | null; limit?: number } {
+  const cursor = url.searchParams.get("cursor");
+  const limitParam = url.searchParams.get("limit");
+  const limit = limitParam ? Number(limitParam) : undefined;
+  return {
+    cursor: cursor ?? undefined,
+    limit: limit && Number.isFinite(limit) ? limit : undefined,
+  };
+}
+
 http.route({
   path: "/api/v1/agents",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await gate(ctx, request, "GET /api/v1/agents");
+    const auth = await gate(ctx, request, "GET /api/v1/agents", "agents:read");
     if (auth instanceof Response) return auth;
-    const agents = await ctx.runQuery(internal.publicApi.listAgents, {
+    const { cursor, limit } = paginationParams(new URL(request.url));
+    const result = await ctx.runQuery(internal.publicApi.listAgents, {
       spaceId: auth.spaceId,
+      cursor,
+      limit,
     });
-    return apiOk({ agents });
+    return apiOk(result);
   }),
 });
 
@@ -1094,12 +1141,15 @@ http.route({
   path: "/api/v1/deploys",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await gate(ctx, request, "GET /api/v1/deploys");
+    const auth = await gate(ctx, request, "GET /api/v1/deploys", "deploys:read");
     if (auth instanceof Response) return auth;
-    const deploys = await ctx.runQuery(internal.publicApi.listDeploys, {
+    const { cursor, limit } = paginationParams(new URL(request.url));
+    const result = await ctx.runQuery(internal.publicApi.listDeploys, {
       spaceId: auth.spaceId,
+      cursor,
+      limit,
     });
-    return apiOk({ deploys });
+    return apiOk(result);
   }),
 });
 
@@ -1107,12 +1157,15 @@ http.route({
   path: "/api/v1/tasks",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await gate(ctx, request, "GET /api/v1/tasks");
+    const auth = await gate(ctx, request, "GET /api/v1/tasks", "tasks:read");
     if (auth instanceof Response) return auth;
-    const tasks = await ctx.runQuery(internal.publicApi.listTasks, {
+    const { cursor, limit } = paginationParams(new URL(request.url));
+    const result = await ctx.runQuery(internal.publicApi.listTasks, {
       spaceId: auth.spaceId,
+      cursor,
+      limit,
     });
-    return apiOk({ tasks });
+    return apiOk(result);
   }),
 });
 
@@ -1120,7 +1173,7 @@ http.route({
   path: "/api/v1/tasks",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const auth = await gate(ctx, request, "POST /api/v1/tasks");
+    const auth = await gate(ctx, request, "POST /api/v1/tasks", "tasks:write");
     if (auth instanceof Response) return auth;
     const body = await request.json().catch(() => ({}));
     if (!body.title) return apiError("bad_request", "title required", 400);
@@ -1138,7 +1191,7 @@ http.route({
   path: "/api/v1/messages",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const auth = await gate(ctx, request, "POST /api/v1/messages");
+    const auth = await gate(ctx, request, "POST /api/v1/messages", "messages:write");
     if (auth instanceof Response) return auth;
     const body = await request.json().catch(() => ({}));
     if (!body.content) return apiError("bad_request", "content required", 400);
@@ -1156,12 +1209,15 @@ http.route({
   path: "/api/v1/workflows",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await gate(ctx, request, "GET /api/v1/workflows");
+    const auth = await gate(ctx, request, "GET /api/v1/workflows", "workflows:read");
     if (auth instanceof Response) return auth;
-    const workflows = await ctx.runQuery(internal.publicApi.listWorkflows, {
+    const { cursor, limit } = paginationParams(new URL(request.url));
+    const result = await ctx.runQuery(internal.publicApi.listWorkflows, {
       spaceId: auth.spaceId,
+      cursor,
+      limit,
     });
-    return apiOk({ workflows });
+    return apiOk(result);
   }),
 });
 
@@ -1169,7 +1225,7 @@ http.route({
   path: "/api/v1/workflows/run",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const auth = await gate(ctx, request, "POST /api/v1/workflows/run");
+    const auth = await gate(ctx, request, "POST /api/v1/workflows/run", "workflows:write");
     if (auth instanceof Response) return auth;
     const body = await request.json().catch(() => ({}));
     if (!body.workflowId) return apiError("bad_request", "workflowId required", 400);
@@ -1189,15 +1245,18 @@ http.route({
   path: "/api/v1/workflows/runs",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await gate(ctx, request, "GET /api/v1/workflows/runs");
+    const auth = await gate(ctx, request, "GET /api/v1/workflows/runs", "workflows:read");
     if (auth instanceof Response) return auth;
     const url = new URL(request.url);
     const workflowIdParam = url.searchParams.get("workflowId");
-    const runs = await ctx.runQuery(internal.publicApi.listWorkflowRuns, {
+    const { cursor, limit } = paginationParams(url);
+    const result = await ctx.runQuery(internal.publicApi.listWorkflowRuns, {
       spaceId: auth.spaceId,
       workflowId: workflowIdParam ? (workflowIdParam as Id<"workflows">) : undefined,
+      cursor,
+      limit,
     });
-    return apiOk({ runs });
+    return apiOk(result);
   }),
 });
 
@@ -1205,15 +1264,45 @@ http.route({
   path: "/api/v1/approvals",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await gate(ctx, request, "GET /api/v1/approvals");
+    const auth = await gate(ctx, request, "GET /api/v1/approvals", "approvals:read");
     if (auth instanceof Response) return auth;
     const url = new URL(request.url);
     const status = url.searchParams.get("status") ?? undefined;
-    const approvals = await ctx.runQuery(internal.approvals.listForApi, {
+    const { cursor, limit } = paginationParams(url);
+    const result = await ctx.runQuery(internal.approvals.listForApi, {
       spaceId: auth.spaceId,
       status,
+      cursor,
+      limit,
     });
-    return apiOk({ approvals });
+    return apiOk(result);
+  }),
+});
+
+// POST /api/v1/approvals/bulk-decide — body { approvalIds: string[], approve: boolean }.
+// An exact `path` route always wins over the `pathPrefix` single-decide route
+// below regardless of registration order (Convex's router checks exact
+// matches first), so "bulk-decide" never falls into the `/:id/decide` regex.
+http.route({
+  path: "/api/v1/approvals/bulk-decide",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "POST /api/v1/approvals/bulk-decide", "approvals:write");
+    if (auth instanceof Response) return auth;
+    const body = await request.json().catch(() => ({}));
+    if (typeof body.approve !== "boolean") {
+      return apiError("bad_request", "approve (boolean) required", 400);
+    }
+    if (!Array.isArray(body.approvalIds) || body.approvalIds.length === 0) {
+      return apiError("bad_request", "approvalIds (non-empty array) required", 400);
+    }
+    const result = await ctx.runMutation(internal.approvals.bulkDecideForApi, {
+      spaceId: auth.spaceId,
+      companyId: auth.companyId,
+      approvalIds: body.approvalIds as Id<"approvals">[],
+      approve: body.approve,
+    });
+    return apiOk(result);
   }),
 });
 
@@ -1226,7 +1315,7 @@ http.route({
     const rest = url.pathname.slice("/api/v1/approvals/".length);
     const match = rest.match(/^([^/]+)\/decide$/);
     if (!match) return apiError("not_found", "unknown route", 404);
-    const auth = await gate(ctx, request, "POST /api/v1/approvals/:id/decide");
+    const auth = await gate(ctx, request, "POST /api/v1/approvals/:id/decide", "approvals:write");
     if (auth instanceof Response) return auth;
     const body = await request.json().catch(() => ({}));
     if (typeof body.approve !== "boolean") {
@@ -1250,7 +1339,7 @@ http.route({
   path: "/api/v1/usage",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await gate(ctx, request, "GET /api/v1/usage");
+    const auth = await gate(ctx, request, "GET /api/v1/usage", "usage:read");
     if (auth instanceof Response) return auth;
     const usage = await ctx.runQuery(internal.publicApi.usageSummary, {
       apiKeyId: auth.apiKeyId,

@@ -5,10 +5,10 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
-import { useActiveSpace } from "@/components/active-space";
+import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { FlaskConical, Loader2, Plus, Sparkles, Star } from "@/components/icons";
+import { BarChart3, FlaskConical, Loader2, Plus, Sparkles, Star, Trash2 } from "@/components/icons";
 
 function Stars({ value }: { value: number }) {
   const rounded = Math.round(value);
@@ -292,12 +292,20 @@ function qualityTone(score: number | null): "default" | "green" | "yellow" | "re
 
 function BenchmarkSection() {
   const { spaceId } = useActiveSpace();
+  const canOperate = useCan("operator");
   const benchmarks = useQuery(api.evals.listBenchmarks, spaceId ? { spaceId } : "skip");
   const batches = useQuery(api.evals.listBatches, spaceId ? { spaceId } : "skip");
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
   const createBenchmark = useMutation(api.evals.createBenchmark);
+  const removeBenchmark = useMutation(api.evals.removeBenchmark);
   const runBatch = useAction(api.evals.runBenchmarkBatch);
   const toast = useToast();
+
+  const [trendBenchmarkId, setTrendBenchmarkId] = useState<Id<"evalBenchmarks"> | null>(null);
+  const trend = useQuery(
+    api.evals.benchmarkTrend,
+    spaceId && trendBenchmarkId ? { spaceId, benchmarkId: trendBenchmarkId } : "skip",
+  );
 
   const [newOpen, setNewOpen] = useState(false);
   const [name, setName] = useState("");
@@ -359,7 +367,20 @@ function BenchmarkSection() {
     }
   }
 
+  async function deleteBenchmark(benchmarkId: Id<"evalBenchmarks">, name: string) {
+    if (!spaceId) return;
+    if (!confirm(`Delete benchmark "${name}"? Past run history stays intact.`)) return;
+    try {
+      await removeBenchmark({ spaceId, benchmarkId });
+      if (trendBenchmarkId === benchmarkId) setTrendBenchmarkId(null);
+      toast("Benchmark deleted", "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to delete benchmark", "error");
+    }
+  }
+
   const maxCost = Math.max(0.0001, ...(comparison ?? []).map((r) => r.costUsd ?? 0));
+  const trendMaxCost = Math.max(0.0001, ...(trend ?? []).map((t) => t.totalCostUsd));
 
   return (
     <div className="mt-10">
@@ -398,15 +419,35 @@ function BenchmarkSection() {
                       <p className="truncate text-xs text-muted">{b.description}</p>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setRunOpen(b._id);
-                      setSelectedAgents(new Set());
-                    }}
-                  >
-                    Run
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        setTrendBenchmarkId((cur) => (cur === b._id ? null : b._id))
+                      }
+                      title="View quality/cost trend across runs"
+                    >
+                      <BarChart3 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setRunOpen(b._id);
+                        setSelectedAgents(new Set());
+                      }}
+                    >
+                      Run
+                    </Button>
+                    {canOperate && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => deleteBenchmark(b._id, b.name)}
+                        title="Delete benchmark"
+                      >
+                        <Trash2 className="h-4 w-4 text-red-400" />
+                      </Button>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -446,6 +487,56 @@ function BenchmarkSection() {
             )}
           </Card>
         </div>
+      )}
+
+      {trendBenchmarkId && (
+        <Card className="mt-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-muted">
+              Trend across runs — {benchmarks?.find((b) => b._id === trendBenchmarkId)?.name ?? "Benchmark"}
+            </h3>
+            <Button variant="ghost" onClick={() => setTrendBenchmarkId(null)}>
+              Close
+            </Button>
+          </div>
+          {trend === undefined ? (
+            <p className="text-sm text-muted">Loading…</p>
+          ) : trend.length === 0 ? (
+            <p className="text-sm text-muted">No batches run for this benchmark yet.</p>
+          ) : (
+            <div className="flex items-end gap-3 overflow-x-auto pb-2">
+              {trend.map((t) => (
+                <button
+                  key={t.batchId}
+                  onClick={() => setActiveBatch(t.batchId)}
+                  className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-lg px-1 py-1 hover:bg-surface-2"
+                  title={`${t.runCount} run(s) · ${timeAgo(t.startedAt)}`}
+                >
+                  <div className="flex h-24 w-full items-end justify-center gap-1">
+                    <div
+                      className="w-3 rounded-t bg-accent"
+                      style={{ height: `${Math.max(4, (t.avgQuality ?? 0) * 96)}px` }}
+                    />
+                    <div
+                      className="w-3 rounded-t bg-sky-400"
+                      style={{ height: `${Math.max(4, (t.totalCostUsd / trendMaxCost) * 96)}px` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-muted">{timeAgo(t.startedAt)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="mt-2 flex items-center gap-4 text-xs text-muted">
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-accent" /> avg quality
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-sky-400" /> total cost (relative)
+            </span>
+            <span className="ml-auto">Click a bar to open that batch&apos;s comparison</span>
+          </div>
+        </Card>
       )}
 
       {activeBatch && (

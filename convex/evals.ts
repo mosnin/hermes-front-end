@@ -396,6 +396,54 @@ export const compareBatch = query({
   },
 });
 
+/**
+ * Historical trend for a single benchmark: one point per batch, ordered
+ * oldest -> newest, so the UI can chart quality/cost drift across repeated
+ * runs (e.g. after a prompt or model change) instead of only comparing a
+ * single batch's agents against each other.
+ */
+export const benchmarkTrend = query({
+  args: { spaceId: v.id("spaces"), benchmarkId: v.id("evalBenchmarks") },
+  handler: async (ctx, { spaceId, benchmarkId }) => {
+    await resolveScope(ctx, spaceId);
+    const bench = await ctx.db.get(benchmarkId);
+    if (!bench || bench.spaceId !== spaceId) throw new Error("Not found");
+
+    const runs = await ctx.db
+      .query("evalRuns")
+      .withIndex("by_benchmark", (q) => q.eq("benchmarkId", benchmarkId))
+      .collect();
+
+    const groups = new Map<string, Doc<"evalRuns">[]>();
+    for (const r of runs) {
+      const key = r.batchId ?? r._id;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(r);
+    }
+
+    return Array.from(groups.entries())
+      .map(([batchId, rows]) => {
+        const completed = rows.filter((r) => r.qualityScore != null);
+        const avgQuality = completed.length
+          ? completed.reduce((s, r) => s + (r.qualityScore ?? 0), 0) / completed.length
+          : null;
+        const totalCostUsd = rows.reduce((s, r) => s + (r.costUsd ?? 0), 0);
+        const avgLatencyMs = rows.length
+          ? rows.reduce((s, r) => s + (r.latencyMs ?? 0), 0) / rows.length
+          : null;
+        return {
+          batchId,
+          runCount: rows.length,
+          avgQuality,
+          totalCostUsd,
+          avgLatencyMs,
+          startedAt: Math.min(...rows.map((r) => r.startedAt)),
+        };
+      })
+      .sort((a, b) => a.startedAt - b.startedAt);
+  },
+});
+
 export const createBenchmarkRuns = internalMutation({
   args: {
     spaceId: v.id("spaces"),

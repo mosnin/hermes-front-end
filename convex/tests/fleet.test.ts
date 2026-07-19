@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { convexTest } from "convex-test";
 import schema from "../schema";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 import { HARNESS_IDS } from "../../connector/harnesses/schema";
 import { KNOWN_HARNESS_IDS } from "../lib/cloudflare";
@@ -274,5 +274,92 @@ describe("fleet.rollingRestart — drain-aware rolling restart", () => {
     const hermesOnly = await owner.action(api.fleet.rollingRestart, { spaceId, harness: "hermes" });
     expect(hermesOnly.total).toBe(1);
     void agentId;
+  });
+});
+
+describe("fleet.sweepPendingRestarts — automatic drain-requeue", () => {
+  test("built-in harness manifests all health-probe on the worker's Container.defaultPort", async () => {
+    // connector/fleet-worker/src/index.ts hardcodes `defaultPort = 8080` on
+    // AgentContainer; every harness.json's health.port must match it or the
+    // container never reports healthy. Regression tripwire for manifest/worker
+    // drift (excluded from tsc since connector/ isn't in the main tsconfig).
+    const { listManifests } = await import("../../connector/harnesses/registry");
+    for (const m of listManifests()) {
+      expect(m.health.port).toBe(8080);
+    }
+  });
+
+  test("leaves a still-draining agent's restartRequestedAt set and does not restart it", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+    const res = await owner.action(api.fleet.deploy, { spaceId, count: 1, namePrefix: "Sweep" });
+    const agentId = res.deployed[0].agentId as Id<"agents">;
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, {
+        deploymentStatus: "running",
+        vmId: "fake-vm-id",
+        restartRequestedAt: Date.now(),
+      });
+      const now = Date.now();
+      const workflowId = await ctx.db.insert("workflows", {
+        companyId: "org_fleet",
+        spaceId,
+        name: "wf",
+        enabled: true,
+        steps: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+      const runId = await ctx.db.insert("workflowRuns", {
+        companyId: "org_fleet",
+        spaceId,
+        workflowId,
+        status: "running",
+        hops: 0,
+        stepsDone: 0,
+        startedAt: now,
+      });
+      await ctx.db.insert("runSteps", {
+        companyId: "org_fleet",
+        spaceId,
+        workflowRunId: runId,
+        stepId: "s1",
+        index: 0,
+        name: "step",
+        agentId,
+        instruction: "still working",
+        status: "running",
+        attempts: 1,
+        startedAt: now,
+      });
+    });
+
+    await t.action(internal.fleet.sweepPendingRestarts, {});
+
+    const agent = await t.run(async (ctx) => ctx.db.get(agentId));
+    expect(agent?.restartRequestedAt).toBeTypeOf("number");
+  });
+
+  test("cloudflare unconfigured: pending-restart agents are left untouched (no-op)", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+    const res = await owner.action(api.fleet.deploy, { spaceId, count: 1, namePrefix: "Sweep2" });
+    const agentId = res.deployed[0].agentId as Id<"agents">;
+    const requestedAt = Date.now();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, {
+        deploymentStatus: "running",
+        vmId: "fake-vm-id",
+        restartRequestedAt: requestedAt,
+      });
+    });
+
+    await t.action(internal.fleet.sweepPendingRestarts, {});
+
+    const agent = await t.run(async (ctx) => ctx.db.get(agentId));
+    // Cloudflare is unconfigured in tests, so the sweep can't actually call
+    // restartAgent() — restartRequestedAt must be left exactly as it was
+    // (not silently cleared) so a real sweep once configured still catches it.
+    expect(agent?.restartRequestedAt).toBe(requestedAt);
   });
 });

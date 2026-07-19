@@ -4,6 +4,7 @@ import {
   action,
   internalQuery,
   internalMutation,
+  internalAction,
 } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
@@ -484,5 +485,118 @@ export const rollingRestart = action({
     }
 
     return { restarted, drained, failed, total: candidates.length };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Automatic drain-requeue sweep (feature 5 completion): `rollingRestart`
+// flags an agent with `restartRequestedAt` when it's drained (has a running
+// runStep) instead of restarting it immediately. Without something retrying
+// those later, an operator would have to remember to re-call rollingRestart
+// by hand once the in-flight task finishes. This sweep does that
+// automatically — intended to run on a cron (see docs/HARNESS_SPEC.md; cron
+// registration is requested from the integrator since crons.ts is shared).
+// It is system-triggered (no end-user identity), so it does NOT go through
+// resolveScope/requireRole like the user-facing actions above — it only
+// retries a restart that a real operator already authorized via
+// `rollingRestart`, it never initiates a new one.
+// ---------------------------------------------------------------------------
+
+/** Bounded scan across all Spaces — same pattern as costs.sweepIdleHibernation. */
+export const listSpacesForRestartSweep = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("spaces").take(5000);
+  },
+});
+
+/**
+ * Agents in this Space with a pending restart request, whether or not they're
+ * still draining. System query (no resolveScope) — only reads what
+ * `rollingRestart` already wrote.
+ */
+export const pendingRestartCandidates = internalQuery({
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+      .collect();
+    const pending = agents.filter(
+      (a) => a.restartRequestedAt !== undefined && a.vmProvider === "cloudflare" && !!a.vmId,
+    );
+    const out: { agentId: Id<"agents">; vmId: string; name: string; draining: boolean }[] = [];
+    for (const a of pending) {
+      const running = await ctx.db
+        .query("runSteps")
+        .withIndex("by_agent_status", (q) => q.eq("agentId", a._id).eq("status", "running"))
+        .first();
+      out.push({ agentId: a._id, vmId: a.vmId as string, name: a.name, draining: !!running });
+    }
+    return out;
+  },
+});
+
+/**
+ * Retry every drained-and-now-idle agent's pending restart, Space by Space.
+ * Still-draining agents are left alone (their `restartRequestedAt` stays set
+ * for the next sweep). Cloudflare-unconfigured deploys have no `vmId` and
+ * never match `pendingRestartCandidates`, so this is a safe no-op for them.
+ */
+export const sweepPendingRestarts = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ restarted: number; stillDraining: number; failed: number }> => {
+    const spaces: Doc<"spaces">[] = await ctx.runQuery(internal.fleet.listSpacesForRestartSweep, {});
+    let restarted = 0;
+    let stillDraining = 0;
+    let failed = 0;
+    const configured = cloudflareConfigured();
+
+    for (const space of spaces) {
+      const candidates = await ctx.runQuery(internal.fleet.pendingRestartCandidates, {
+        spaceId: space._id,
+      });
+      for (const c of candidates) {
+        if (c.draining) {
+          stillDraining++;
+          continue;
+        }
+        if (!configured) continue;
+        try {
+          await restartAgent(c.vmId);
+          await ctx.runMutation(internal.fleet.markRestartedSystem, {
+            spaceId: space._id,
+            agentId: c.agentId,
+          });
+          restarted++;
+        } catch {
+          failed++;
+        }
+      }
+    }
+
+    return { restarted, stillDraining, failed };
+  },
+});
+
+/** System variant of markRestarted (no resolveScope — the sweep has no user identity). */
+export const markRestartedSystem = internalMutation({
+  args: { spaceId: v.id("spaces"), agentId: v.id("agents") },
+  handler: async (ctx, { spaceId, agentId }) => {
+    const agent = await ctx.db.get(agentId);
+    if (!agent || agent.spaceId !== spaceId) return;
+    await ctx.db.patch(agentId, {
+      restartRequestedAt: undefined,
+      lastRestartAt: Date.now(),
+    });
+    await recordWorkEvent(ctx, {
+      companyId: agent.companyId,
+      spaceId,
+      actorType: "system",
+      agentId,
+      category: "agent",
+      action: "fleet_restarted",
+      summary: `Rolling-restarted ${agent.name} (drain sweep)`,
+    });
   },
 });

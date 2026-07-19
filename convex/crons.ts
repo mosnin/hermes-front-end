@@ -73,4 +73,27 @@ crons.interval(
 // against month-to-date spend.
 crons.interval("spend cap enforcement", { hours: 1 }, internal.costs.enforceSpendCaps, {});
 
+// Rolling restarts: retry drained-and-now-idle agents whose restart was
+// deferred while they still had in-flight work. Safe no-op when Cloudflare
+// isn't configured.
+crons.interval(
+  "pending restart sweep",
+  { hours: 1 },
+  internal.fleet.sweepPendingRestarts,
+  {},
+);
+
+// Squad autoscaling: evaluate queue depth per autoscale-enabled squad and
+// scale up/down by at most one agent per squad per tick (cooldown-honoring).
+crons.interval(
+  "squad autoscale",
+  { minutes: 5 },
+  internal.agentOps.evaluateAutoscale,
+  {},
+);
+
+// Self-healing watchdog: confirm offline hosted agents are actually dead and
+// attempt an in-place restart with exponential backoff.
+crons.interval("hosted agent watchdog", { minutes: 5 }, internal.health.watchdogTick, {});
+
 export default crons;

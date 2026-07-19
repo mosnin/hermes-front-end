@@ -104,6 +104,69 @@ describe("marketplace.listTemplates / getTemplate — visibility", () => {
   });
 });
 
+describe("marketplace.listTemplates — category filtering and search", () => {
+  test("filtering by a public category does not leak unrelated private snapshots", async () => {
+    const { t, owner, spaceId } = await setup();
+    process.env.PLATFORM_ADMIN_IDS = "seed_admin_cat";
+    const admin = t.withIdentity({ subject: "seed_admin_cat", org_id: "org_x" });
+    await admin.mutation(api.marketplace.seed, {});
+    delete process.env.PLATFORM_ADMIN_IDS;
+
+    // Save a private snapshot — snapshotAgent always tags it category "custom".
+    const { agentId } = await owner.action(api.agents.create, { spaceId, name: "Snap Source" });
+    await owner.mutation(api.marketplace.snapshotAgent, {
+      spaceId,
+      agentId: agentId as Id<"agents">,
+      name: "My private ops helper",
+    });
+
+    // The "sales" tab should only contain sales-category public templates —
+    // never the private "custom"-category snapshot.
+    const salesTab = await owner.query(api.marketplace.listTemplates, {
+      spaceId,
+      category: "sales",
+    });
+    expect(salesTab.length).toBeGreaterThan(0);
+    expect(salesTab.every((t) => t.category === "sales")).toBe(true);
+    expect(salesTab.find((t) => t.name === "My private ops helper")).toBeUndefined();
+
+    // The "custom" ("Your Space") tab surfaces the private snapshot.
+    const customTab = await owner.query(api.marketplace.listTemplates, {
+      spaceId,
+      category: "custom",
+    });
+    expect(customTab.find((t) => t.name === "My private ops helper")).toBeDefined();
+  });
+
+  test("search matches name, tagline, and capabilities case-insensitively", async () => {
+    const { t, owner, spaceId } = await setup();
+    process.env.PLATFORM_ADMIN_IDS = "seed_admin_search";
+    const admin = t.withIdentity({ subject: "seed_admin_search", org_id: "org_x" });
+    await admin.mutation(api.marketplace.seed, {});
+    delete process.env.PLATFORM_ADMIN_IDS;
+
+    const byName = await owner.query(api.marketplace.listTemplates, {
+      spaceId,
+      search: "SUPPORT triage",
+    });
+    expect(byName.some((t) => t.slug === "support-triage")).toBe(true);
+
+    // "crm" only appears in the SDR template's `capabilities` array, not in
+    // its name/tagline/description — proves the capability field is searched.
+    const byCapability = await owner.query(api.marketplace.listTemplates, {
+      spaceId,
+      search: "crm",
+    });
+    expect(byCapability.some((t) => t.slug === "sdr-outbound")).toBe(true);
+
+    const noMatch = await owner.query(api.marketplace.listTemplates, {
+      spaceId,
+      search: "definitely-not-a-real-template-xyz",
+    });
+    expect(noMatch.length).toBe(0);
+  });
+});
+
 describe("marketplace.install — self-connect", () => {
   test("clones bundled skills and creates an agent wired to the template config", async () => {
     const { t, owner, spaceId } = await setup();

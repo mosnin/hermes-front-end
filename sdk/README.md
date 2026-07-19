@@ -30,8 +30,11 @@ console.log(agents.map((a) => `${a.name} (${a.status})`));
 
 Every request carries `Authorization: Bearer hk_...`. Keys are minted from
 Dashboard → Developer (`convex/apiKeys.ts`) and can be scoped with an optional
-per-minute rate limit and expiry. A revoked, expired, or malformed key gets a
-`401` with `{ error: { code: "unauthorized", ... } }`.
+per-minute rate limit, expiry, and a `scopes` allow-list (e.g.
+`["tasks:read", "tasks:write"]` — see `ApiScope` in `sdk/src/types.ts` for
+the full list, or `docs/API.md`'s scopes table). A revoked, expired, or
+malformed key gets a `401`; a scoped key calling outside its scope list gets
+a `403` with `{ error: { code: "forbidden", ... } }`.
 
 ## Error handling
 
@@ -57,7 +60,7 @@ of this client.
 ## API surface
 
 ```ts
-// Agents
+// Agents (paginated — see "Pagination" below)
 await cadre.agents.list();
 
 // Fleet deploys (agents provisioned onto a VM)
@@ -81,9 +84,34 @@ await cadre.approvals.list(); // all
 await cadre.approvals.list("pending");
 await cadre.approvals.decide("approvalId", true); // approve
 await cadre.approvals.decide("approvalId", false); // reject
+await cadre.approvals.bulkDecide(["id1", "id2"], true); // approve several at once
 
 // Usage (today's request/error counts + per-route breakdown for your key)
 await cadre.usage.get();
+```
+
+## Pagination
+
+Every `list()` method above returns `{ cursor, hasMore, ...data }` and
+accepts an optional `{ cursor, limit }` (max/default `50`) as its trailing
+argument:
+
+```ts
+let cursor: string | null | undefined;
+const allTasks = [];
+do {
+  const page = await cadre.tasks.list({ cursor, limit: 50 });
+  allTasks.push(...page.tasks);
+  cursor = page.cursor;
+} while (cursor);
+```
+
+`workflows.runs()` and `approvals.list()` take pagination options as their
+second argument, after their existing filter (`workflowId` / `status`):
+
+```ts
+await cadre.approvals.list("pending", { limit: 20 });
+await cadre.workflows.runs("workflowId", { cursor });
 ```
 
 See `docs/API.md` at the repo root for the full REST reference (every route,

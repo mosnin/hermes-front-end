@@ -291,6 +291,113 @@ describe("public API v1", () => {
     expect(rows.length).toBe(2);
   });
 
+  test("tasks: list is cursor-paginated with a small page size", async () => {
+    const { t, key } = await boot("org_api13");
+    for (let i = 0; i < 5; i++) {
+      await call(t, "POST", "/api/v1/tasks", key, { title: `Task ${i}` });
+    }
+
+    const firstPage = await call(t, "GET", "/api/v1/tasks?limit=2", key);
+    const firstBody = (await firstPage.json()).data;
+    expect(firstBody.tasks.length).toBe(2);
+    expect(firstBody.hasMore).toBe(true);
+    expect(typeof firstBody.cursor).toBe("string");
+
+    const secondPage = await call(
+      t,
+      "GET",
+      `/api/v1/tasks?limit=2&cursor=${encodeURIComponent(firstBody.cursor)}`,
+      key,
+    );
+    const secondBody = (await secondPage.json()).data;
+    expect(secondBody.tasks.length).toBe(2);
+    // No overlap between pages.
+    const firstIds = new Set(firstBody.tasks.map((t: { id: string }) => t.id));
+    for (const t of secondBody.tasks) expect(firstIds.has(t.id)).toBe(false);
+
+    // Walk to the end: total distinct tasks across pages == 5, hasMore false eventually.
+    let cursor: string | null = secondBody.cursor;
+    let hasMore = secondBody.hasMore;
+    let seen = firstBody.tasks.length + secondBody.tasks.length;
+    while (hasMore) {
+      const page = await call(t, "GET", `/api/v1/tasks?limit=2&cursor=${encodeURIComponent(cursor!)}`, key);
+      const body = (await page.json()).data;
+      seen += body.tasks.length;
+      cursor = body.cursor;
+      hasMore = body.hasMore;
+    }
+    expect(seen).toBe(5);
+  });
+
+  test("API key scopes: a scoped key is 403'd on routes outside its scope list", async () => {
+    const { t, key, keyId } = await boot("org_api14");
+    await t.run(async (ctx) => ctx.db.patch(keyId, { scopes: ["agents:read"] }));
+
+    const allowed = await call(t, "GET", "/api/v1/agents", key);
+    expect(allowed.status).toBe(200);
+
+    const forbidden = await call(t, "POST", "/api/v1/tasks", key, { title: "nope" });
+    expect(forbidden.status).toBe(403);
+    expect((await forbidden.json()).error.code).toBe("forbidden");
+
+    // A 403 must not have consumed the rate-limit quota.
+    const usage = await call(t, "GET", "/api/v1/agents", key);
+    // Not asserting exact counts (agents:read is allowed and also counts) —
+    // just confirm the forbidden call didn't 429 anything downstream.
+    expect(usage.status).toBe(200);
+  });
+
+  test("API key with no scopes set is unrestricted (backward compatible)", async () => {
+    const { t, key } = await boot("org_api15");
+    const res = await call(t, "POST", "/api/v1/tasks", key, { title: "unrestricted key" });
+    expect(res.status).toBe(201);
+  });
+
+  test("approvals: bulk-decide via the API applies best-effort and reports failures", async () => {
+    vi.useFakeTimers();
+    const { t, owner, spaceId, key } = await boot("org_api16");
+    const id1 = await owner.mutation(api.approvals.request, { spaceId, kind: "a", title: "One" });
+    const id2 = await owner.mutation(api.approvals.request, { spaceId, kind: "a", title: "Two" });
+    await drainScheduler(t);
+
+    // A real approval id, but from a different Space in the same backend —
+    // must be rejected by the tenancy check rather than silently decided.
+    const otherOwner = t.withIdentity({ subject: "u2", org_id: "org_api16_other" });
+    const otherSpaceId = await otherOwner.mutation(api.spaces.create, { name: "other" });
+    const foreignId = await otherOwner.mutation(api.approvals.request, {
+      spaceId: otherSpaceId,
+      kind: "a",
+      title: "Foreign",
+    });
+    await drainScheduler(t);
+
+    const res = await call(t, "POST", "/api/v1/approvals/bulk-decide", key, {
+      approvalIds: [id1, id2, foreignId],
+      approve: true,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()).data;
+    expect(body.succeeded).toBe(2);
+    expect(body.failed.length).toBe(1);
+    expect(body.failed[0]).toBe(foreignId);
+
+    const a1 = await t.run(async (ctx) => ctx.db.get(id1));
+    const a2 = await t.run(async (ctx) => ctx.db.get(id2));
+    expect(a1?.status).toBe("approved");
+    expect(a2?.status).toBe("approved");
+
+    const missingBody = await call(t, "POST", "/api/v1/approvals/bulk-decide", key, {
+      approve: true,
+    });
+    expect(missingBody.status).toBe(400);
+
+    const emptyIds = await call(t, "POST", "/api/v1/approvals/bulk-decide", key, {
+      approvalIds: [],
+      approve: true,
+    });
+    expect(emptyIds.status).toBe(400);
+  });
+
   test("connector logs route rejects an empty batch and bogus lines", async () => {
     const { t, owner, spaceId } = await boot("org_api12");
     const created = await owner.action(api.agents.create, { spaceId, name: "Logger2" });

@@ -138,6 +138,14 @@ connector's). On a successful `/spawn`, the worker returns
 the `agents` row. `fleet.rollingRestart` re-applies the currently configured
 image to already-running agents of a harness (or all harnesses) in a Space,
 **draining** first: any agent with a `runSteps` row in `status: "running"`
-for it is skipped for that pass so an in-flight task is never killed
-mid-execution; a second pass (or a subsequent manual call) will catch agents
-that finished during the first.
+for it is skipped for that pass (flagged `agents.restartRequestedAt`) so an
+in-flight task is never killed mid-execution.
+
+`fleet.sweepPendingRestarts` (internal action) automatically retries every
+agent still carrying a `restartRequestedAt` flag: Space by Space, it
+re-checks drain status and restarts anything that's now idle, leaving
+still-draining agents flagged for the next sweep. It's system-triggered (no
+end-user identity — it only retries a restart an operator already authorized
+via `rollingRestart`, never initiates a new one) and is intended to run on an
+hourly cron; **cron registration is a cross-team request** since `crons.ts`
+is shared (the integrator owns it — see cycle report).

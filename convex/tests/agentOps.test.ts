@@ -251,6 +251,151 @@ describe("agentOps — squad autoscale config (feature 8, engine lands next cycl
     ).toBe("hold"); // ratio == queueDepthPerAgent exactly, no breach
   });
 
+  test("evaluateAutoscale scales up a squad above its queue-depth threshold using its template, tagging the new agent autoscaled", async () => {
+    const { t, owner, spaceId, agentId } = await setup();
+    const squadId = (await owner.mutation(api.squads.create, {
+      spaceId,
+      name: "Scale Up Squad",
+    })) as Id<"squads">;
+    const templateId = await owner.mutation(api.agentOps.snapshotAgent, {
+      spaceId,
+      agentId,
+      name: "Autoscale Template",
+    });
+    await owner.mutation(api.agentOps.setSquadAutoscale, {
+      spaceId,
+      squadId,
+      enabled: true,
+      minAgents: 1,
+      maxAgents: 5,
+      queueDepthPerAgent: 2,
+      cooldownMinutes: 10,
+      templateId,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, { squadId, status: "online" });
+      const s = await ctx.db.get(spaceId);
+      for (let i = 0; i < 10; i++) {
+        await ctx.db.insert("tasks", {
+          companyId: s!.companyId,
+          spaceId,
+          squadId,
+          title: `t${i}`,
+          status: "todo",
+          priority: "medium",
+          orderKey: String(i),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      }
+    });
+
+    const res = await t.action(internal.agentOps.evaluateAutoscale, {});
+    expect(res.scaled).toBe(1);
+
+    const agents = await owner.query(api.agents.list, { spaceId });
+    const created = agents.filter((a) => a.squadId === squadId && a._id !== agentId);
+    expect(created).toHaveLength(1);
+    expect(created[0].templateId).toBe(templateId);
+    expect((created[0].meta as { autoscaled?: boolean } | undefined)?.autoscaled).toBe(true);
+
+    const squad = await t.run(async (ctx) => ctx.db.get(squadId));
+    expect(squad?.autoscale?.lastScaleDirection).toBe("up");
+    expect(squad?.autoscale?.lastScaleAt).toBeDefined();
+  });
+
+  test("evaluateAutoscale holds (does not scale) without a template even under heavy load", async () => {
+    const { t, owner, spaceId, agentId } = await setup();
+    const squadId = (await owner.mutation(api.squads.create, {
+      spaceId,
+      name: "No Template Squad",
+    })) as Id<"squads">;
+    await owner.mutation(api.agentOps.setSquadAutoscale, {
+      spaceId,
+      squadId,
+      enabled: true,
+      minAgents: 1,
+      maxAgents: 5,
+      queueDepthPerAgent: 1,
+      cooldownMinutes: 10,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, { squadId, status: "online" });
+    });
+    const res = await t.action(internal.agentOps.evaluateAutoscale, {});
+    expect(res.scaled).toBe(0);
+    const agents = await owner.query(api.agents.list, { spaceId });
+    expect(agents.filter((a) => a.squadId === squadId)).toHaveLength(1);
+  });
+
+  test("evaluateAutoscale honors cooldown and only reclaims autoscaler-owned agents on scale-down", async () => {
+    const { t, owner, spaceId, agentId } = await setup();
+    const squadId = (await owner.mutation(api.squads.create, {
+      spaceId,
+      name: "Scale Down Squad",
+    })) as Id<"squads">;
+    const templateId = await owner.mutation(api.agentOps.snapshotAgent, {
+      spaceId,
+      agentId,
+      name: "T",
+    });
+    await owner.mutation(api.agentOps.setSquadAutoscale, {
+      spaceId,
+      squadId,
+      enabled: true,
+      minAgents: 0,
+      maxAgents: 5,
+      queueDepthPerAgent: 3,
+      cooldownMinutes: 10,
+      templateId,
+    });
+    // A manually-provisioned (non-autoscaled) online agent with no queue load:
+    // decideScale says "down", but there's nothing the autoscaler owns to
+    // reclaim, so it must hold rather than touch a human-managed agent.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, {
+        squadId,
+        status: "online",
+        vmProvider: "cloudflare",
+        vmId: "vm-manual",
+        deploymentStatus: "running",
+      });
+    });
+    const res1 = await t.action(internal.agentOps.evaluateAutoscale, {});
+    expect(res1.scaled).toBe(0);
+    const untouched = await owner.query(api.agents.get, { spaceId, agentId });
+    expect(untouched?.deploymentStatus).toBe("running");
+
+    // Now add an autoscaler-owned agent to the squad and re-run: it should be
+    // the one reclaimed, not the manual one.
+    const ownedId = await t.run(async (ctx) =>
+      ctx.db.insert("agents", {
+        companyId: untouched!.companyId,
+        spaceId,
+        squadId,
+        kind: "hermes",
+        name: "Auto Clone",
+        status: "online",
+        vmProvider: "cloudflare",
+        vmId: "vm-auto",
+        deploymentStatus: "running",
+        meta: { autoscaled: true },
+        createdAt: Date.now(),
+      }),
+    );
+    const res2 = await t.action(internal.agentOps.evaluateAutoscale, {});
+    expect(res2.scaled).toBe(1);
+    const owned = await owner.query(api.agents.get, { spaceId, agentId: ownedId as Id<"agents"> });
+    expect(owned?.deploymentStatus).toBe("stopped");
+    expect(owned?.status).toBe("offline");
+    const manualStillUp = await owner.query(api.agents.get, { spaceId, agentId });
+    expect(manualStillUp?.deploymentStatus).toBe("running");
+
+    // Cooldown: immediately re-evaluating should hold, not scale again.
+    const res3 = await t.action(internal.agentOps.evaluateAutoscale, {});
+    expect(res3.scaled).toBe(0);
+  });
+
   test("squadLoadSnapshot counts online agents and open/in-progress tasks scoped to the squad", async () => {
     const { t, owner, spaceId, agentId } = await setup();
     const squadId = (await owner.mutation(api.squads.create, {
@@ -382,5 +527,110 @@ describe("logs — live log streaming (feature 6)", () => {
     await expect(outsider.query(api.logs.tail, { spaceId, agentId })).rejects.toThrow(
       /not a member|Space not found/,
     );
+  });
+});
+
+describe("health — self-healing watchdog (feature 10)", () => {
+  test("watchdogCandidatesPage only surfaces offline hosted agents that aren't disabled or backing off", async () => {
+    const { t, owner, spaceId, agentId } = await setup();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, {
+        status: "offline",
+        vmProvider: "cloudflare",
+        vmId: "vm-1",
+      });
+    });
+    const page1 = await t.query(internal.health.watchdogCandidatesPage, { cursor: null });
+    expect(page1.candidates.map((a: { _id: unknown }) => a._id)).toContain(agentId);
+
+    // watchdogDisabled excludes it.
+    await owner.mutation(api.health.setWatchdogDisabled, { spaceId, agentId, disabled: true });
+    const page2 = await t.query(internal.health.watchdogCandidatesPage, { cursor: null });
+    expect(page2.candidates.map((a: { _id: unknown }) => a._id)).not.toContain(agentId);
+
+    // Re-enabling brings it back.
+    await owner.mutation(api.health.setWatchdogDisabled, { spaceId, agentId, disabled: false });
+    const page3 = await t.query(internal.health.watchdogCandidatesPage, { cursor: null });
+    expect(page3.candidates.map((a: { _id: unknown }) => a._id)).toContain(agentId);
+
+    // A future nextRestartAt (mid-backoff) excludes it too.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, { nextRestartAt: Date.now() + 60_000 });
+    });
+    const page4 = await t.query(internal.health.watchdogCandidatesPage, { cursor: null });
+    expect(page4.candidates.map((a: { _id: unknown }) => a._id)).not.toContain(agentId);
+  });
+
+  test("recordRestartOutcome applies exponential backoff and disables the watchdog past the attempt ceiling", async () => {
+    const { t, owner, spaceId, agentId } = await setup();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, { status: "offline", vmProvider: "cloudflare", vmId: "vm-1" });
+    });
+
+    await t.mutation(internal.health.recordRestartOutcome, { agentId, outcome: "restarted" });
+    let agent = await owner.query(api.agents.get, { spaceId, agentId });
+    expect(agent?.restartAttempts).toBe(1);
+    expect(agent?.nextRestartAt).toBeGreaterThan(Date.now());
+    expect(agent?.watchdogDisabled).toBeFalsy();
+    const firstBackoff = agent!.nextRestartAt! - agent!.lastRestartAt!;
+
+    await t.mutation(internal.health.recordRestartOutcome, { agentId, outcome: "failed", error: "boom" });
+    agent = await owner.query(api.agents.get, { spaceId, agentId });
+    expect(agent?.restartAttempts).toBe(2);
+    const secondBackoff = agent!.nextRestartAt! - agent!.lastRestartAt!;
+    expect(secondBackoff).toBeGreaterThan(firstBackoff); // exponential growth
+
+    // Drive it past the ceiling.
+    for (let i = 0; i < 5; i++) {
+      await t.mutation(internal.health.recordRestartOutcome, { agentId, outcome: "failed" });
+    }
+    agent = await owner.query(api.agents.get, { spaceId, agentId });
+    expect(agent?.watchdogDisabled).toBe(true);
+    expect(agent?.nextRestartAt).toBeUndefined();
+
+    // A "skipped_healthy" outcome (provider reports it's actually up) doesn't burn a backoff slot.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, { restartAttempts: 0, watchdogDisabled: false, nextRestartAt: undefined });
+    });
+    await t.mutation(internal.health.recordRestartOutcome, { agentId, outcome: "skipped_healthy" });
+    agent = await owner.query(api.agents.get, { spaceId, agentId });
+    expect(agent?.restartAttempts).toBe(0);
+  });
+
+  test("resetWatchdog clears backoff state and setWatchdogDisabled/resetWatchdog are admin-gated", async () => {
+    const { t, owner, spaceId, agentId } = await setup();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, {
+        restartAttempts: 4,
+        watchdogDisabled: true,
+        nextRestartAt: Date.now() + 60_000,
+      });
+    });
+    await owner.mutation(api.health.resetWatchdog, { spaceId, agentId });
+    const agent = await owner.query(api.agents.get, { spaceId, agentId });
+    expect(agent?.restartAttempts).toBe(0);
+    expect(agent?.watchdogDisabled).toBe(false);
+    expect(agent?.nextRestartAt).toBeUndefined();
+
+    const operatorId = "user_operator_watchdog";
+    await owner.mutation(api.spaces.addMember, { spaceId, userId: operatorId, role: "operator" });
+    const operator = t.withIdentity({ subject: operatorId, org_id: "org_ops" });
+    await expect(
+      operator.mutation(api.health.setWatchdogDisabled, { spaceId, agentId, disabled: true }),
+    ).rejects.toThrow(/Forbidden/);
+    await expect(
+      operator.mutation(api.health.resetWatchdog, { spaceId, agentId }),
+    ).rejects.toThrow(/Forbidden/);
+  });
+
+  test("watchdogTick is a no-op when the fleet worker isn't configured (no env vars in tests)", async () => {
+    const { t, spaceId, agentId } = await setup();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, { status: "offline", vmProvider: "cloudflare", vmId: "vm-1" });
+    });
+    await t.action(internal.health.watchdogTick, { cursor: null });
+    const agent = await t.run((ctx) => ctx.db.get(agentId));
+    // Nothing changed — unconfigured means the tick bails before touching anything.
+    expect(agent?.restartAttempts ?? 0).toBe(0);
   });
 });

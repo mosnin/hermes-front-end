@@ -37,9 +37,17 @@ export const PROVIDERS = v.union(
   v.literal("builtin"),
 );
 
+/** The known capability tag catalog, for populating UI pickers. */
+export const listKnown = query({
+  args: {},
+  handler: async () => KNOWN_CAPABILITIES,
+});
+
 // ---------------------------------------------------------------------------
 // Grants — RBAC'd CRUD (admin: tool access is a security-relevant surface).
 // ---------------------------------------------------------------------------
+
+const GRANTS_PAGE_CAP = 500; // defensive bound — grants are admin-authored, not user-generated, but never .collect() unbounded.
 
 /** All capability grants configured for a Space. */
 export const listGrants = query({
@@ -50,7 +58,7 @@ export const listGrants = query({
       .query("capabilityGrants")
       .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
       .order("desc")
-      .collect();
+      .take(GRANTS_PAGE_CAP);
   },
 });
 

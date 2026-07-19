@@ -5,13 +5,15 @@ import {
   action,
   internalQuery,
   internalMutation,
+  internalAction,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Doc } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
 import { recordWorkEvent } from "./lib/events";
 import { generateToken, sha256Hex } from "./lib/crypto";
-import { hostedAgentLimit } from "./lib/plans";
-import { cloudflareConfigured, spawnAgent } from "./lib/cloudflare";
+import { hostedAgentLimit, PLAN_LIMITS } from "./lib/plans";
+import { cloudflareConfigured, spawnAgent, terminateAgent } from "./lib/cloudflare";
 
 // ===========================================================================
 // Feature 7 — Remote config push. Desired (pendingConfig) vs applied
@@ -428,12 +430,9 @@ export const deployFromTemplate = action({
 });
 
 // ===========================================================================
-// Feature 8 — Squad autoscaling (config surface this cycle; evaluation engine
-// + cron wiring lands next cycle — see convex/tests/agentOps.test.ts for the
-// scaling-decision unit tests already in place against `decideScale`).
-// Cross-team request (integrator, crons.ts is shared): once evaluateAutoscale
-// lands, register `crons.interval("squad autoscale", { minutes: 5 },
-// internal.agentOps.evaluateAutoscale, {})`.
+// Feature 8 — Squad autoscaling: config surface (setSquadAutoscale) + the
+// pure decision function (decideScale) + the cron-driven evaluate/spawn/
+// terminate engine (evaluateAutoscale, below squadLoadSnapshot).
 // ===========================================================================
 
 export const setSquadAutoscale = mutation({
@@ -519,5 +518,321 @@ export const squadLoadSnapshot = internalQuery({
       tasksTodo.filter((t) => t.squadId === squadId).length +
       tasksInProgress.filter((t) => t.squadId === squadId).length;
     return { squad, onlineAgents: online, queueDepth };
+  },
+});
+
+// ===========================================================================
+// Feature 8 (cont'd) — the evaluate/spawn/terminate engine. `evaluateAutoscale`
+// is the cron entry point; it paginates every squad with autoscale.enabled,
+// applies `decideScale` against a fresh load snapshot, and — respecting
+// cooldownMinutes — provisions or terminates exactly one agent per squad per
+// tick. Deliberately does NOT touch fleet.ts (Team A's file): capacity
+// checking + insertion is reimplemented here as a system actor (no user
+// identity on a cron tick), same pattern as deployFromTemplate/
+// insertClonedAgent above. Scaled-up agents are tagged `meta.autoscaled` so
+// scale-down only ever reclaims agents the autoscaler itself created, never a
+// human-provisioned one.
+//
+// Cross-team request (integrator, crons.ts is shared): register
+//   crons.interval("squad autoscale", { minutes: 5 }, internal.agentOps.evaluateAutoscale, {})
+// ===========================================================================
+
+function hostedLimitForPlan(plan: string | undefined): number {
+  const p = plan === "team" || plan === "enterprise" ? plan : "free";
+  return PLAN_LIMITS[p].hostedAgents;
+}
+
+/** Every squad with autoscale enabled, one page at a time (system-wide cron sweep). */
+export const listAutoscaleSquadsPage = internalQuery({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query("squads")
+      .paginate({ numItems: 200, cursor: cursor ?? null });
+    return {
+      squads: page.page.filter((s) => s.autoscale?.enabled),
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
+
+/** Hosted-agent headroom for a Space against its plan, computed without a user identity. */
+export const hostedAgentCountForSpace = internalQuery({
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    const space = await ctx.db.get(spaceId);
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+      .collect();
+    const existing = agents.filter(
+      (a) => a.vmProvider && (a.deploymentStatus === "provisioning" || a.deploymentStatus === "running"),
+    ).length;
+    return { existing, limit: hostedLimitForPlan(space?.plan) };
+  },
+});
+
+/** Least-recently-active autoscaler-owned agent in a squad, i.e. the safest one to reclaim. */
+export const pickScaleDownCandidate = internalQuery({
+  args: { squadId: v.id("squads") },
+  handler: async (ctx, { squadId }) => {
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_squad", (q) => q.eq("squadId", squadId))
+      .take(500);
+    const candidates = agents.filter(
+      (a) =>
+        a.vmId &&
+        a.vmProvider &&
+        a.deploymentStatus === "running" &&
+        (a.meta as { autoscaled?: boolean } | undefined)?.autoscaled === true,
+    );
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => (a.lastHeartbeat ?? a.createdAt) - (b.lastHeartbeat ?? b.createdAt));
+    return candidates[0];
+  },
+});
+
+/** Provision one system-actor agent stamped from the squad's autoscale template. */
+export const provisionScaleAgent = internalMutation({
+  args: {
+    spaceId: v.id("spaces"),
+    squadId: v.id("squads"),
+    templateId: v.id("agentTemplates"),
+    name: v.string(),
+    tokenHash: v.string(),
+    vmId: v.optional(v.string()),
+    harness: v.optional(v.string()),
+    deploymentStatus: v.union(
+      v.literal("provisioning"),
+      v.literal("running"),
+      v.literal("failed"),
+    ),
+  },
+  handler: async (ctx, { spaceId, squadId, templateId, ...rest }) => {
+    const space = await ctx.db.get(spaceId);
+    if (!space) return null;
+    const template = await ctx.db.get(templateId);
+    const agentId = await ctx.db.insert("agents", {
+      companyId: space.companyId,
+      spaceId,
+      squadId,
+      kind: "hermes",
+      status: "pending",
+      vmProvider: "cloudflare",
+      templateId,
+      model: template?.suggestedModel,
+      systemPrompt: template?.systemPrompt,
+      toolsets: template?.toolsets,
+      harness: rest.harness ?? template?.harness,
+      meta: { autoscaled: true },
+      createdAt: Date.now(),
+      ...rest,
+    });
+    if (template) {
+      await ctx.db.patch(templateId, { installCount: (template.installCount ?? 0) + 1 });
+    }
+    await recordWorkEvent(ctx, {
+      companyId: space.companyId,
+      spaceId,
+      actorType: "system",
+      agentId,
+      category: "agent",
+      action: "autoscaled_up",
+      summary: `Autoscale provisioned ${rest.name} for squad load`,
+      payload: { squadId, templateId },
+    });
+    return agentId;
+  },
+});
+
+/** Reclaim one autoscaler-owned agent (already terminated on the provider side by the caller). */
+export const markScaleTerminated = internalMutation({
+  args: { agentId: v.id("agents") },
+  handler: async (ctx, { agentId }) => {
+    const agent = await ctx.db.get(agentId);
+    if (!agent) return;
+    await ctx.db.patch(agentId, { deploymentStatus: "stopped", status: "offline" });
+    await recordWorkEvent(ctx, {
+      companyId: agent.companyId,
+      spaceId: agent.spaceId,
+      actorType: "system",
+      agentId,
+      category: "agent",
+      action: "autoscaled_down",
+      summary: `Autoscale terminated ${agent.name} (queue slack)`,
+      payload: { squadId: agent.squadId },
+    });
+  },
+});
+
+/** Stamp a squad's autoscale bookkeeping (lastEvaluatedAt always; lastScaleAt/Direction only when it actually scaled). */
+export const recordAutoscaleEvaluation = internalMutation({
+  args: {
+    squadId: v.id("squads"),
+    direction: v.union(v.literal("up"), v.literal("down"), v.literal("hold")),
+    scaled: v.boolean(),
+  },
+  handler: async (ctx, { squadId, direction, scaled }) => {
+    const squad = await ctx.db.get(squadId);
+    if (!squad?.autoscale) return;
+    const now = Date.now();
+    await ctx.db.patch(squadId, {
+      autoscale: {
+        ...squad.autoscale,
+        lastEvaluatedAt: now,
+        ...(scaled ? { lastScaleAt: now, lastScaleDirection: direction } : {}),
+      },
+    });
+  },
+});
+
+/**
+ * Cron-safe evaluate/scale engine. Idempotent-ish per tick: cooldown is
+ * honored per-squad, and every squad advances by at most one agent per tick
+ * (steady, observable scaling rather than a thundering herd).
+ */
+export const evaluateAutoscale = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const configured = cloudflareConfigured();
+    let cursor: string | null = null;
+    let evaluated = 0;
+    let scaled = 0;
+
+    do {
+      const page: {
+        squads: Doc<"squads">[];
+        isDone: boolean;
+        continueCursor: string;
+      } = await ctx.runQuery(internal.agentOps.listAutoscaleSquadsPage, { cursor });
+
+      for (const squad of page.squads) {
+        const cfg = squad.autoscale;
+        if (!cfg?.enabled) continue;
+        const now = Date.now();
+        if (cfg.lastScaleAt && now - cfg.lastScaleAt < cfg.cooldownMinutes * 60_000) {
+          continue; // cooling down from the last scale event
+        }
+
+        const snap: { squad: Doc<"squads">; onlineAgents: number; queueDepth: number } | null =
+          await ctx.runQuery(internal.agentOps.squadLoadSnapshot, { squadId: squad._id });
+        if (!snap) continue;
+        evaluated++;
+
+        const decision = decideScale({
+          queueDepth: snap.queueDepth,
+          onlineAgents: snap.onlineAgents,
+          minAgents: cfg.minAgents,
+          maxAgents: cfg.maxAgents,
+          queueDepthPerAgent: cfg.queueDepthPerAgent,
+        });
+
+        if (decision === "hold") {
+          await ctx.runMutation(internal.agentOps.recordAutoscaleEvaluation, {
+            squadId: squad._id,
+            direction: "hold",
+            scaled: false,
+          });
+          continue;
+        }
+
+        if (decision === "up") {
+          if (!cfg.templateId) {
+            // Can't scale up without a template to stamp from — hold and let
+            // the operator wire one up via setSquadAutoscale.
+            await ctx.runMutation(internal.agentOps.recordAutoscaleEvaluation, {
+              squadId: squad._id,
+              direction: "hold",
+              scaled: false,
+            });
+            continue;
+          }
+          const cap: { existing: number; limit: number } = await ctx.runQuery(
+            internal.agentOps.hostedAgentCountForSpace,
+            { spaceId: squad.spaceId },
+          );
+          if (cap.existing >= cap.limit) {
+            await ctx.runMutation(internal.agentOps.recordAutoscaleEvaluation, {
+              squadId: squad._id,
+              direction: "hold",
+              scaled: false,
+            });
+            continue;
+          }
+
+          const name = `${squad.name} auto-${now.toString(36).slice(-5)}`;
+          const token = generateToken();
+          const tokenHash = await sha256Hex(token);
+          let vmId: string | undefined;
+          let status: "provisioning" | "running" | "failed" = "provisioning";
+          if (configured) {
+            try {
+              const res = await spawnAgent({
+                token,
+                controlPlaneUrl: controlPlaneUrl(),
+                name,
+                harness: cfg.harness,
+              });
+              vmId = res.vmId;
+              status = "running";
+            } catch {
+              status = "failed";
+            }
+          }
+          await ctx.runMutation(internal.agentOps.provisionScaleAgent, {
+            spaceId: squad.spaceId,
+            squadId: squad._id,
+            templateId: cfg.templateId,
+            name,
+            tokenHash,
+            vmId,
+            harness: cfg.harness,
+            deploymentStatus: status,
+          });
+          await ctx.runMutation(internal.agentOps.recordAutoscaleEvaluation, {
+            squadId: squad._id,
+            direction: "up",
+            scaled: true,
+          });
+          scaled++;
+        } else {
+          const candidate: Doc<"agents"> | null = await ctx.runQuery(
+            internal.agentOps.pickScaleDownCandidate,
+            { squadId: squad._id },
+          );
+          if (!candidate) {
+            // Nothing the autoscaler owns to reclaim (all agents were
+            // manually provisioned) — hold rather than touch human-managed
+            // capacity.
+            await ctx.runMutation(internal.agentOps.recordAutoscaleEvaluation, {
+              squadId: squad._id,
+              direction: "hold",
+              scaled: false,
+            });
+            continue;
+          }
+          if (configured && candidate.vmId) {
+            try {
+              await terminateAgent(candidate.vmId);
+            } catch {
+              // best-effort; still reclaim the row so the fleet count is accurate
+            }
+          }
+          await ctx.runMutation(internal.agentOps.markScaleTerminated, { agentId: candidate._id });
+          await ctx.runMutation(internal.agentOps.recordAutoscaleEvaluation, {
+            squadId: squad._id,
+            direction: "down",
+            scaled: true,
+          });
+          scaled++;
+        }
+      }
+
+      cursor = page.isDone ? null : page.continueCursor;
+    } while (cursor);
+
+    return { evaluated, scaled };
   },
 });

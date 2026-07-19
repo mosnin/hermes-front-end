@@ -21,8 +21,17 @@ per Space). Send it as a bearer token:
 Authorization: Bearer hk_xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-Keys can optionally be scoped with `rateLimitPerMinute` and `expiresAt` at
-mint time. A missing, malformed, revoked, or expired key returns `401`.
+Keys can optionally be scoped with `rateLimitPerMinute`, `expiresAt`, and
+`scopes` at mint time (see **Scopes** below). A missing, malformed, revoked,
+or expired key returns `401`.
+
+> **Cross-team note:** `apiKeys.scopes`/`expiresAt`/`rateLimitPerMinute` are
+> already enforced end-to-end by this API (`convex/http.ts`'s `gate()`), but
+> `apiKeys.create` (owned by the platform/settings team, `convex/apiKeys.ts`)
+> doesn't collect them from the mint UI yet — a key minted today is always
+> unscoped (full access, default rate limit, no expiry). Extending the mint
+> action/UI to accept `{ scopes?, rateLimitPerMinute?, expiresAt? }` is the
+> only piece left to make scoped keys mintable end-to-end.
 
 ## Envelope
 
@@ -58,71 +67,122 @@ X-RateLimit-Remaining: 0
 Every request (allowed or not) is also counted against a daily usage bucket
 per key, queryable via `GET /api/v1/usage`.
 
+## Scopes
+
+Every route declares a required scope (e.g. `tasks:write`). A key minted
+**without** an explicit `scopes` array is unrestricted — this keeps every key
+minted before scoped keys existed working unchanged. A key minted **with**
+`scopes` is strictly allow-listed: calling a route outside its scope list
+returns `403 { error: { code: "forbidden", message: "this key is not scoped
+for '<scope>'" } }` — checked before the rate limit is charged, so a rejected
+call never eats into your quota.
+
+| Scope | Routes |
+| --- | --- |
+| `agents:read` | `GET /api/v1/agents` |
+| `deploys:read` | `GET /api/v1/deploys` |
+| `tasks:read` | `GET /api/v1/tasks` |
+| `tasks:write` | `POST /api/v1/tasks` |
+| `messages:write` | `POST /api/v1/messages` |
+| `workflows:read` | `GET /api/v1/workflows`, `GET /api/v1/workflows/runs` |
+| `workflows:write` | `POST /api/v1/workflows/run` |
+| `approvals:read` | `GET /api/v1/approvals` |
+| `approvals:write` | `POST /api/v1/approvals/{id}/decide`, `POST /api/v1/approvals/bulk-decide` |
+| `usage:read` | `GET /api/v1/usage` |
+
+## Pagination
+
+Every `list*`-style `GET` route (`agents`, `deploys`, `tasks`, `workflows`,
+`workflows/runs`, `approvals`) is cursor-paginated: it returns `cursor`
+(a string, or `null` once exhausted) and `hasMore` alongside its data array.
+Pass `?limit=N` (max/default `50`) and `?cursor=<opaque string>` (URL-encode
+it) to page forward:
+
+```json
+{ "data": { "tasks": [ /* up to `limit` rows */ ], "cursor": "eyJ...", "hasMore": true } }
+```
+
+Fetch the next page with `?cursor=eyJ...`; stop once `hasMore` is `false`.
+The SDK's list methods accept `{ cursor, limit }` and return the same shape —
+see `sdk/README.md`.
+
 ---
 
 ## Endpoints
 
 ### `GET /api/v1/agents`
-List agents in the key's Space.
+List agents in the key's Space. **Scope** `agents:read`. Paginated.
 
-**Response** `data.agents: Array<{ id, name, status, kind, framework?, capabilities, deploymentStatus? }>`
+**Response** `data: { agents: Array<{ id, name, status, kind, framework?, capabilities, deploymentStatus? }>, cursor, hasMore }`
 
 ### `GET /api/v1/deploys`
 List fleet agents provisioned onto a VM (a subset of `agents` — those with a
-`vmId` or `deploymentStatus`).
+`vmId` or `deploymentStatus`). **Scope** `deploys:read`. Paginated.
 
-**Response** `data.deploys: Array<{ id, name, vmProvider?, vmId?, region?, deploymentStatus?, harness?, status }>`
+**Response** `data: { deploys: Array<{ id, name, vmProvider?, vmId?, region?, deploymentStatus?, harness?, status }>, cursor, hasMore }`
 
 ### `GET /api/v1/tasks`
-List tasks in the Space.
+List tasks in the Space. **Scope** `tasks:read`. Paginated.
 
-**Response** `data.tasks: Array<{ id, title, status, priority }>`
+**Response** `data: { tasks: Array<{ id, title, status, priority }>, cursor, hasMore }`
 
 ### `POST /api/v1/tasks`
-Create a task.
+Create a task. **Scope** `tasks:write`.
 
 **Body** `{ title: string, description?: string }`
 **Response** `data: { id }` — `201`
 
 ### `POST /api/v1/messages`
 Post a message, creating a new thread (or reusing context — see SDK notes).
+**Scope** `messages:write`.
 
 **Body** `{ content: string, threadTitle?: string }`
 **Response** `data: { threadId }` — `201`
 
 ### `GET /api/v1/workflows`
-List workflows in the Space.
+List workflows in the Space. **Scope** `workflows:read`. Paginated.
 
-**Response** `data.workflows: Array<{ id, name, enabled, stepCount, updatedAt }>`
+**Response** `data: { workflows: Array<{ id, name, enabled, stepCount, updatedAt }>, cursor, hasMore }`
 
 ### `POST /api/v1/workflows/run`
-Start a workflow run.
+Start a workflow run. **Scope** `workflows:write`.
 
 **Body** `{ workflowId: string }`
 **Response** `data: { runId }` — `201`
 
 ### `GET /api/v1/workflows/runs?workflowId=...`
-List recent workflow runs (most recent 100), optionally scoped to one
-workflow via the `workflowId` query param.
+List recent workflow runs, optionally scoped to one workflow via the
+`workflowId` query param. **Scope** `workflows:read`. Paginated (the
+`workflowId` filter is applied client-side of the page read, so a page may
+come back sparse before `hasMore` goes `false` — keep following `cursor`).
 
-**Response** `data.runs: Array<{ id, workflowId, status, startedAt, finishedAt? }>`
+**Response** `data: { runs: Array<{ id, workflowId, status, startedAt, finishedAt? }>, cursor, hasMore }`
 
 ### `GET /api/v1/approvals?status=pending|approved|rejected`
-List approval gates in the Space, optionally filtered by status.
+List approval gates in the Space, optionally filtered by status. **Scope**
+`approvals:read`. Paginated.
 
-**Response** `data.approvals: Array<{ id, kind, title, detail?, status, riskLevel?, createdAt, decidedAt? }>`
+**Response** `data: { approvals: Array<{ id, kind, title, detail?, status, riskLevel?, preview?, deliveredChannels?, createdAt, decidedAt? }>, cursor, hasMore }`
 
 ### `POST /api/v1/approvals/{id}/decide`
-Approve or reject a pending gate.
+Approve or reject a pending gate. **Scope** `approvals:write`.
 
 **Body** `{ approve: boolean }`
 **Response** `data: { ok: true }`, or `400` if the approval is not pending or
 doesn't belong to this key's Space.
 
+### `POST /api/v1/approvals/bulk-decide`
+Approve or reject several pending gates in one call. **Scope**
+`approvals:write`. Best-effort per row — an already-decided or cross-Space id
+lands in `failed` without aborting the rest (capped at 100 ids/request).
+
+**Body** `{ approvalIds: string[], approve: boolean }`
+**Response** `data: { succeeded: number, failed: string[] }`
+
 ### `GET /api/v1/usage`
 Usage for the calling key: today's request/error totals + a per-route
 breakdown, plus the current minute's count (useful for backing off before
-hitting the rate limit).
+hitting the rate limit). **Scope** `usage:read`.
 
 **Response**
 ```json
