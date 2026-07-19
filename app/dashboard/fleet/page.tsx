@@ -9,6 +9,7 @@ import { PagePath } from "@/components/page-header";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { Cloud, KeyRound, Plus, RefreshCw, Rocket, Trash2 } from "@/components/icons";
+import { TemplatesPanel } from "@/components/fleet/TemplatesPanel";
 
 const deployTone = {
   provisioning: "yellow",
@@ -223,6 +224,12 @@ export default function FleetPage() {
           )}
         </Card>
       </div>
+
+      {spaceId && (
+        <div className="mt-4">
+          <TemplatesPanel spaceId={spaceId} />
+        </div>
+      )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Deploy agents">
         <div className="space-y-4">

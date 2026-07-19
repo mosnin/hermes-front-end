@@ -1,0 +1,208 @@
+# Cadre Public API (v1)
+
+REST surface for driving the Cadre control plane programmatically — agents,
+fleet deploys, tasks, messages, workflows, and approvals. Routes are defined
+in `convex/http.ts`; the internal query/mutation implementations live in
+`convex/publicApi.ts` and `convex/approvals.ts`. A typed TypeScript client
+ships in `sdk/` (`sdk/README.md`).
+
+## Base URL
+
+`https://<your-deployment>.convex.site` — your Convex deployment's HTTP
+Actions URL (find it in the Convex dashboard, or `CONVEX_SITE_URL` in your
+env). The hosted Cadre control plane is reachable at `https://api.cadre.to`.
+
+## Authentication
+
+Mint an API key from **Dashboard → Developer** (`convex/apiKeys.ts`, one key
+per Space). Send it as a bearer token:
+
+```
+Authorization: Bearer hk_xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Keys can optionally be scoped with `rateLimitPerMinute` and `expiresAt` at
+mint time. A missing, malformed, revoked, or expired key returns `401`.
+
+## Envelope
+
+Every response is JSON with one of two shapes:
+
+**Success**
+```json
+{ "data": { "...": "..." } }
+```
+
+**Failure**
+```json
+{ "error": { "code": "bad_request", "message": "title required" } }
+```
+
+Common error codes: `unauthorized` (401), `bad_request` (400), `not_found`
+(404), `rate_limited` (429), `internal` (500).
+
+## Rate limiting
+
+Each key is limited to `rateLimitPerMinute` requests/minute (default **60**),
+tracked in a fixed one-minute window per key. Exceeding it returns:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 0
+
+{ "error": { "code": "rate_limited", "message": "rate limit: 60/minute" } }
+```
+
+Every request (allowed or not) is also counted against a daily usage bucket
+per key, queryable via `GET /api/v1/usage`.
+
+---
+
+## Endpoints
+
+### `GET /api/v1/agents`
+List agents in the key's Space.
+
+**Response** `data.agents: Array<{ id, name, status, kind, framework?, capabilities, deploymentStatus? }>`
+
+### `GET /api/v1/deploys`
+List fleet agents provisioned onto a VM (a subset of `agents` — those with a
+`vmId` or `deploymentStatus`).
+
+**Response** `data.deploys: Array<{ id, name, vmProvider?, vmId?, region?, deploymentStatus?, harness?, status }>`
+
+### `GET /api/v1/tasks`
+List tasks in the Space.
+
+**Response** `data.tasks: Array<{ id, title, status, priority }>`
+
+### `POST /api/v1/tasks`
+Create a task.
+
+**Body** `{ title: string, description?: string }`
+**Response** `data: { id }` — `201`
+
+### `POST /api/v1/messages`
+Post a message, creating a new thread (or reusing context — see SDK notes).
+
+**Body** `{ content: string, threadTitle?: string }`
+**Response** `data: { threadId }` — `201`
+
+### `GET /api/v1/workflows`
+List workflows in the Space.
+
+**Response** `data.workflows: Array<{ id, name, enabled, stepCount, updatedAt }>`
+
+### `POST /api/v1/workflows/run`
+Start a workflow run.
+
+**Body** `{ workflowId: string }`
+**Response** `data: { runId }` — `201`
+
+### `GET /api/v1/workflows/runs?workflowId=...`
+List recent workflow runs (most recent 100), optionally scoped to one
+workflow via the `workflowId` query param.
+
+**Response** `data.runs: Array<{ id, workflowId, status, startedAt, finishedAt? }>`
+
+### `GET /api/v1/approvals?status=pending|approved|rejected`
+List approval gates in the Space, optionally filtered by status.
+
+**Response** `data.approvals: Array<{ id, kind, title, detail?, status, riskLevel?, createdAt, decidedAt? }>`
+
+### `POST /api/v1/approvals/{id}/decide`
+Approve or reject a pending gate.
+
+**Body** `{ approve: boolean }`
+**Response** `data: { ok: true }`, or `400` if the approval is not pending or
+doesn't belong to this key's Space.
+
+### `GET /api/v1/usage`
+Usage for the calling key: today's request/error totals + a per-route
+breakdown, plus the current minute's count (useful for backing off before
+hitting the rate limit).
+
+**Response**
+```json
+{
+  "data": {
+    "today": { "requests": 142, "errors": 3, "routes": { "GET /api/v1/agents": 90, "...": 1 } },
+    "currentMinute": { "requests": 4 }
+  }
+}
+```
+
+---
+
+## One-click approval links
+
+`GET /api/v1/approvals/token/{token}` — no API key required. This is the
+route behind the "Approve"/"Reject" links delivered by email or webhook when
+an approval fires (feature: approval inbox everywhere). The token:
+
+- Is single-use — burned (`usedAt` set) on first successful redemption.
+- Is short-lived — matches the approval's `expiresAt` (default 24h).
+- Is bound to one decision (`approve` or `deny`) unless minted as `either`, in
+  which case pass `?action=approve` or `?action=deny`.
+
+By default it responds with a small HTML confirmation page (meant to be
+opened directly from an email client or browser). Pass `?format=json` or send
+`Accept: application/json` for a machine-readable response instead:
+
+```json
+{ "data": { "approvalId": "...", "decision": "approve" } }
+```
+
+or on failure (already used, expired, wrong action):
+
+```json
+{ "error": { "code": "token_invalid", "message": "token already used" } }
+```
+
+## Delivery channels (email + webhook)
+
+Each Space member configures their own approval delivery channels from
+**Dashboard → Approvals → Notifications** (`convex/notifications.ts`):
+
+- **Email** — pluggable provider; set `EMAIL_PROVIDER_URL` +
+  `EMAIL_PROVIDER_API_KEY` (and optionally `EMAIL_FROM`) to enable real
+  sends. Without them, delivery attempts no-op and are recorded as a
+  `workEvent` for observability — approvals still work via the in-app inbox
+  and public API.
+- **Webhook** — POSTs a JSON payload to the configured URL. If a signing
+  secret is set, the request carries `X-Cadre-Signature: sha256=<hmac>`
+  (HMAC-SHA256 over the raw JSON body) so receivers can verify authenticity:
+
+  ```json
+  {
+    "type": "approval.requested",
+    "approvalId": "...",
+    "title": "...",
+    "detail": "...",
+    "riskLevel": "high",
+    "preview": { "before": "...", "after": "..." },
+    "approveUrl": "https://.../api/v1/approvals/token/apt_...",
+    "denyUrl": "https://.../api/v1/approvals/token/apt_...",
+    "ts": 1737331200000
+  }
+  ```
+
+## Connector log ingestion
+
+`POST /connector/logs` (agent-token authenticated, not API-key) accepts batches
+of structured log lines from a deployed agent/connector: `{ lines: [{ level,
+message, source?, seq?, meta?, ts? }] }`, capped at 200 lines/request. Backs
+the agent detail log pane (`convex/logs.ts`).
+
+## SDK
+
+```ts
+import { CadreClient } from "@/sdk/src";
+
+const cadre = new CadreClient({ apiKey: process.env.CADRE_API_KEY! });
+const { agents } = await cadre.agents.list();
+```
+
+See `sdk/README.md` for the full client reference.

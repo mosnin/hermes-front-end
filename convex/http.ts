@@ -123,6 +123,73 @@ http.route({
   }),
 });
 
+// POST /connector/logs — an agent (or the fleet worker on its behalf) ships a
+// batch of log lines. Serviced for Team B/agentOps: wires straight into
+// internal.logs.ingestBatch the same way /connector/activity feeds
+// internal.activity.append; tenancy (companyId/spaceId/agentId) comes from the
+// token-authenticated agent, never from the request body.
+http.route({
+  path: "/connector/logs",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    const lines = Array.isArray(body.lines) ? body.lines : [];
+    if (!lines.length) return json({ error: "lines required" }, 400);
+    const VALID_LEVELS = new Set(["debug", "info", "warn", "error"]);
+    if (lines.some((l: any) => !l || typeof l.message !== "string" || !VALID_LEVELS.has(l.level))) {
+      return json({ error: "each line requires level (debug|info|warn|error) and message" }, 400);
+    }
+    try {
+      const res = await ctx.runMutation(internal.logs.ingestBatch, {
+        companyId: agent.companyId,
+        spaceId: agent.spaceId,
+        agentId: agent._id,
+        lines,
+      });
+      return json({ ok: true, ...res });
+    } catch (e) {
+      return json({ error: "invalid log line", detail: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  }),
+});
+
+// POST /connector/config/poll — a deployed agent asks whether a config newer
+// than what it has applied is pending (Team B's remote-config protocol; see
+// convex/agentOps.ts). Tenancy comes from the token-authenticated agent.
+http.route({
+  path: "/connector/config/poll",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const pending = await ctx.runQuery(internal.agentOps.pollPendingConfig, {
+      agentId: agent._id,
+    });
+    return json({ ok: true, pending });
+  }),
+});
+
+// POST /connector/config/ack — the agent confirms it applied config {version}.
+http.route({
+  path: "/connector/config/ack",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (typeof body.version !== "number") {
+      return json({ error: "version (number) required" }, 400);
+    }
+    const res = await ctx.runMutation(internal.agentOps.ackConfig, {
+      agentId: agent._id,
+      version: body.version,
+    });
+    return json(res);
+  }),
+});
+
 http.route({
   path: "/connector/message",
   method: "POST",
@@ -930,33 +997,109 @@ http.route({
 });
 
 // ===========================================================================
-// Public REST API — authenticated by an API key (hk_...) minted in Developer.
+// Public REST API v1 — authenticated by an API key (hk_...) minted in
+// Developer settings (convex/apiKeys.ts). Consistent JSON envelope:
+//   success: { data: <payload> }
+//   failure: { error: { code, message } }
+// Every route is rate-limited per key (fixed window, apiUsage table) and
+// counted for the usage endpoint. `docs/API.md` + `sdk/` are the client-facing
+// reference for this surface — keep them in sync with routes added here.
 // ===========================================================================
+
+type ApiAuth = {
+  spaceId: Id<"spaces">;
+  companyId: string;
+  apiKeyId: Id<"apiKeys">;
+  rateLimitPerMinute?: number;
+};
+
+function apiError(code: string, message: string, status: number) {
+  return json({ error: { code, message } }, status);
+}
+function apiOk(data: unknown, status = 200) {
+  return json({ data }, status);
+}
 
 async function authApiKey(
   ctx: { runQuery: any; runMutation: any },
   request: Request,
-): Promise<{ spaceId: Id<"spaces">; companyId: string } | null> {
+): Promise<ApiAuth | null> {
   const header = request.headers.get("Authorization") ?? "";
   const key = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (!key.startsWith("hk_")) return null;
   const keyHash = await sha256Hex(key);
   const row = await ctx.runQuery(internal.apiKeys.byHash, { keyHash });
   if (!row || row.revoked) return null;
+  if (row.expiresAt && row.expiresAt < Date.now()) return null;
   await ctx.runMutation(internal.publicApi.touchKey, { keyId: row._id });
-  return { spaceId: row.spaceId, companyId: row.companyId };
+  return {
+    spaceId: row.spaceId,
+    companyId: row.companyId,
+    apiKeyId: row._id,
+    rateLimitPerMinute: row.rateLimitPerMinute,
+  };
+}
+
+/**
+ * Auth + rate-limit gate shared by every /api/v1/* handler. Returns either a
+ * resolved `ApiAuth` to proceed with, or a ready-to-return error Response.
+ */
+async function gate(
+  ctx: { runQuery: any; runMutation: any },
+  request: Request,
+  route: string,
+): Promise<ApiAuth | Response> {
+  const auth = await authApiKey(ctx, request);
+  if (!auth) return apiError("unauthorized", "missing or invalid API key", 401);
+  const rl = await ctx.runMutation(internal.publicApi.recordRequest, {
+    apiKeyId: auth.apiKeyId,
+    companyId: auth.companyId,
+    spaceId: auth.spaceId,
+    route,
+    limitPerMinute: auth.rateLimitPerMinute,
+  });
+  if (!rl.allowed) {
+    return new Response(
+      JSON.stringify({
+        error: { code: "rate_limited", message: `rate limit: ${rl.limit}/minute` },
+      }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "60",
+          "X-RateLimit-Limit": String(rl.limit),
+          "X-RateLimit-Remaining": "0",
+        },
+      },
+    );
+  }
+  return auth;
 }
 
 http.route({
   path: "/api/v1/agents",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await authApiKey(ctx, request);
-    if (!auth) return unauthorized();
+    const auth = await gate(ctx, request, "GET /api/v1/agents");
+    if (auth instanceof Response) return auth;
     const agents = await ctx.runQuery(internal.publicApi.listAgents, {
       spaceId: auth.spaceId,
     });
-    return json({ agents });
+    return apiOk({ agents });
+  }),
+});
+
+http.route({
+  path: "/api/v1/deploys",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "GET /api/v1/deploys");
+    if (auth instanceof Response) return auth;
+    const deploys = await ctx.runQuery(internal.publicApi.listDeploys, {
+      spaceId: auth.spaceId,
+    });
+    return apiOk({ deploys });
   }),
 });
 
@@ -964,12 +1107,12 @@ http.route({
   path: "/api/v1/tasks",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await authApiKey(ctx, request);
-    if (!auth) return unauthorized();
+    const auth = await gate(ctx, request, "GET /api/v1/tasks");
+    if (auth instanceof Response) return auth;
     const tasks = await ctx.runQuery(internal.publicApi.listTasks, {
       spaceId: auth.spaceId,
     });
-    return json({ tasks });
+    return apiOk({ tasks });
   }),
 });
 
@@ -977,17 +1120,17 @@ http.route({
   path: "/api/v1/tasks",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const auth = await authApiKey(ctx, request);
-    if (!auth) return unauthorized();
+    const auth = await gate(ctx, request, "POST /api/v1/tasks");
+    if (auth instanceof Response) return auth;
     const body = await request.json().catch(() => ({}));
-    if (!body.title) return json({ error: "title required" }, 400);
+    if (!body.title) return apiError("bad_request", "title required", 400);
     const id = await ctx.runMutation(internal.publicApi.createTask, {
       spaceId: auth.spaceId,
       companyId: auth.companyId,
       title: String(body.title),
       description: body.description,
     });
-    return json({ id });
+    return apiOk({ id }, 201);
   }),
 });
 
@@ -995,17 +1138,30 @@ http.route({
   path: "/api/v1/messages",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const auth = await authApiKey(ctx, request);
-    if (!auth) return unauthorized();
+    const auth = await gate(ctx, request, "POST /api/v1/messages");
+    if (auth instanceof Response) return auth;
     const body = await request.json().catch(() => ({}));
-    if (!body.content) return json({ error: "content required" }, 400);
+    if (!body.content) return apiError("bad_request", "content required", 400);
     const res = await ctx.runMutation(internal.publicApi.sendMessage, {
       spaceId: auth.spaceId,
       companyId: auth.companyId,
       content: String(body.content),
       threadTitle: body.threadTitle,
     });
-    return json(res);
+    return apiOk(res, 201);
+  }),
+});
+
+http.route({
+  path: "/api/v1/workflows",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "GET /api/v1/workflows");
+    if (auth instanceof Response) return auth;
+    const workflows = await ctx.runQuery(internal.publicApi.listWorkflows, {
+      spaceId: auth.spaceId,
+    });
+    return apiOk({ workflows });
   }),
 });
 
@@ -1013,19 +1169,155 @@ http.route({
   path: "/api/v1/workflows/run",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const auth = await authApiKey(ctx, request);
-    if (!auth) return unauthorized();
+    const auth = await gate(ctx, request, "POST /api/v1/workflows/run");
+    if (auth instanceof Response) return auth;
     const body = await request.json().catch(() => ({}));
-    if (!body.workflowId) return json({ error: "workflowId required" }, 400);
+    if (!body.workflowId) return apiError("bad_request", "workflowId required", 400);
     try {
       const runId = await ctx.runMutation(internal.workflows.startFromTrigger, {
         workflowId: body.workflowId as Id<"workflows">,
         trigger: "api",
       });
-      return json({ runId });
+      return apiOk({ runId }, 201);
     } catch {
-      return json({ error: "invalid workflowId" }, 400);
+      return apiError("bad_request", "invalid workflowId", 400);
     }
+  }),
+});
+
+http.route({
+  path: "/api/v1/workflows/runs",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "GET /api/v1/workflows/runs");
+    if (auth instanceof Response) return auth;
+    const url = new URL(request.url);
+    const workflowIdParam = url.searchParams.get("workflowId");
+    const runs = await ctx.runQuery(internal.publicApi.listWorkflowRuns, {
+      spaceId: auth.spaceId,
+      workflowId: workflowIdParam ? (workflowIdParam as Id<"workflows">) : undefined,
+    });
+    return apiOk({ runs });
+  }),
+});
+
+http.route({
+  path: "/api/v1/approvals",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "GET /api/v1/approvals");
+    if (auth instanceof Response) return auth;
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status") ?? undefined;
+    const approvals = await ctx.runQuery(internal.approvals.listForApi, {
+      spaceId: auth.spaceId,
+      status,
+    });
+    return apiOk({ approvals });
+  }),
+});
+
+// POST /api/v1/approvals/{id}/decide — body { approve: boolean }.
+http.route({
+  pathPrefix: "/api/v1/approvals/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const rest = url.pathname.slice("/api/v1/approvals/".length);
+    const match = rest.match(/^([^/]+)\/decide$/);
+    if (!match) return apiError("not_found", "unknown route", 404);
+    const auth = await gate(ctx, request, "POST /api/v1/approvals/:id/decide");
+    if (auth instanceof Response) return auth;
+    const body = await request.json().catch(() => ({}));
+    if (typeof body.approve !== "boolean") {
+      return apiError("bad_request", "approve (boolean) required", 400);
+    }
+    try {
+      await ctx.runMutation(internal.approvals.decideForApi, {
+        spaceId: auth.spaceId,
+        companyId: auth.companyId,
+        approvalId: match[1] as Id<"approvals">,
+        approve: body.approve,
+      });
+      return apiOk({ ok: true });
+    } catch (e) {
+      return apiError("bad_request", e instanceof Error ? e.message : String(e), 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/api/v1/usage",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "GET /api/v1/usage");
+    if (auth instanceof Response) return auth;
+    const usage = await ctx.runQuery(internal.publicApi.usageSummary, {
+      apiKeyId: auth.apiKeyId,
+    });
+    return apiOk(usage);
+  }),
+});
+
+// ===========================================================================
+// One-click approval links (feature 19) — signed short-lived single-use
+// tokens minted by approvals.issueTokensAndDeliver. No API key or auth cookie
+// needed: the token itself IS the credential, hashed at rest and burned on
+// first use. Reachable from an email/webhook link, so this responds with a
+// small HTML confirmation page by default (JSON via ?format=json).
+// ===========================================================================
+
+function approvalResultPage(
+  ok: boolean,
+  message: string,
+  title?: string,
+): Response {
+  const html = `<!doctype html><html><head><meta charset="utf-8"/>
+<title>Cadre approvals</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;background:#0a0a0a;color:#eee;
+display:grid;place-items:center;min-height:100vh;margin:0;padding:24px;}
+.card{max-width:420px;text-align:center;border:1px solid #262626;border-radius:20px;
+padding:32px;background:#111;}
+h1{font-size:18px;margin:0 0 8px;color:${ok ? "#34d399" : "#f87171"};}
+p{color:#a3a3a3;font-size:14px;line-height:1.5;margin:0;}
+</style></head>
+<body><div class="card"><h1>${ok ? "✓ " : "✕ "}${message}</h1>
+${title ? `<p>${title}</p>` : ""}</div></body></html>`;
+  return new Response(html, {
+    status: ok ? 200 : 400,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+
+http.route({
+  pathPrefix: "/api/v1/approvals/token/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const token = url.pathname.slice("/api/v1/approvals/token/".length);
+    const wantsJson =
+      url.searchParams.get("format") === "json" ||
+      (request.headers.get("Accept") ?? "").includes("application/json");
+    const override = url.searchParams.get("action");
+    if (!token) {
+      return wantsJson ? apiError("bad_request", "token required", 400) : approvalResultPage(false, "Missing token");
+    }
+    const result = await ctx.runAction(internal.approvals.decideByToken, {
+      token,
+      override: override === "approve" || override === "deny" ? override : undefined,
+    });
+    if (!result.ok) {
+      return wantsJson
+        ? apiError("token_invalid", result.error, 400)
+        : approvalResultPage(false, result.error);
+    }
+    const message =
+      result.decision === "approve" ? "Approved" : "Rejected";
+    return wantsJson
+      ? apiOk({ approvalId: result.approvalId, decision: result.decision })
+      : approvalResultPage(true, message, result.title);
   }),
 });
 

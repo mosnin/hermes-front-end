@@ -1,10 +1,21 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Card } from "@/components/ui";
+import { Id } from "@/convex/_generated/dataModel";
+import { Badge, Button, Card, Input, Toggle } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Activity, AlertTriangle, DollarSign, Radio, Zap } from "@/components/icons";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  DollarSign,
+  Power,
+  Radio,
+  Zap,
+} from "@/components/icons";
 
 function usd(n: number): string {
   if (n >= 1) return `$${n.toFixed(2)}`;
@@ -210,6 +221,418 @@ export default function CostPage() {
           )}
         </Card>
       </div>
+
+      <CostControlsSection />
+      <PnlSection />
     </div>
+  );
+}
+
+// =============================================================================
+// Cost controls to the metal (feature 18): idle-hibernation policy, hard
+// spend caps, and per-agent P&L.
+// =============================================================================
+
+type CostPolicy = {
+  hibernationEnabled?: boolean;
+  idleHibernateMinutes?: number;
+  hardCapUsd?: number;
+  hardCapAction?: "pause" | "stop_vms";
+} | null;
+
+type IdleAgent = {
+  _id: Id<"agents">;
+  name: string;
+  idleState: "active" | "idle" | "hibernated";
+  lastWorkAt: number | null;
+  hibernatedAt: number | null;
+  hibernationExempt: boolean;
+  spendCapUsd: number | null;
+  deploymentStatus: string | null;
+};
+
+function timeAgo(ts: number | null): string {
+  if (!ts) return "never";
+  const mins = Math.round((Date.now() - ts) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
+
+function CostControlsSection() {
+  const { spaceId, role } = useActiveSpace();
+  const canManage = role === "admin" || role === "owner";
+  const canOperate = role === "operator" || canManage;
+
+  const policy = useQuery(api.costs.getCostPolicy, spaceId ? { spaceId } : "skip") as
+    | CostPolicy
+    | undefined;
+  const fleet = useQuery(api.costs.fleetIdleStatus, spaceId ? { spaceId } : "skip") as
+    | IdleAgent[]
+    | undefined;
+
+  const setPolicy = useMutation(api.costs.setCostPolicy);
+  const wake = useMutation(api.costs.wakeAgent);
+  const setExempt = useMutation(api.costs.setHibernationExempt);
+  const setAgentCap = useMutation(api.costs.setAgentSpendCap);
+
+  const [idleMinutes, setIdleMinutes] = useState("30");
+  const [hardCap, setHardCap] = useState("");
+
+  const hibernationEnabled = policy?.hibernationEnabled ?? false;
+  const hardCapAction = policy?.hardCapAction ?? "pause";
+
+  return (
+    <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      <Card>
+        <h2 className="mb-1 font-semibold">Idle hibernation</h2>
+        <p className="mb-3 text-xs text-muted">
+          Hosted agents idle past the threshold are marked idle, then hibernated (VM stopped) at
+          2× the threshold. Exempt agents are never touched.
+        </p>
+        <div className="space-y-3">
+          <Toggle
+            checked={hibernationEnabled}
+            onChange={(v) => spaceId && setPolicy({ spaceId, hibernationEnabled: v })}
+            label="Enable idle hibernation"
+          />
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={5}
+              value={idleMinutes}
+              onChange={(e) => setIdleMinutes(e.target.value)}
+              className="w-24"
+              disabled={!canManage}
+            />
+            <span className="text-sm text-muted">minutes idle before marking idle</span>
+            {canManage && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  spaceId &&
+                  setPolicy({ spaceId, idleHibernateMinutes: Math.max(5, Number(idleMinutes) || 30) })
+                }
+              >
+                Save
+              </Button>
+            )}
+          </div>
+          {!canManage && (
+            <p className="text-xs text-muted">Admin role required to change cost policy.</p>
+          )}
+        </div>
+
+        <div className="mt-4 border-t border-border pt-4">
+          <p className="mb-2 text-sm font-medium">Hosted fleet idle status</p>
+          {fleet === undefined ? (
+            <p className="text-sm text-muted">Loading…</p>
+          ) : fleet.length === 0 ? (
+            <p className="text-sm text-muted">No hosted agents in this Space.</p>
+          ) : (
+            <div className="space-y-2">
+              {fleet.map((a) => (
+                <div
+                  key={a._id}
+                  className="flex items-center justify-between rounded-lg border border-border p-2 text-sm"
+                >
+                  <div>
+                    <p className="font-medium">{a.name}</p>
+                    <p className="text-xs text-muted">
+                      last work {timeAgo(a.lastWorkAt)}
+                      {a.hibernationExempt && " · exempt"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      tone={a.idleState === "active" ? "green" : a.idleState === "idle" ? "yellow" : "red"}
+                    >
+                      {a.idleState}
+                    </Badge>
+                    {canOperate && a.idleState !== "active" && (
+                      <button
+                        onClick={() => spaceId && wake({ spaceId, agentId: a._id })}
+                        className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-foreground"
+                        title="Wake"
+                      >
+                        <Power className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {canOperate && (
+                      <button
+                        onClick={() =>
+                          spaceId && setExempt({ spaceId, agentId: a._id, exempt: !a.hibernationExempt })
+                        }
+                        className="text-xs text-muted hover:text-foreground"
+                      >
+                        {a.hibernationExempt ? "un-exempt" : "exempt"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <h2 className="mb-1 font-semibold">Hard spend cap</h2>
+        <p className="mb-3 text-xs text-muted">
+          When month-to-date spend reaches the cap, autonomy is paused and — if set to "stop
+          VMs" — every hosted agent in this Space is stopped.
+        </p>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted">$</span>
+            <Input
+              type="number"
+              min={0}
+              value={hardCap || (policy?.hardCapUsd ? String(policy.hardCapUsd) : "")}
+              onChange={(e) => setHardCap(e.target.value)}
+              placeholder="0 = no cap"
+              className="w-32"
+              disabled={!canManage}
+            />
+            <span className="text-sm text-muted">/ month</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm">
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                checked={hardCapAction === "pause"}
+                disabled={!canManage}
+                onChange={() => spaceId && setPolicy({ spaceId, hardCapAction: "pause" })}
+              />
+              Pause autonomy only
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                checked={hardCapAction === "stop_vms"}
+                disabled={!canManage}
+                onChange={() => spaceId && setPolicy({ spaceId, hardCapAction: "stop_vms" })}
+              />
+              Pause + stop hosted VMs
+            </label>
+          </div>
+          {canManage && (
+            <Button
+              variant="outline"
+              onClick={() => spaceId && setPolicy({ spaceId, hardCapUsd: Math.max(0, Number(hardCap) || 0) })}
+            >
+              Save cap
+            </Button>
+          )}
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              This is enforcement against tracked usage cost, separate from the Convex-cost
+              estimate above. Raise the cap here (or in Space settings) to resume after a stop.
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-4 border-t border-border pt-4">
+          <p className="mb-2 text-sm font-medium">Per-agent spend caps</p>
+          {fleet === undefined ? (
+            <p className="text-sm text-muted">Loading…</p>
+          ) : (
+            <div className="space-y-2">
+              {fleet.map((a) => (
+                <AgentCapRow
+                  key={a._id}
+                  agentId={a._id}
+                  name={a.name}
+                  spendCapUsd={a.spendCapUsd}
+                  canManage={canOperate}
+                  onSave={(v) => spaceId && setAgentCap({ spaceId, agentId: a._id, spendCapUsd: v })}
+                />
+              ))}
+              {fleet.length === 0 && <p className="text-sm text-muted">No hosted agents.</p>}
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function AgentCapRow({
+  name,
+  spendCapUsd,
+  canManage,
+  onSave,
+}: {
+  agentId: Id<"agents">;
+  name: string;
+  spendCapUsd: number | null;
+  canManage: boolean;
+  onSave: (v: number | undefined) => void;
+}) {
+  const [value, setValue] = useState(spendCapUsd ? String(spendCapUsd) : "");
+  return (
+    <div className="flex items-center justify-between gap-2 text-sm">
+      <span className="truncate">{name}</span>
+      <div className="flex items-center gap-1.5">
+        <Input
+          type="number"
+          min={0}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="no cap"
+          className="w-24"
+          disabled={!canManage}
+        />
+        {canManage && (
+          <Button variant="ghost" onClick={() => onSave(value ? Number(value) : undefined)}>
+            Set
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- Per-agent P&L -----------------------------------------------------------
+
+type PnlRow = {
+  agentId: Id<"agents">;
+  name: string;
+  status: string;
+  hosted: boolean;
+  usageCostUsd: number;
+  hostedHours: number;
+  hostedCostUsd: number;
+  totalCostUsd: number;
+  revenueUsd: number;
+  pnlUsd: number;
+};
+
+function money(n: number): string {
+  const sign = n < 0 ? "-" : "";
+  const v = Math.abs(n);
+  return `${sign}$${v.toFixed(2)}`;
+}
+
+function PnlSection() {
+  const { spaceId, role } = useActiveSpace();
+  const canManage = role === "operator" || role === "admin" || role === "owner";
+  const rows = useQuery(api.ledger.pnlByAgent, spaceId ? { spaceId } : "skip") as
+    | PnlRow[]
+    | undefined;
+  const summary = useQuery(api.ledger.pnlSummary, spaceId ? { spaceId } : "skip") as
+    | { totalCostUsd: number; totalRevenueUsd: number; totalPnlUsd: number; agentCount: number; profitableCount: number }
+    | undefined;
+  const setRevenue = useMutation(api.ledger.setAttributedRevenue);
+  const [editingId, setEditingId] = useState<Id<"agents"> | null>(null);
+  const [revInput, setRevInput] = useState("");
+
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-semibold">Per-agent P&amp;L (month to date)</h2>
+        {summary && (
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-muted">
+              Cost {money(summary.totalCostUsd)} · Revenue {money(summary.totalRevenueUsd)}
+            </span>
+            <span
+              className={`flex items-center gap-1 font-semibold ${
+                summary.totalPnlUsd >= 0 ? "text-green-400" : "text-red-400"
+              }`}
+            >
+              {summary.totalPnlUsd >= 0 ? (
+                <ArrowUp className="h-3.5 w-3.5" />
+              ) : (
+                <ArrowDown className="h-3.5 w-3.5" />
+              )}
+              {money(summary.totalPnlUsd)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {rows === undefined ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-muted">No agents in this Space yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-xs text-muted">
+                <th className="py-2 pr-3 font-medium">Agent</th>
+                <th className="py-2 pr-3 font-medium">Usage cost</th>
+                <th className="py-2 pr-3 font-medium">Hosted hrs</th>
+                <th className="py-2 pr-3 font-medium">Hosted cost</th>
+                <th className="py-2 pr-3 font-medium">Total cost</th>
+                <th className="py-2 pr-3 font-medium">Revenue</th>
+                <th className="py-2 pr-3 font-medium">P&amp;L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.agentId} className="border-b border-border/50">
+                  <td className="py-2 pr-3">{r.name}</td>
+                  <td className="py-2 pr-3 text-muted">{money(r.usageCostUsd)}</td>
+                  <td className="py-2 pr-3 text-muted">{r.hostedHours.toFixed(1)}</td>
+                  <td className="py-2 pr-3 text-muted">{money(r.hostedCostUsd)}</td>
+                  <td className="py-2 pr-3">{money(r.totalCostUsd)}</td>
+                  <td className="py-2 pr-3">
+                    {editingId === r.agentId ? (
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          type="number"
+                          min={0}
+                          autoFocus
+                          value={revInput}
+                          onChange={(e) => setRevInput(e.target.value)}
+                          className="w-24"
+                        />
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            if (spaceId) {
+                              setRevenue({
+                                spaceId,
+                                agentId: r.agentId,
+                                revenueUsd: Math.max(0, Number(revInput) || 0),
+                              });
+                            }
+                            setEditingId(null);
+                          }}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (!canManage) return;
+                          setEditingId(r.agentId);
+                          setRevInput(String(r.revenueUsd));
+                        }}
+                        className={canManage ? "underline decoration-dotted" : ""}
+                        disabled={!canManage}
+                      >
+                        {money(r.revenueUsd)}
+                      </button>
+                    )}
+                  </td>
+                  <td
+                    className={`py-2 pr-3 font-medium ${r.pnlUsd >= 0 ? "text-green-400" : "text-red-400"}`}
+                  >
+                    {money(r.pnlUsd)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }

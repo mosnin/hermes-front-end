@@ -1,15 +1,21 @@
 /**
- * Hermes Fleet Worker — boots one isolated container per agent on Cloudflare.
+ * Hermes Fleet Worker — boots one isolated container per agent on Cloudflare,
+ * harness-agnostic (feature 1/2/3/5, see docs/HARNESS_SPEC.md).
  *
  * The control plane (Convex, see convex/lib/cloudflare.ts) calls /spawn,
- * /terminate, /status with a shared Bearer secret. Each agent maps to a
- * Durable Object that extends the Cloudflare `Container` class and owns a
- * single Container instance running the Hermes connector image (see Dockerfile).
+ * /terminate, /status, /restart with a shared Bearer secret. Each agent maps
+ * to a Durable Object that extends the Cloudflare `Container` class and owns
+ * a single Container instance. WHICH image it runs is picked by `harness`
+ * (one Durable Object class/binding per harness — Cloudflare Containers bind
+ * exactly one image per class at deploy time, see docs/HARNESS_SPEC.md) or,
+ * for enterprise BYO-image deploys, routed to the reserved `custom` slot.
  *
  *   GET  /health     (no auth)                                        -> { ok }
- *   POST /spawn      { token, controlPlaneUrl, region?, model?, modelApiKey?, name } -> { id }
+ *   POST /spawn      { token, controlPlaneUrl, region?, model?, modelApiKey?,
+ *                       name, harness?, imageRef? }                    -> { id, harness, harnessVersion }
  *   POST /terminate  { id }                                            -> { ok }
  *   POST /status     { id }                                            -> { status }
+ *   POST /restart    { id }                                            -> { ok, status } (rolling restart, feature 5)
  *   POST /list       (no body)                                         -> { instances }
  *
  * Containers API: https://developers.cloudflare.com/containers/
@@ -25,24 +31,32 @@
 
 import { Container } from "@cloudflare/containers";
 import { DurableObject } from "cloudflare:workers";
+import { HARNESS_IDS, isKnownHarness, loadManifest } from "../../harnesses/registry";
 
 export interface Env {
   /** Shared secret the control plane sends as `Authorization: Bearer <secret>`. */
   FLEET_SECRET: string;
   /**
-   * Container-backed Durable Object namespace (see wrangler.jsonc `containers`
-   * + `durable_objects` blocks). One DO instance == one agent container.
+   * One Container-backed Durable Object namespace per harness (see
+   * wrangler.jsonc `containers` + `durable_objects` blocks). One DO instance
+   * == one agent container.
    */
-  AGENT: DurableObjectNamespace<AgentContainer>;
+  AGENT_HERMES: DurableObjectNamespace<AgentContainer>;
+  AGENT_OPENCLAW: DurableObjectNamespace<AgentContainer>;
+  AGENT_GOOSE: DurableObjectNamespace<AgentContainer>;
+  AGENT_GENERIC_CLI: DurableObjectNamespace<AgentContainer>;
+  /** Reserved slot for enterprise BYO-image deploys (see docs/HARNESS_SPEC.md). */
+  AGENT_BYO: DurableObjectNamespace<AgentContainer>;
   /**
-   * Singleton Durable Object that tracks which agent ids we've spawned, so
-   * `/list` has something to enumerate. Cloudflare has no native "list all DO
-   * instances" API, so the worker keeps this small side registry itself.
+   * Singleton Durable Object that tracks which agent ids we've spawned (and
+   * which harness/binding each belongs to), so `/list`, `/status`,
+   * `/terminate`, and `/restart` know which namespace to address without the
+   * caller re-supplying `harness` every time.
    */
   REGISTRY: DurableObjectNamespace<FleetRegistry>;
 }
 
-/** Env injected into each agent container at boot (matches agent_runtime.py). */
+/** Env injected into each agent container at boot (matches agent_runtime.py + frameworks.py). */
 interface SpawnConfig {
   token?: string;
   controlPlaneUrl?: string;
@@ -50,24 +64,46 @@ interface SpawnConfig {
   model?: string;
   modelApiKey?: string;
   name?: string;
+  /** Extra fixed env from the harness manifest (e.g. HERMES_AGENT_FRAMEWORK). */
+  extraEnv?: Record<string, string>;
 }
 
 /** Registry entry for one spawned agent, keyed by DO id string. */
 interface RegistryEntry {
   name?: string;
+  /** Harness id (or "custom" for BYO) — used to resolve the correct DO binding later. */
+  harness: string;
+  harnessVersion?: string;
+  imageRef?: string;
   spawnedAt: number;
 }
 
+/** Maps a harness id (or "custom") to its Env binding key. */
+const BINDING_BY_HARNESS: Record<string, keyof Env> = {
+  hermes: "AGENT_HERMES",
+  openclaw: "AGENT_OPENCLAW",
+  goose: "AGENT_GOOSE",
+  "generic-cli": "AGENT_GENERIC_CLI",
+  custom: "AGENT_BYO",
+};
+
+function bindingFor(env: Env, harness: string): DurableObjectNamespace<AgentContainer> {
+  const key = BINDING_BY_HARNESS[harness];
+  if (!key) throw new Error(`no container binding for harness ${JSON.stringify(harness)}`);
+  return env[key] as DurableObjectNamespace<AgentContainer>;
+}
+
 /**
- * Tiny singleton Durable Object that records which agent ids exist, purely so
- * `/list` has something to enumerate (Cloudflare doesn't expose a "list all DO
- * instances of this class" API). Addressed via `idFromName("registry")` so
+ * Tiny singleton Durable Object that records which agent ids exist (and which
+ * harness namespace they live in), purely so `/list`/`/status`/`/terminate`/
+ * `/restart` have something to look up (Cloudflare doesn't expose a "list all
+ * DO instances of this class" API). Addressed via `idFromName("registry")` so
  * every call hits the same instance.
  */
 export class FleetRegistry extends DurableObject<Env> {
-  async add(id: string, name?: string): Promise<void> {
+  async add(id: string, entry: RegistryEntry): Promise<void> {
     const all = (await this.ctx.storage.get<Record<string, RegistryEntry>>("agents")) ?? {};
-    all[id] = { name, spawnedAt: Date.now() };
+    all[id] = entry;
     await this.ctx.storage.put("agents", all);
   }
 
@@ -75,6 +111,11 @@ export class FleetRegistry extends DurableObject<Env> {
     const all = (await this.ctx.storage.get<Record<string, RegistryEntry>>("agents")) ?? {};
     delete all[id];
     await this.ctx.storage.put("agents", all);
+  }
+
+  async get(id: string): Promise<RegistryEntry | undefined> {
+    const all = (await this.ctx.storage.get<Record<string, RegistryEntry>>("agents")) ?? {};
+    return all[id];
   }
 
   async list(): Promise<Record<string, RegistryEntry>> {
@@ -94,7 +135,10 @@ function json(body: unknown, status = 200): Response {
 }
 
 /**
- * Durable Object that owns exactly one agent container.
+ * Durable Object that owns exactly one agent container. Subclassed per
+ * harness purely so each gets a distinct `class_name` in wrangler.jsonc
+ * (Cloudflare requires one DO class per container image) — behavior is
+ * identical across subclasses.
  *
  * Extending `Container` from `@cloudflare/containers` gives us lifecycle
  * helpers (start/startAndWaitForPorts, stop, destroy, getState) plus declarative
@@ -103,11 +147,12 @@ function json(body: unknown, status = 200): Response {
  */
 export class AgentContainer extends Container<Env> {
   /**
-   * Port the connector listens on inside the container, if any. The Hermes
-   * connector (agent_runtime) is an outbound-only worker — it dials the control
-   * plane and has no inbound HTTP server — but Containers currently require a
-   * `defaultPort` to health-check readiness. The Dockerfile EXPOSEs a tiny
-   * liveness port for this purpose.
+   * Port the connector listens on inside the container, if any. Every
+   * harness's connector (agent_runtime) is an outbound-only worker — it dials
+   * the control plane and has no inbound HTTP server — but Containers
+   * currently require a `defaultPort` to health-check readiness. Every
+   * harness's Dockerfile EXPOSEs a tiny liveness port for this purpose
+   * (matches `health.port` in each harness.json).
    */
   defaultPort = 8080;
 
@@ -115,9 +160,9 @@ export class AgentContainer extends Container<Env> {
   sleepAfter = "30m";
 
   /**
-   * Default env vars. Per-spawn values (token, control plane URL, model, name)
-   * are layered on top in `startAgent` via `start({ envVars })`, which the
-   * Container runtime forwards to the container process.
+   * Default env vars. Per-spawn values (token, control plane URL, model, name,
+   * harness-fixed env) are layered on top in `startAgent` via `start({ envVars })`,
+   * which the Container runtime forwards to the container process.
    */
   envVars: Record<string, string> = {
     HERMES_CONTROL_PLANE_URL: "",
@@ -137,6 +182,7 @@ export class AgentContainer extends Container<Env> {
       HERMES_AGENT_MODEL: cfg.model ?? "",
       HERMES_AGENT_NAME: cfg.name ?? "",
       HERMES_MODEL_API_KEY: cfg.modelApiKey ?? "",
+      ...(cfg.extraEnv ?? {}),
     };
     // Persist on the instance so restarts (e.g. after sleep) keep the config.
     this.envVars = { ...this.envVars, ...envVars };
@@ -153,6 +199,17 @@ export class AgentContainer extends Container<Env> {
     // `destroy()` tears the container down completely (vs `stop()` which can be
     // resumed). Terminate means "kill this agent", so we destroy.
     await this.destroy();
+  }
+
+  /**
+   * Rolling restart (feature 5): stop the running container and reboot it with
+   * the SAME env vars/config (picks up a newer image once one is rebuilt +
+   * deployed for this harness's class). Unlike stopAgent, this keeps the DO
+   * instance registered — the caller's vmId/agent record is unchanged.
+   */
+  async restartAgent(): Promise<void> {
+    await this.stop();
+    await this.start({ envVars: this.envVars });
   }
 
   /** Report a coarse running/stopped status the control plane understands. */
@@ -185,6 +242,10 @@ export class AgentContainer extends Container<Env> {
       await this.stopAgent();
       return json({ ok: true, status: "stopped" });
     }
+    if (url.pathname === "/restart" && req.method === "POST") {
+      await this.restartAgent();
+      return json({ ok: true, status: await this.agentStatus() });
+    }
     if (url.pathname === "/status") {
       return json({ status: await this.agentStatus() });
     }
@@ -192,9 +253,28 @@ export class AgentContainer extends Container<Env> {
   }
 }
 
+// Distinct subclasses so each gets its own wrangler.jsonc `class_name` (see
+// AgentContainer's docstring — behavior is identical, only the bound image
+// differs, configured per-class in wrangler.jsonc's `containers` block).
+export class HermesAgentContainer extends AgentContainer {}
+export class OpenclawAgentContainer extends AgentContainer {}
+export class GooseAgentContainer extends AgentContainer {}
+export class GenericCliAgentContainer extends AgentContainer {}
+export class CustomAgentContainer extends AgentContainer {}
+
 /** Singleton stub for the fleet registry — every call addresses the same DO. */
 function registryStub(env: Env) {
   return env.REGISTRY.get(env.REGISTRY.idFromName("registry"));
+}
+
+/** Resolve the DO namespace + entry a previously-spawned id belongs to, from the registry. */
+async function resolveInstance(
+  env: Env,
+  id: string,
+): Promise<{ ns: DurableObjectNamespace<AgentContainer>; entry: RegistryEntry | undefined }> {
+  const entry = await registryStub(env).get(id);
+  const harness = entry?.harness && BINDING_BY_HARNESS[entry.harness] ? entry.harness : "hermes";
+  return { ns: bindingFor(env, harness), entry };
 }
 
 export default {
@@ -219,10 +299,20 @@ export default {
       const entries = await registryStub(env).list();
       const instances = await Promise.all(
         Object.entries(entries).map(async ([id, meta]) => {
-          const status = await env.AGENT.get(env.AGENT.idFromString(id))
+          const ns = bindingFor(env, BINDING_BY_HARNESS[meta.harness] ? meta.harness : "hermes");
+          const status = await ns
+            .get(ns.idFromString(id))
             .agentStatus()
             .catch(() => "unknown");
-          return { id, name: meta.name, spawnedAt: meta.spawnedAt, status };
+          return {
+            id,
+            name: meta.name,
+            harness: meta.harness,
+            harnessVersion: meta.harnessVersion,
+            imageRef: meta.imageRef,
+            spawnedAt: meta.spawnedAt,
+            status,
+          };
         }),
       );
       return json({ instances });
@@ -234,14 +324,40 @@ export default {
 
     // --- POST /spawn: create a uniquely-named DO and boot its container. ---
     if (url.pathname === "/spawn") {
+      const requestedHarness = typeof body.harness === "string" && body.harness ? body.harness : "hermes";
+      const imageRef = typeof body.imageRef === "string" && body.imageRef ? body.imageRef : undefined;
+
+      // BYO image (enterprise, gated upstream by convex/fleet.ts) routes to the
+      // reserved `custom` slot regardless of `harness`. Otherwise the harness
+      // must be one of the built-in manifests.
+      const harness = imageRef ? "custom" : requestedHarness;
+      if (!imageRef && !isKnownHarness(harness)) {
+        return json(
+          { error: `unknown harness ${JSON.stringify(harness)} — supported: ${HARNESS_IDS.filter((h) => h !== "custom").join(", ")}` },
+          400,
+        );
+      }
+
+      let extraEnv: Record<string, string> = {};
+      let harnessVersion: string | undefined;
+      if (!imageRef) {
+        const manifest = loadManifest(harness);
+        extraEnv = { ...(manifest.env.fixed ?? {}) };
+        harnessVersion = manifest.version;
+      } else {
+        // Record the requested customer image for audit/observability (see
+        // docs/HARNESS_SPEC.md "BYO image" — the container itself still runs
+        // whatever AGENT_BYO's class is currently configured with).
+        extraEnv = { HERMES_BYO_IMAGE_REF: imageRef };
+      }
+
+      const ns = bindingFor(env, harness);
       // A fresh unique id == a brand new agent/container. We hand the caller
-      // back the id string so /terminate and /status can address it later.
-      const id = env.AGENT.newUniqueId();
-      // env.AGENT.get(id) returns the typed DO stub (our AgentContainer).
-      // (The @cloudflare/containers `getContainer(binding, name)` helper takes
-      //  a string name; we address instances by DurableObjectId instead so the
-      //  control plane can round-trip the exact id via /terminate and /status.)
-      const container = env.AGENT.get(id);
+      // back the id string so /terminate, /status, /restart can address it
+      // later. IDs are namespace-scoped in Cloudflare DO, so the registry
+      // records which harness/binding this id belongs to.
+      const id = ns.newUniqueId();
+      const container = ns.get(id);
       await container.startAgent({
         token: body.token,
         controlPlaneUrl: body.controlPlaneUrl,
@@ -249,16 +365,24 @@ export default {
         model: body.model,
         modelApiKey: body.modelApiKey,
         name: body.name,
+        extraEnv,
       });
       // Never log `body` here — it may carry `token`/`modelApiKey`.
-      await registryStub(env).add(id.toString(), body.name);
-      return json({ id: id.toString() });
+      await registryStub(env).add(id.toString(), {
+        name: body.name,
+        harness,
+        harnessVersion,
+        imageRef,
+        spawnedAt: Date.now(),
+      });
+      return json({ id: id.toString(), harness, harnessVersion: harnessVersion ?? null });
     }
 
     // --- POST /terminate: stop/destroy the addressed container. ---
     if (url.pathname === "/terminate") {
       if (!body.id) return json({ error: "missing id" }, 400);
-      const container = env.AGENT.get(env.AGENT.idFromString(body.id));
+      const { ns } = await resolveInstance(env, body.id);
+      const container = ns.get(ns.idFromString(body.id));
       await container.stopAgent();
       await registryStub(env).remove(body.id);
       return json({ ok: true });
@@ -267,9 +391,22 @@ export default {
     // --- POST /status: report running/stopped for the addressed container. ---
     if (url.pathname === "/status") {
       if (!body.id) return json({ error: "missing id" }, 400);
-      const container = env.AGENT.get(env.AGENT.idFromString(body.id));
+      const { ns } = await resolveInstance(env, body.id);
+      const container = ns.get(ns.idFromString(body.id));
       const status = await container.agentStatus();
       return json({ status });
+    }
+
+    // --- POST /restart: rolling restart of one already-running container. ---
+    // Draining (skip agents with in-flight work) is the caller's (fleet.ts)
+    // responsibility — this endpoint just performs the stop+start.
+    if (url.pathname === "/restart") {
+      if (!body.id) return json({ error: "missing id" }, 400);
+      const { ns } = await resolveInstance(env, body.id);
+      const container = ns.get(ns.idFromString(body.id));
+      await container.restartAgent();
+      const status = await container.agentStatus();
+      return json({ ok: true, status });
     }
 
     return json({ error: "not found" }, 404);

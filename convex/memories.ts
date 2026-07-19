@@ -272,3 +272,131 @@ export const ingestThread = action({
     });
   },
 });
+
+// ---------------------------------------------------------------------------
+// Write-back hooks (feature 14) — connectors call this after a task/step
+// completes so the agent's work becomes reusable memory automatically,
+// instead of relying on someone manually ingesting a thread. Space-scoped,
+// internal-only (the connector authenticates the agent by token before
+// reaching this; the actual HTTP route lives in http.ts, owned by another
+// team — see the cycle report for the one-line wiring request).
+// ---------------------------------------------------------------------------
+
+const MAX_INGEST_CONTENT = 8000;
+const SUMMARY_TARGET_CHARS = 1200;
+
+/**
+ * Summarize free text down to a memory-sized blurb. Uses an OpenAI chat
+ * completion when OPENAI_API_KEY is configured; otherwise degrades
+ * gracefully to a naive head-truncation so ingestion never hard-fails just
+ * because summarization is unavailable.
+ */
+async function summarize(text: string): Promise<string> {
+  const trimmed = text.trim();
+  if (trimmed.length <= SUMMARY_TARGET_CHARS) return trimmed;
+
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    return trimmed.slice(0, SUMMARY_TARGET_CHARS) + "…";
+  }
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content:
+              "Summarize the following agent task output into a concise, reusable memory note " +
+              `(max ~${Math.round(SUMMARY_TARGET_CHARS / 5)} words). Keep concrete facts, decisions, ` +
+              "and outcomes; drop filler.\n\n" +
+              trimmed.slice(0, MAX_INGEST_CONTENT),
+          },
+        ],
+        temperature: 0.2,
+      }),
+    });
+    if (!res.ok) throw new Error(`OpenAI ${res.status}`);
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const out = data.choices?.[0]?.message?.content?.trim();
+    return out && out.length ? out : trimmed.slice(0, SUMMARY_TARGET_CHARS) + "…";
+  } catch {
+    return trimmed.slice(0, SUMMARY_TARGET_CHARS) + "…";
+  }
+}
+
+/**
+ * Internal write-back entrypoint: connectors call this after a task/workflow
+ * step finishes to summarize-and-store the result as space-scoped memory.
+ * `sourceId` is a loose string (task id, run step id, thread id, ...) rather
+ * than a typed reference, since callers may not yet have a durable Convex id
+ * for the thing that completed (e.g. an ephemeral connector-side task).
+ */
+export const ingestFromCompletion = internalAction({
+  args: {
+    spaceId: v.id("spaces"),
+    agentId: v.optional(v.id("agents")),
+    title: v.string(),
+    content: v.string(),
+    sourceKind: v.optional(v.string()), // "task" | "run_step" | "thread" | ...
+    sourceId: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args): Promise<Id<"memories"> | null> => {
+    if (!args.content.trim()) return null;
+    const summary = await summarize(args.content);
+    const embedding = await embed(`${args.title}\n\n${summary}`);
+    const id: Id<"memories"> = await ctx.runMutation(internal.memories.insertFromConnector, {
+      spaceId: args.spaceId,
+      agentId: args.agentId,
+      title: args.title,
+      content: summary,
+      source: args.sourceKind ?? "connector",
+      tags: args.tags,
+      embedding: embedding ?? undefined,
+    });
+    return id;
+  },
+});
+
+/**
+ * Connector-facing variant of `insert` — bypasses the user-identity role
+ * check (there is no signed-in user in this path) but stays space-scoped:
+ * the spaceId is trusted because the caller (the connector HTTP handler)
+ * already authenticated the agent's token against that Space.
+ */
+export const insertFromConnector = internalMutation({
+  args: {
+    spaceId: v.id("spaces"),
+    agentId: v.optional(v.id("agents")),
+    title: v.string(),
+    content: v.string(),
+    source: v.string(),
+    tags: v.optional(v.array(v.string())),
+    embedding: v.optional(v.array(v.float64())),
+  },
+  handler: async (ctx, { spaceId, agentId, title, content, source, tags, embedding }) => {
+    const space = await ctx.db.get(spaceId);
+    if (!space) throw new Error("Space not found");
+    if (agentId) {
+      const agent = await ctx.db.get(agentId);
+      if (!agent || agent.spaceId !== spaceId) throw new Error("Agent not in Space");
+    }
+    return await ctx.db.insert("memories", {
+      companyId: space.companyId,
+      spaceId,
+      scope: "space",
+      source,
+      title,
+      content,
+      tags,
+      embedding,
+      createdAt: Date.now(),
+    });
+  },
+});

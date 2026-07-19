@@ -3,6 +3,8 @@ import { convexTest } from "convex-test";
 import schema from "../schema";
 import { api } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
+import { HARNESS_IDS } from "../../connector/harnesses/schema";
+import { KNOWN_HARNESS_IDS } from "../lib/cloudflare";
 
 const modules = import.meta.glob("../**/*.*s");
 
@@ -87,5 +89,190 @@ describe("fleet.deploy — managed hosting", () => {
     await expect(
       viewer.action(api.fleet.deploy, { spaceId, count: 1 }),
     ).rejects.toThrow(/[Ff]orbidden/);
+  });
+});
+
+describe("fleet.deploy — harness-agnostic runtime", () => {
+  test("connector/harnesses ids and convex/lib/cloudflare's mirror stay in sync", () => {
+    // convex/fleet.ts can only import from convex/, so convex/lib/cloudflare.ts
+    // keeps its own copy of the harness id list (see docs/HARNESS_SPEC.md step
+    // 6). This test is the tripwire: it fails loudly if the two ever drift.
+    const builtIn = HARNESS_IDS.filter((id) => id !== "custom").sort();
+    expect([...KNOWN_HARNESS_IDS].sort()).toEqual(builtIn);
+  });
+
+  test("defaults to the hermes harness when unspecified (cloudflare unconfigured)", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    await owner.action(api.fleet.deploy, { spaceId, count: 1, namePrefix: "Default" });
+
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet).toHaveLength(1);
+    expect(fleet[0].harness).toBe("hermes");
+  });
+
+  test("accepts a known non-default harness and records it on the agent", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    await owner.action(api.fleet.deploy, {
+      spaceId,
+      count: 1,
+      namePrefix: "Goose",
+      harness: "goose",
+    });
+
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet).toHaveLength(1);
+    expect(fleet[0].harness).toBe("goose");
+  });
+
+  test("rejects an unknown harness id", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    await expect(
+      owner.action(api.fleet.deploy, { spaceId, count: 1, harness: "not-a-real-harness" }),
+    ).rejects.toThrow(/[Uu]nknown harness/);
+
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet).toHaveLength(0);
+  });
+
+  test("BYO container image is rejected below the enterprise plan", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    await expect(
+      owner.action(api.fleet.deploy, { spaceId, count: 1, imageRef: "ghcr.io/acme/custom-agent:latest" }),
+    ).rejects.toThrow(/enterprise plan/);
+
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet).toHaveLength(0);
+  });
+
+  test("BYO container image is allowed on the enterprise plan", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "enterprise");
+
+    const res = await owner.action(api.fleet.deploy, {
+      spaceId,
+      count: 1,
+      imageRef: "ghcr.io/acme/custom-agent:latest",
+    });
+    expect(res.deployed).toHaveLength(1);
+
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet[0].imageRef).toBe("ghcr.io/acme/custom-agent:latest");
+    // Cloudflare is unconfigured in tests, so /spawn never actually ran — the
+    // resolved harness still records "custom" for a BYO deploy though, since
+    // that's the routing decision, independent of whether the call succeeded.
+    expect(fleet[0].harness).toBe("custom");
+  });
+});
+
+describe("fleet.rollingRestart — drain-aware rolling restart", () => {
+  async function deployRunning(
+    t: ReturnType<typeof convexTest>,
+    owner: ReturnType<typeof t.withIdentity>,
+    spaceId: Id<"spaces">,
+  ): Promise<Id<"agents">> {
+    const res = await owner.action(api.fleet.deploy, { spaceId, count: 1, namePrefix: "Restart" });
+    const agentId = res.deployed[0].agentId as Id<"agents">;
+    // Cloudflare is unconfigured in tests, so deploy() leaves deploymentStatus
+    // "provisioning" with no vmId — force it into the "running with a vmId"
+    // state rollingRestart's eligibility query looks for.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, { deploymentStatus: "running", vmId: "fake-vm-id" });
+    });
+    return agentId;
+  }
+
+  test("a non-operator (viewer) cannot trigger a rolling restart", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+    await deployRunning(t, owner, spaceId);
+
+    const viewerId = "user_restart_viewer";
+    await owner.mutation(api.spaces.addMember, { spaceId, userId: viewerId, role: "viewer" });
+    const viewer = t.withIdentity({ subject: viewerId, org_id: "org_fleet" });
+
+    await expect(
+      viewer.action(api.fleet.rollingRestart, { spaceId }),
+    ).rejects.toThrow(/[Ff]orbidden/);
+  });
+
+  test("cloudflare unconfigured: no-op (nothing to actually restart)", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+    await deployRunning(t, owner, spaceId);
+
+    const res = await owner.action(api.fleet.rollingRestart, { spaceId });
+    expect(res.restarted).toHaveLength(0);
+    expect(res.drained).toHaveLength(0);
+    expect(res.total).toBe(1);
+  });
+
+  test("drains an agent with a running runStep instead of restarting it", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+    const agentId = await deployRunning(t, owner, spaceId);
+
+    // Simulate an in-flight task on this agent.
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const workflowId = await ctx.db.insert("workflows", {
+        companyId: "org_fleet",
+        spaceId,
+        name: "wf",
+        enabled: true,
+        steps: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+      const runId = await ctx.db.insert("workflowRuns", {
+        companyId: "org_fleet",
+        spaceId,
+        workflowId,
+        status: "running",
+        hops: 0,
+        stepsDone: 0,
+        startedAt: now,
+      });
+      await ctx.db.insert("runSteps", {
+        companyId: "org_fleet",
+        spaceId,
+        workflowRunId: runId,
+        stepId: "s1",
+        index: 0,
+        name: "step",
+        agentId,
+        instruction: "do work",
+        status: "running",
+        attempts: 1,
+        startedAt: Date.now(),
+      });
+    });
+
+    const res = await owner.action(api.fleet.rollingRestart, { spaceId });
+    expect(res.drained).toEqual([agentId]);
+    expect(res.restarted).toHaveLength(0);
+
+    const agent = await t.run(async (ctx) => ctx.db.get(agentId));
+    expect(agent?.restartRequestedAt).toBeTypeOf("number");
+  });
+
+  test("filters candidates by harness", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+    const agentId = await deployRunning(t, owner, spaceId); // harness defaults to "hermes"
+
+    const gooseOnly = await owner.action(api.fleet.rollingRestart, { spaceId, harness: "goose" });
+    expect(gooseOnly.total).toBe(0);
+
+    const hermesOnly = await owner.action(api.fleet.rollingRestart, { spaceId, harness: "hermes" });
+    expect(hermesOnly.total).toBe(1);
+    void agentId;
   });
 });

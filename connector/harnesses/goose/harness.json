@@ -1,0 +1,27 @@
+{
+  "id": "goose",
+  "displayName": "Goose (Block)",
+  "description": "Runs Block's Goose CLI headlessly for each dispatched instruction (see connector/control_plane/frameworks.py: FRAMEWORK_COMMANDS['goose']).",
+  "version": "1.0.0",
+  "install": {
+    "dockerfile": "connector/harnesses/goose/Dockerfile",
+    "baseImage": "python:3.12-slim"
+  },
+  "start": {
+    "command": ["sh", "-c", "python -m http.server 8080 --bind 0.0.0.0 >/dev/null 2>&1 & exec python -m connector.control_plane.agent_runtime"]
+  },
+  "env": {
+    "required": ["HERMES_CONTROL_PLANE_URL", "HERMES_CONNECTOR_TOKEN"],
+    "optional": ["HERMES_AGENT_NAME", "HERMES_AGENT_COMMAND", "HERMES_FRAMEWORK_TIMEOUT", "GOOSE_PROVIDER", "GOOSE_MODEL"],
+    "fixed": {
+      "HERMES_AGENT_FRAMEWORK": "goose"
+    }
+  },
+  "health": {
+    "port": 8080,
+    "intervalSeconds": 30,
+    "timeoutSeconds": 5
+  },
+  "capabilities": ["chat", "workflow", "framework:goose"],
+  "containerBinding": "AGENT_GOOSE"
+}

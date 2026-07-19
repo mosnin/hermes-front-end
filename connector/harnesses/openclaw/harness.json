@@ -1,0 +1,27 @@
+{
+  "id": "openclaw",
+  "displayName": "OpenClaw",
+  "description": "Runs the OpenClaw CLI agent for each dispatched instruction. The connector still owns registration, heartbeat, A2A and work-stream plumbing; OpenClaw only produces the response text (see connector/control_plane/frameworks.py: FRAMEWORK_COMMANDS['openclaw']).",
+  "version": "0.1.0",
+  "install": {
+    "dockerfile": "connector/harnesses/openclaw/Dockerfile",
+    "baseImage": "python:3.12-slim"
+  },
+  "start": {
+    "command": ["sh", "-c", "python -m http.server 8080 --bind 0.0.0.0 >/dev/null 2>&1 & exec python -m connector.control_plane.agent_runtime"]
+  },
+  "env": {
+    "required": ["HERMES_CONTROL_PLANE_URL", "HERMES_CONNECTOR_TOKEN"],
+    "optional": ["HERMES_AGENT_NAME", "HERMES_AGENT_COMMAND", "HERMES_FRAMEWORK_TIMEOUT"],
+    "fixed": {
+      "HERMES_AGENT_FRAMEWORK": "openclaw"
+    }
+  },
+  "health": {
+    "port": 8080,
+    "intervalSeconds": 30,
+    "timeoutSeconds": 5
+  },
+  "capabilities": ["chat", "workflow", "framework:openclaw"],
+  "containerBinding": "AGENT_OPENCLAW"
+}

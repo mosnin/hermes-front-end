@@ -1,0 +1,27 @@
+{
+  "id": "generic-cli",
+  "displayName": "Generic CLI agent",
+  "description": "Wraps an arbitrary CLI agent binary. Requires HERMES_AGENT_COMMAND ('{instruction}' is substituted with the task text, or the instruction is piped on stdin when the placeholder is absent). See connector/control_plane/frameworks.py: CliExecutor.",
+  "version": "1.0.0",
+  "install": {
+    "dockerfile": "connector/harnesses/generic-cli/Dockerfile",
+    "baseImage": "python:3.12-slim"
+  },
+  "start": {
+    "command": ["sh", "-c", "python -m http.server 8080 --bind 0.0.0.0 >/dev/null 2>&1 & exec python -m connector.control_plane.agent_runtime"]
+  },
+  "env": {
+    "required": ["HERMES_CONTROL_PLANE_URL", "HERMES_CONNECTOR_TOKEN", "HERMES_AGENT_COMMAND"],
+    "optional": ["HERMES_AGENT_NAME", "HERMES_FRAMEWORK_TIMEOUT"],
+    "fixed": {
+      "HERMES_AGENT_FRAMEWORK": "cli"
+    }
+  },
+  "health": {
+    "port": 8080,
+    "intervalSeconds": 30,
+    "timeoutSeconds": 5
+  },
+  "capabilities": ["chat", "workflow", "framework:cli"],
+  "containerBinding": "AGENT_GENERIC_CLI"
+}

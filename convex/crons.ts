@@ -49,4 +49,28 @@ crons.interval(
   {},
 );
 
+// Retention: bound streamed agent logs (7d) so agentLogs stays bounded.
+crons.interval("agent log retention", { hours: 1 }, internal.logs.sweepRetention, {});
+
+// Retention: purge expired/used one-click approval tokens.
+crons.interval(
+  "approval token sweep",
+  { hours: 1 },
+  internal.approvals.sweepExpiredTokens,
+  {},
+);
+
+// Cost controls: mark idle hosted agents and hibernate/stop their VMs per
+// each Space's cost policy.
+crons.interval(
+  "idle hibernation sweep",
+  { hours: 1 },
+  internal.costs.sweepIdleHibernation,
+  {},
+);
+
+// Cost controls: enforce space-level hard caps and per-agent spend caps
+// against month-to-date spend.
+crons.interval("spend cap enforcement", { hours: 1 }, internal.costs.enforceSpendCaps, {});
+
 export default crons;

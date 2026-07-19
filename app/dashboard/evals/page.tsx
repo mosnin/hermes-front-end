@@ -8,7 +8,7 @@ import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/compo
 import { useActiveSpace } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { Plus, Sparkles, Star } from "@/components/icons";
+import { FlaskConical, Loader2, Plus, Sparkles, Star } from "@/components/icons";
 
 function Stars({ value }: { value: number }) {
   const rounded = Math.round(value);
@@ -269,6 +269,335 @@ export default function EvalsPage() {
             </Button>
             <Button onClick={runAuto} disabled={!autoAgentId || autoBusy}>
               {autoBusy ? "Evaluating…" : "Run auto-eval"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <BenchmarkSection />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cross-harness eval benchmarking (feature 13)
+// ---------------------------------------------------------------------------
+
+function qualityTone(score: number | null): "default" | "green" | "yellow" | "red" {
+  if (score == null) return "default";
+  if (score >= 0.7) return "green";
+  if (score >= 0.4) return "yellow";
+  return "red";
+}
+
+function BenchmarkSection() {
+  const { spaceId } = useActiveSpace();
+  const benchmarks = useQuery(api.evals.listBenchmarks, spaceId ? { spaceId } : "skip");
+  const batches = useQuery(api.evals.listBatches, spaceId ? { spaceId } : "skip");
+  const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
+  const createBenchmark = useMutation(api.evals.createBenchmark);
+  const runBatch = useAction(api.evals.runBenchmarkBatch);
+  const toast = useToast();
+
+  const [newOpen, setNewOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [rubric, setRubric] = useState("");
+  const [expectedOutput, setExpectedOutput] = useState("");
+
+  const [runOpen, setRunOpen] = useState<Id<"evalBenchmarks"> | null>(null);
+  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
+  const [running, setRunning] = useState(false);
+
+  const [activeBatch, setActiveBatch] = useState<string | null>(null);
+  const comparison = useQuery(
+    api.evals.compareBatch,
+    spaceId && activeBatch ? { spaceId, batchId: activeBatch } : "skip",
+  );
+
+  async function submitBenchmark() {
+    if (!spaceId || !name.trim() || !prompt.trim()) return;
+    try {
+      await createBenchmark({
+        spaceId,
+        name: name.trim(),
+        description: description.trim() || undefined,
+        prompt: prompt.trim(),
+        rubric: rubric.trim() || undefined,
+        expectedOutput: expectedOutput.trim() || undefined,
+      });
+      toast("Benchmark created", "success");
+      setNewOpen(false);
+      setName("");
+      setDescription("");
+      setPrompt("");
+      setRubric("");
+      setExpectedOutput("");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to create benchmark", "error");
+    }
+  }
+
+  async function submitRun() {
+    if (!spaceId || !runOpen || selectedAgents.size === 0) return;
+    setRunning(true);
+    try {
+      const { batchId } = await runBatch({
+        spaceId,
+        benchmarkId: runOpen,
+        agentIds: Array.from(selectedAgents) as Id<"agents">[],
+      });
+      toast(`Benchmark run started across ${selectedAgents.size} agent(s)`, "success");
+      setRunOpen(null);
+      setSelectedAgents(new Set());
+      setActiveBatch(batchId);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to start benchmark run", "error");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const maxCost = Math.max(0.0001, ...(comparison ?? []).map((r) => r.costUsd ?? 0));
+
+  return (
+    <div className="mt-10">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold">Cross-harness benchmarks</h2>
+          <p className="text-sm text-muted">
+            Run the same prompt across multiple agents (different harness/model) and compare cost vs quality.
+          </p>
+        </div>
+        <Button variant="ghost" onClick={() => setNewOpen(true)}>
+          <FlaskConical className="h-4 w-4" /> New benchmark
+        </Button>
+      </div>
+
+      {benchmarks && benchmarks.length === 0 ? (
+        <EmptyState
+          title="No benchmarks yet"
+          body="Create a benchmark prompt to compare agents side by side on cost and quality."
+          action={
+            <Button onClick={() => setNewOpen(true)}>
+              <FlaskConical className="h-4 w-4" /> New benchmark
+            </Button>
+          }
+        />
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <h3 className="mb-3 text-sm font-semibold text-muted">Benchmarks</h3>
+            <ul className="divide-y divide-border">
+              {(benchmarks ?? []).map((b) => (
+                <li key={b._id} className="flex items-center justify-between gap-2 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{b.name}</p>
+                    {b.description && (
+                      <p className="truncate text-xs text-muted">{b.description}</p>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setRunOpen(b._id);
+                      setSelectedAgents(new Set());
+                    }}
+                  >
+                    Run
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </Card>
+
+          <Card>
+            <h3 className="mb-3 text-sm font-semibold text-muted">Recent batches</h3>
+            {batches && batches.length === 0 ? (
+              <p className="text-sm text-muted">No runs yet.</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {(batches ?? []).map((b) => (
+                  <li key={b.batchId} className="py-3">
+                    <button
+                      onClick={() => setActiveBatch(b.batchId)}
+                      className="flex w-full items-center justify-between gap-2 text-left"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{b.benchmarkName}</p>
+                        <p className="text-xs text-muted">
+                          {b.runCount} run{b.runCount === 1 ? "" : "s"} · {timeAgo(b.startedAt)}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {b.avgQuality != null && (
+                          <Badge tone={qualityTone(b.avgQuality)}>
+                            {(b.avgQuality * 100).toFixed(0)}% quality
+                          </Badge>
+                        )}
+                        <Badge>${b.totalCostUsd.toFixed(4)}</Badge>
+                        {b.status === "running" && <Loader2 className="h-4 w-4 animate-spin" />}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {activeBatch && (
+        <Card className="mt-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-muted">Cost vs quality</h3>
+            <Button variant="ghost" onClick={() => setActiveBatch(null)}>
+              Close
+            </Button>
+          </div>
+          {comparison === undefined ? (
+            <p className="text-sm text-muted">Loading…</p>
+          ) : comparison.length === 0 ? (
+            <p className="text-sm text-muted">No runs found for this batch.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-muted">
+                    <th className="py-2 pr-3 font-medium">Agent</th>
+                    <th className="py-2 pr-3 font-medium">Harness / model</th>
+                    <th className="py-2 pr-3 font-medium">Status</th>
+                    <th className="py-2 pr-3 font-medium">Quality</th>
+                    <th className="py-2 pr-3 font-medium">Cost</th>
+                    <th className="py-2 pr-3 font-medium">Latency</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {comparison.map((r) => (
+                    <tr key={r.runId}>
+                      <td className="py-2 pr-3 font-medium">{r.agentName}</td>
+                      <td className="py-2 pr-3 text-muted">
+                        {r.harness} / {r.model}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <Badge tone={r.status === "failed" ? "red" : r.status === "completed" ? "green" : "default"}>
+                          {r.status}
+                        </Badge>
+                      </td>
+                      <td className="py-2 pr-3">
+                        {r.qualityScore != null ? (
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-16 rounded-full bg-surface-2">
+                              <div
+                                className="h-1.5 rounded-full bg-accent"
+                                style={{ width: `${r.qualityScore * 100}%` }}
+                              />
+                            </div>
+                            <span>{(r.qualityScore * 100).toFixed(0)}%</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 w-16 rounded-full bg-surface-2">
+                            <div
+                              className="h-1.5 rounded-full bg-sky-400"
+                              style={{ width: `${((r.costUsd ?? 0) / maxCost) * 100}%` }}
+                            />
+                          </div>
+                          <span>{r.costUsd != null ? `$${r.costUsd.toFixed(4)}` : "—"}</span>
+                        </div>
+                      </td>
+                      <td className="py-2 pr-3 text-muted">
+                        {r.latencyMs != null ? `${(r.latencyMs / 1000).toFixed(1)}s` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      <Modal open={newOpen} onClose={() => setNewOpen(false)} title="New benchmark">
+        <div className="space-y-3">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Benchmark name" />
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Description (optional)"
+          />
+          <Textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Prompt to run against each agent…"
+            rows={4}
+          />
+          <Textarea
+            value={rubric}
+            onChange={(e) => setRubric(e.target.value)}
+            placeholder="Grading rubric (optional)"
+            rows={2}
+          />
+          <Textarea
+            value={expectedOutput}
+            onChange={(e) => setExpectedOutput(e.target.value)}
+            placeholder="Expected output for reference (optional)"
+            rows={2}
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setNewOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitBenchmark} disabled={!name.trim() || !prompt.trim()}>
+              Create
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={runOpen !== null}
+        onClose={() => !running && setRunOpen(null)}
+        title="Run benchmark across agents"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            Select the agents to run this benchmark against — pick agents on different harnesses/models to compare.
+          </p>
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {(agents ?? []).map((a) => (
+              <label
+                key={a._id}
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-2"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedAgents.has(a._id)}
+                  onChange={(e) => {
+                    const next = new Set(selectedAgents);
+                    if (e.target.checked) next.add(a._id);
+                    else next.delete(a._id);
+                    setSelectedAgents(next);
+                  }}
+                />
+                <span className="font-medium">{a.name}</span>
+                <span className="text-xs text-muted">
+                  {a.harness ?? a.framework ?? "unknown"} / {a.model ?? "unknown"}
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setRunOpen(null)} disabled={running}>
+              Cancel
+            </Button>
+            <Button onClick={submitRun} disabled={selectedAgents.size === 0 || running}>
+              {running ? "Running…" : `Run across ${selectedAgents.size || ""} agent(s)`}
             </Button>
           </div>
         </div>

@@ -1,0 +1,25 @@
+{
+  "id": "hermes",
+  "displayName": "Hermes (built-in)",
+  "description": "The default agentic LLM loop: Anthropic/OpenAI tool-use with MCP tools + RAG context, wired straight to the control plane. No external agent framework installed.",
+  "version": "1.0.0",
+  "install": {
+    "dockerfile": "connector/harnesses/hermes/Dockerfile",
+    "baseImage": "python:3.12-slim"
+  },
+  "start": {
+    "command": ["sh", "-c", "python -m http.server 8080 --bind 0.0.0.0 >/dev/null 2>&1 & exec python -m connector.control_plane.agent_runtime"]
+  },
+  "env": {
+    "required": ["HERMES_CONTROL_PLANE_URL", "HERMES_CONNECTOR_TOKEN"],
+    "optional": ["HERMES_AGENT_MODEL", "HERMES_AGENT_NAME", "HERMES_MODEL_API_KEY", "HERMES_AGENT_SYSTEM_PROMPT", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
+    "fixed": {}
+  },
+  "health": {
+    "port": 8080,
+    "intervalSeconds": 30,
+    "timeoutSeconds": 5
+  },
+  "capabilities": ["chat", "workflow", "rag", "mcp"],
+  "containerBinding": "AGENT_HERMES"
+}

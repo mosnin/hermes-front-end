@@ -4,11 +4,12 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, EmptyState, Input, StatusDot } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, StatusDot, Toggle } from "@/components/ui";
 import { MeshGraphic } from "@/components/marketing/graphics";
 import { useActiveSpace } from "@/components/active-space";
+import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { ArrowRight, Send } from "@/components/icons";
+import { ArrowRight, Globe, Send } from "@/components/icons";
 
 export default function NetworkPage() {
   const { spaceId } = useActiveSpace();
@@ -167,6 +168,153 @@ export default function NetworkPage() {
           </Card>
         </div>
       )}
+
+      <DirectorySection />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A2A federation groundwork (feature 15) — publish agent cards to the public
+// cross-tenant directory, and browse what other Spaces have published.
+// Inbound A2A calls remain gated by the existing per-agent guardrails
+// (autonomy pause, guard config, inbound key) — this section only controls
+// discoverability.
+// ---------------------------------------------------------------------------
+
+// Local shapes for `api.capabilities.*` results — typed by hand since that
+// module is new this cycle and not yet reflected in `_generated/api.d.ts`
+// (see the cycle report; `npx tsc --noEmit` will still flag the `api.capabilities.*`
+// call sites themselves until the integrator regenerates codegen).
+type PublishableAgent = {
+  agentId: Id<"agents">;
+  name: string;
+  description?: string;
+  status: string;
+  capabilities: string[];
+  published: boolean;
+};
+
+type PublicDirectoryAgent = {
+  agentId: Id<"agents">;
+  name: string;
+  description?: string;
+  capabilities: string[];
+  harness?: string;
+  cardPath: string;
+};
+
+function DirectorySection() {
+  const { spaceId } = useActiveSpace();
+  const publishable = useQuery(api.capabilities.listPublishable, spaceId ? { spaceId } : "skip");
+  const setDirectoryEnabled = useMutation(api.capabilities.setDirectoryEnabled);
+  const setAgentPublished = useMutation(api.capabilities.setAgentPublished);
+  const toast = useToast();
+
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const publicDirectory = useQuery(api.capabilities.publicDirectory, browseOpen ? {} : "skip");
+
+  async function toggleDirectory(enabled: boolean) {
+    if (!spaceId) return;
+    try {
+      await setDirectoryEnabled({ spaceId, enabled });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to update directory setting", "error");
+    }
+  }
+
+  async function togglePublish(agentId: Id<"agents">, published: boolean) {
+    if (!spaceId) return;
+    try {
+      await setAgentPublished({ spaceId, agentId, published });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to update agent visibility", "error");
+    }
+  }
+
+  return (
+    <div className="mt-8 grid gap-4 lg:grid-cols-2">
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold">Public agent directory</h2>
+            <p className="text-sm text-muted">
+              Publish selected agent cards so other Spaces can discover and call them via A2A.
+            </p>
+          </div>
+          <Toggle
+            checked={publishable?.directoryEnabled ?? false}
+            onChange={toggleDirectory}
+            label="Enabled"
+          />
+        </div>
+        {!publishable?.agents.length ? (
+          <p className="text-sm text-muted">No agents in this Space yet.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {publishable.agents.map((a: PublishableAgent) => (
+              <li key={a.agentId} className="flex items-center justify-between gap-2 py-2.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <StatusDot status={a.status} />
+                  <span className="truncate text-sm font-medium">{a.name}</span>
+                  {a.capabilities.slice(0, 2).map((c: string) => (
+                    <Badge key={c} tone="blue">
+                      {c}
+                    </Badge>
+                  ))}
+                </div>
+                <Toggle
+                  checked={a.published}
+                  onChange={(v) => togglePublish(a.agentId, v)}
+                  label={a.published ? "Published" : "Private"}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+        {publishable && !publishable.directoryEnabled && (
+          <p className="mt-3 text-xs text-muted">
+            Enable the directory for this Space for published agents to actually appear publicly.
+          </p>
+        )}
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold">Browse the directory</h2>
+          <Button variant="ghost" onClick={() => setBrowseOpen((v) => !v)}>
+            <Globe className="h-4 w-4" /> {browseOpen ? "Hide" : "Browse"}
+          </Button>
+        </div>
+        {!browseOpen ? (
+          <p className="text-sm text-muted">
+            Browse agent cards other Spaces (and organizations) have published to the public directory.
+          </p>
+        ) : publicDirectory === undefined ? (
+          <p className="text-sm text-muted">Loading…</p>
+        ) : publicDirectory.page.length === 0 ? (
+          <p className="text-sm text-muted">No agents published yet.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {publicDirectory.page.map((a: PublicDirectoryAgent) => (
+              <li key={a.agentId} className="py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{a.name}</span>
+                  {a.harness && <Badge>{a.harness}</Badge>}
+                </div>
+                {a.description && <p className="mt-0.5 text-xs text-muted">{a.description}</p>}
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {a.capabilities.map((c: string) => (
+                    <Badge key={c} tone="blue">
+                      {c}
+                    </Badge>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }

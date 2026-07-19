@@ -11,6 +11,9 @@ import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
 import { ArrowLeft, Cpu, Trash2 } from "@/components/icons";
+import { LogPane } from "@/components/fleet/LogPane";
+import { ConfigPushPanel } from "@/components/fleet/ConfigPushPanel";
+import { SnapshotPanel } from "@/components/fleet/SnapshotPanel";
 
 export default function AgentDetailPage({
   params,
@@ -96,6 +99,19 @@ export default function AgentDetailPage({
           agents={agents ?? []}
         />
       </div>
+
+      {agent.kind !== "a2a-external" && spaceId && (
+        <div className="mb-6 grid gap-4 lg:grid-cols-2">
+          <ConfigPushPanel spaceId={spaceId} agentId={id} />
+          <SnapshotPanel spaceId={spaceId} agentId={id} agentName={agent.name} />
+        </div>
+      )}
+
+      {agent.kind !== "a2a-external" && spaceId && (
+        <div className="mb-6">
+          <LogPane spaceId={spaceId} agentId={id} />
+        </div>
+      )}
 
       <div className="mb-6">
         {agent.kind === "a2a-external" ? (
