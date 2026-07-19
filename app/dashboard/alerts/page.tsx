@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input, Modal, SkeletonRows, Toggle } from "@/components/ui";
-import { Stagger, StaggerItem } from "@/components/marketing/motion";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
@@ -67,7 +67,7 @@ export default function AlertsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Alerts</h1>
           <p className="text-sm text-muted">
@@ -79,7 +79,7 @@ export default function AlertsPage() {
             <Plus className="h-4 w-4" /> New alert
           </Button>
         )}
-      </div>
+      </Reveal>
 
       {rules === undefined ? (
         <SkeletonRows rows={3} className="rounded-3xl border border-border bg-surface p-6" />
@@ -131,7 +131,7 @@ export default function AlertsPage() {
                     <button
                       title="Delete"
                       onClick={() => remove({ spaceId: spaceId!, ruleId: r._id })}
-                      className="rounded-lg border border-border p-2 text-muted transition hover:text-red-400"
+                      className="rounded-lg border border-border p-2 text-muted transition hover:text-red-600"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

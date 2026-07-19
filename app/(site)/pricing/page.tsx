@@ -4,34 +4,34 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { SignedIn, SignedOut, SignUpButton } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
+import {
+  Reveal,
+  Stagger,
+  StaggerItem,
+  TextReveal,
+  CountUp,
+  MagneticButton,
+  EASE,
+} from "@/components/site/motion";
+import { RADIUS, TYPE_H1, TYPE_H2 } from "@/components/site/ui";
 
 /* ---------------------------------------------------------------------------
    Pricing. Centered headline, three plan cards (middle emphasized on the
    beige card fill), FAQ as a two-column hairline list, closing CTA band.
    Plan copy ported from the previous app/pricing/page.tsx, which mirrors
-   convex/lib/plans.ts PLAN_LIMITS. The server enforces these numbers.
+   convex/lib/plans.ts PLAN_LIMITS. The server enforces these numbers. All
+   reveal/stagger/count-up motion comes from Lane A's shared
+   components/site/motion.tsx.
 --------------------------------------------------------------------------- */
 
-function Rise({
-  children,
-  delay = 0,
-  className,
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  className?: string;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.7, delay, ease: [0.22, 0.6, 0.24, 1] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
+/** Renders a plan price; count-up animates plain "$N" prices, anything else
+ *  (e.g. "Custom") renders as-is. */
+function PriceTag({ price, className }: { price: string; className?: string }) {
+  const match = /^\$(\d+)$/.exec(price);
+  if (!match) {
+    return <span className={className}>{price}</span>;
+  }
+  return <CountUp value={Number(match[1])} prefix="$" duration={1.1} className={className} />;
 }
 
 const TIERS = [
@@ -152,9 +152,11 @@ function PlanCTA({ tier }: { tier: (typeof TIERS)[number] }) {
 
   if (tier.name === "Enterprise") {
     return (
-      <Link href="/contact" className={cls}>
-        {tier.cta}
-      </Link>
+      <MagneticButton strength={0.24} range={8} className="!block w-full">
+        <Link href="/contact" className={cls}>
+          {tier.cta}
+        </Link>
+      </MagneticButton>
     );
   }
 
@@ -162,13 +164,17 @@ function PlanCTA({ tier }: { tier: (typeof TIERS)[number] }) {
     <>
       <SignedOut>
         <SignUpButton mode="modal">
-          <button className={cls}>{tier.cta}</button>
+          <MagneticButton strength={0.24} range={8} className="!block w-full">
+            <button className={cls}>{tier.cta}</button>
+          </MagneticButton>
         </SignUpButton>
       </SignedOut>
       <SignedIn>
-        <Link href="/dashboard/billing" className={cls}>
-          {tier.cta}
-        </Link>
+        <MagneticButton strength={0.24} range={8} className="!block w-full">
+          <Link href="/dashboard/billing" className={cls}>
+            {tier.cta}
+          </Link>
+        </MagneticButton>
       </SignedIn>
     </>
   );
@@ -179,32 +185,32 @@ export default function PricingPage() {
     <main>
       {/* Hero */}
       <section className="mx-auto max-w-[1060px] px-5 pb-16 pt-24 text-center sm:px-7 sm:pt-32">
-        <Rise>
-          <h1 className="mx-auto text-[44px] font-medium leading-[1.06] tracking-[-0.015em] text-[var(--site-ink)] sm:text-[64px]">
-            Pay for the panel,
-            <br />
-            not the compute
-          </h1>
-        </Rise>
-        <Rise delay={0.1}>
+        <h1 className={cn(TYPE_H1, "mx-auto text-[var(--site-ink)]")}>
+          <TextReveal as="span" text="Pay for the panel," className="block" />
+          <TextReveal as="span" text="not the compute" className="block" delay={0.2} />
+        </h1>
+        <Reveal delay={0.4}>
           <p className="mx-auto mt-6 max-w-[440px] text-[17px] leading-relaxed text-[var(--site-body)]">
             Your agents run on your infrastructure. Plans meter the control
             plane, and every limit is enforced server-side.
           </p>
-        </Rise>
+        </Reveal>
       </section>
 
       {/* Plan cards */}
       <section className="mx-auto max-w-[1060px] px-5 pb-24 sm:px-7">
-        <div className="grid gap-5 lg:grid-cols-3">
-          {TIERS.map((t, i) => (
-            <Rise key={t.name} delay={i * 0.06}>
-              <div
+        <Stagger className="grid gap-5 lg:grid-cols-3" gap={0.1}>
+          {TIERS.map((t) => (
+            <StaggerItem key={t.name} y={22}>
+              <motion.div
+                whileHover={{ y: -5 }}
+                transition={{ duration: 0.3, ease: EASE }}
                 className={cn(
-                  "flex h-full flex-col rounded-[24px] p-7",
+                  RADIUS.card,
+                  "flex h-full flex-col p-7 transition-shadow duration-300",
                   t.highlight
-                    ? "bg-[var(--site-card)]"
-                    : "bg-white ring-1 ring-inset ring-[var(--site-line)]",
+                    ? "bg-[var(--site-card)] hover:shadow-[0_20px_40px_rgba(31,31,28,0.10)]"
+                    : "bg-white ring-1 ring-inset ring-[var(--site-line)] hover:shadow-[0_20px_40px_rgba(31,31,28,0.06)]",
                 )}
               >
                 {t.highlight ? (
@@ -217,7 +223,7 @@ export default function PricingPage() {
                 <h2 className="text-[16.5px] font-medium text-[var(--site-ink)]">{t.name}</h2>
                 <p className="mt-1.5 text-[14px] text-[var(--site-body)]">{t.blurb}</p>
                 <p className="mt-6 text-[38px] font-medium tracking-[-0.01em] text-[var(--site-ink)]">
-                  {t.price}
+                  <PriceTag price={t.price} />
                   <span className="ml-1.5 text-[14px] font-normal text-[var(--site-body)]">
                     {t.period}
                   </span>
@@ -230,14 +236,14 @@ export default function PricingPage() {
                 <div className="mt-8">
                   <PlanCTA tier={t} />
                 </div>
-              </div>
-            </Rise>
+              </motion.div>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
 
         {/* Cadre Cloud add-on */}
-        <Rise>
-          <div className="mt-6 flex flex-col gap-6 rounded-[24px] bg-white p-7 ring-1 ring-inset ring-[var(--site-line)] sm:flex-row sm:items-center sm:justify-between">
+        <Reveal>
+          <div className={cn(RADIUS.card, "mt-6 flex flex-col gap-6 bg-white p-7 ring-1 ring-inset ring-[var(--site-line)] sm:flex-row sm:items-center sm:justify-between")}>
             <div>
               <span className="inline-flex rounded-full bg-[var(--site-band)] px-3 py-1 text-[11.5px] font-medium uppercase tracking-wide text-[#75726c]">
                 Add-on
@@ -257,35 +263,39 @@ export default function PricingPage() {
                   {ADDON.period}
                 </span>
               </p>
-              <Link
-                href="/contact"
-                className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--site-line)] bg-white px-4 py-2 text-[14px] font-medium text-[var(--site-ink)] transition hover:border-[#d6d4cd]"
-              >
-                Get early access
-              </Link>
+              <MagneticButton strength={0.26} range={8} className="mt-4 inline-block">
+                <Link
+                  href="/contact"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--site-line)] bg-white px-4 py-2 text-[14px] font-medium text-[var(--site-ink)] transition hover:border-[#d6d4cd]"
+                >
+                  Get early access
+                </Link>
+              </MagneticButton>
             </div>
           </div>
-        </Rise>
+        </Reveal>
       </section>
 
       {/* FAQ */}
       <section className="border-t border-[var(--site-line)] bg-[var(--site-band)] py-20">
         <div className="mx-auto max-w-[1060px] px-5 sm:px-7">
-          <Rise className="text-center">
-            <h2 className="text-[34px] font-medium tracking-[-0.01em] text-[var(--site-ink)] sm:text-[40px]">
-              Questions, answered straight
-            </h2>
-          </Rise>
+          <Reveal className="text-center">
+            <h2 className={TYPE_H2}>Questions, answered straight</h2>
+          </Reveal>
           <div className="mt-14 grid gap-x-14 sm:grid-cols-2">
             {[FAQ.slice(0, 4), FAQ.slice(4)].map((col, colIdx) => (
-              <div key={colIdx} className="divide-y divide-[var(--site-line)] border-t border-[var(--site-line)]">
-                {col.map((f, i) => (
-                  <Rise key={f.q} delay={i * 0.06} className="py-7">
+              <Stagger
+                key={colIdx}
+                gap={0.07}
+                className="divide-y divide-[var(--site-line)] border-t border-[var(--site-line)]"
+              >
+                {col.map((f) => (
+                  <StaggerItem key={f.q} y={14} className="py-7">
                     <h3 className="text-[15.5px] font-medium text-[var(--site-ink)]">{f.q}</h3>
                     <p className="mt-2.5 text-[14.5px] leading-relaxed text-[var(--site-body)]">{f.a}</p>
-                  </Rise>
+                  </StaggerItem>
                 ))}
-              </div>
+              </Stagger>
             ))}
           </div>
         </div>
@@ -293,10 +303,8 @@ export default function PricingPage() {
 
       {/* Closing CTA */}
       <section className="mx-auto max-w-[1060px] px-5 py-24 text-center sm:px-7">
-        <Rise>
-          <h2 className="text-[34px] font-medium tracking-[-0.01em] text-[var(--site-ink)] sm:text-[40px]">
-            Ready to run your fleet?
-          </h2>
+        <Reveal>
+          <h2 className={TYPE_H2}>Ready to run your fleet?</h2>
           <p className="mx-auto mt-3 max-w-[400px] text-[15.5px] leading-relaxed text-[var(--site-body)]">
             Start free, upgrade a Space when the work is real. No card
             required to try it out.
@@ -304,21 +312,25 @@ export default function PricingPage() {
           <div className="mt-8 flex items-center justify-center">
             <SignedOut>
               <SignUpButton mode="modal">
-                <button className="rounded-full bg-[#1f1f1c] px-6 py-3 text-[15px] font-medium text-white transition hover:bg-black">
-                  Get started
-                </button>
+                <MagneticButton strength={0.28} range={10}>
+                  <button className="rounded-full bg-[#1f1f1c] px-6 py-3 text-[15px] font-medium text-white transition hover:bg-black">
+                    Get started
+                  </button>
+                </MagneticButton>
               </SignUpButton>
             </SignedOut>
             <SignedIn>
-              <Link
-                href="/dashboard"
-                className="rounded-full bg-[#1f1f1c] px-6 py-3 text-[15px] font-medium text-white transition hover:bg-black"
-              >
-                Open dashboard
-              </Link>
+              <MagneticButton strength={0.28} range={10}>
+                <Link
+                  href="/dashboard"
+                  className="rounded-full bg-[#1f1f1c] px-6 py-3 text-[15px] font-medium text-white transition hover:bg-black"
+                >
+                  Open dashboard
+                </Link>
+              </MagneticButton>
             </SignedIn>
           </div>
-        </Rise>
+        </Reveal>
       </section>
     </main>
   );

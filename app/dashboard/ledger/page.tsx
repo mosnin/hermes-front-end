@@ -9,6 +9,7 @@ import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
 import { Undo2 } from "@/components/icons";
+import { Reveal } from "@/components/site/motion";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -52,19 +53,19 @@ export default function LedgerPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6">
+      <Reveal as="div" className="mb-6">
         <h1 className="text-2xl font-semibold">Action ledger</h1>
         <p className="text-sm text-muted">
           Every action agents take or propose, with rollback.
         </p>
-      </div>
+      </Reveal>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <Reveal delay={0.06} className="mb-4 flex flex-wrap gap-2">
         {FILTERS.map((f) => (
           <button
             key={f.key}
             onClick={() => setFilter(f.key)}
-            className={`rounded-full px-3 py-1 text-xs ${
+            className={`rounded-full px-3 py-1 text-xs transition-colors ${
               filter === f.key
                 ? "bg-accent text-white"
                 : "border border-border text-muted hover:text-foreground"
@@ -73,7 +74,7 @@ export default function LedgerPage() {
             {f.label}
           </button>
         ))}
-      </div>
+      </Reveal>
 
       {entries === undefined ? (
         <Card>
@@ -85,7 +86,7 @@ export default function LedgerPage() {
           body="As agents take or propose actions, they land here, every one reversible by an admin."
         />
       ) : (
-        <div className="space-y-3">
+        <Reveal delay={0.1} className="space-y-3">
           {entries.map((e) => (
             <Card key={e._id}>
               <div className="flex items-start justify-between gap-3">
@@ -121,7 +122,7 @@ export default function LedgerPage() {
               </div>
             </Card>
           ))}
-        </div>
+        </Reveal>
       )}
     </div>
   );

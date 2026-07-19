@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useQuery } from "convex/react";
+import { useReducedMotion } from "motion/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Card, EmptyState, StatusDot } from "@/components/ui";
 import { ActivityFeed } from "@/components/activity-feed";
@@ -9,6 +10,7 @@ import { useActiveSpace } from "@/components/active-space";
 import { timeAgo, cn } from "@/lib/utils";
 import { MissionGraph, GraphEdge } from "@/components/mission-graph";
 import { Activity, Network, Radio, Users } from "@/components/icons";
+import { CountUp, Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 export default function MissionPage() {
   const { spaceId } = useActiveSpace();
@@ -48,7 +50,7 @@ export default function MissionPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center gap-3">
+      <Reveal as="div" className="mb-6 flex items-center gap-3">
         <span className="grid h-10 w-10 place-items-center rounded-xl border border-border bg-surface-2 text-accent">
           <Radio className="h-5 w-5" />
         </span>
@@ -59,36 +61,45 @@ export default function MissionPage() {
             flowing between them, in real time.
           </p>
         </div>
-      </div>
+      </Reveal>
 
       {/* Top stat row. */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
-          icon={<Users className="h-4 w-4" />}
-          label="Agents online"
-          value={`${onlineCount} / ${agents.length}`}
-          loading={loading}
-          accent={onlineCount > 0}
-        />
-        <Stat
-          icon={<Network className="h-4 w-4" />}
-          label="Active threads"
-          value={`${activeThreads}`}
-          loading={loading}
-        />
-        <Stat
-          icon={<Activity className="h-4 w-4" />}
-          label="A2A messages today"
-          value={`${messagesToday}`}
-          loading={loading}
-        />
-        <Stat
-          icon={<Radio className="h-4 w-4" />}
-          label="Live connections"
-          value={`${edges.length}`}
-          loading={loading}
-        />
-      </div>
+      <Stagger className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" gap={0.07}>
+        <StaggerItem>
+          <Stat
+            icon={<Users className="h-4 w-4" />}
+            label="Agents online"
+            countValue={onlineCount}
+            countSuffix={` / ${agents.length}`}
+            loading={loading}
+            accent={onlineCount > 0}
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <Stat
+            icon={<Network className="h-4 w-4" />}
+            label="Active threads"
+            countValue={activeThreads}
+            loading={loading}
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <Stat
+            icon={<Activity className="h-4 w-4" />}
+            label="A2A messages today"
+            countValue={messagesToday}
+            loading={loading}
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <Stat
+            icon={<Radio className="h-4 w-4" />}
+            label="Live connections"
+            countValue={edges.length}
+            loading={loading}
+          />
+        </StaggerItem>
+      </Stagger>
 
       {loading ? (
         <div className="grid h-64 place-items-center rounded-2xl border border-border bg-surface">
@@ -102,26 +113,28 @@ export default function MissionPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
           {/* Topology. */}
-          <Card className="overflow-hidden">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold">Coordination topology</h2>
-              <Badge tone={edges.length > 0 ? "green" : "default"}>
-                {edges.length > 0 ? "live" : "idle"}
-              </Badge>
-            </div>
-            <div className="mx-auto max-w-xl">
-              <MissionGraph agents={agents} edges={edges} />
-            </div>
-            {edges.length === 0 && (
-              <p className="mt-2 text-center text-xs text-muted">
-                No agent-to-agent traffic yet. Connections appear here as agents
-                start coordinating.
-              </p>
-            )}
-          </Card>
+          <Reveal as="div" x={-16}>
+            <Card className="overflow-hidden">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="font-semibold">Coordination topology</h2>
+                <Badge tone={edges.length > 0 ? "green" : "default"}>
+                  {edges.length > 0 ? "live" : "idle"}
+                </Badge>
+              </div>
+              <div className="mx-auto max-w-xl">
+                <MissionGraph agents={agents} edges={edges} />
+              </div>
+              {edges.length === 0 && (
+                <p className="mt-2 text-center text-xs text-muted">
+                  No agent-to-agent traffic yet. Connections appear here as agents
+                  start coordinating.
+                </p>
+              )}
+            </Card>
+          </Reveal>
 
           {/* Right column: roster + live feed. */}
-          <div className="space-y-4">
+          <Reveal as="div" x={16} delay={0.06} className="space-y-4">
             <Card>
               <h2 className="mb-3 font-semibold">Agent roster</h2>
               <ul className="space-y-2">
@@ -159,29 +172,31 @@ export default function MissionPage() {
                 <ActivityFeed limit={30} />
               </div>
             </Card>
-          </div>
+          </Reveal>
         </div>
       )}
 
       {/* Recent A2A exchanges strip. */}
       {!loading && agents.length > 0 && messages.length > 0 && (
-        <Card className="mt-4">
-          <h2 className="mb-3 font-semibold">Recent inter-agent exchanges</h2>
-          <ul className="divide-y divide-border">
-            {messages.slice(0, 6).map((m) => (
-              <li key={m._id} className="flex items-center gap-2 py-2 text-sm">
-                <span className="font-medium">{m.fromName}</span>
-                <span className="text-muted">→</span>
-                <span className="font-medium">{m.toName}</span>
-                <Badge tone="green">{m.kind}</Badge>
-                <span className="truncate text-muted">{m.content}</span>
-                <span className="ml-auto shrink-0 text-xs text-muted">
-                  {timeAgo(m.createdAt)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        <Reveal delay={0.1}>
+          <Card className="mt-4">
+            <h2 className="mb-3 font-semibold">Recent inter-agent exchanges</h2>
+            <ul className="divide-y divide-border">
+              {messages.slice(0, 6).map((m) => (
+                <li key={m._id} className="flex items-center gap-2 py-2 text-sm">
+                  <span className="font-medium">{m.fromName}</span>
+                  <span className="text-muted">→</span>
+                  <span className="font-medium">{m.toName}</span>
+                  <Badge tone="green">{m.kind}</Badge>
+                  <span className="truncate text-muted">{m.content}</span>
+                  <span className="ml-auto shrink-0 text-xs text-muted">
+                    {timeAgo(m.createdAt)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </Reveal>
       )}
     </div>
   );
@@ -190,21 +205,28 @@ export default function MissionPage() {
 function Stat({
   icon,
   label,
-  value,
   loading,
   accent,
+  countValue,
+  countSuffix,
 }: {
   icon: React.ReactNode;
   label: string;
-  value: string;
   loading: boolean;
   accent?: boolean;
+  /** Numeric value to count up to once loaded; renders "—" while `loading`. */
+  countValue: number;
+  /** Plain (non-animated) text appended after the counted number, e.g. " / 8". */
+  countSuffix?: string;
 }) {
+  const reduce = useReducedMotion();
   return (
     <Card className="relative overflow-hidden">
       {accent && (
         <span className="absolute right-3 top-3 flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+          {!reduce && (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+          )}
           <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" />
         </span>
       )}
@@ -218,7 +240,7 @@ function Stat({
           accent && "text-foreground",
         )}
       >
-        {loading ? "—" : value}
+        {loading ? "—" : <CountUp value={countValue} suffix={countSuffix} duration={1} pop={false} />}
       </p>
     </Card>
   );

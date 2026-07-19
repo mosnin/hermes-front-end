@@ -15,6 +15,7 @@ import { LogPane } from "@/components/fleet/LogPane";
 import { ConfigPushPanel } from "@/components/fleet/ConfigPushPanel";
 import { SnapshotPanel } from "@/components/fleet/SnapshotPanel";
 import { WatchdogPanel } from "@/components/fleet/WatchdogPanel";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 export default function AgentDetailPage({
   params,
@@ -49,7 +50,7 @@ export default function AgentDetailPage({
         <ArrowLeft className="h-4 w-4" /> Agents
       </button>
 
-      <div className="mb-6 flex items-start justify-between">
+      <Reveal className="mb-6 flex items-start justify-between" y={12}>
         <div>
           <div className="flex items-center gap-2">
             <StatusDot status={agent.status} />
@@ -72,66 +73,74 @@ export default function AgentDetailPage({
             <Trash2 className="h-4 w-4" /> Remove
           </Button>
         )}
-      </div>
+      </Reveal>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        <Card>
-          <p className="text-sm text-muted">Status</p>
-          <p className="mt-1 text-lg font-medium capitalize">{agent.status}</p>
-        </Card>
-        <Card>
-          <p className="text-sm text-muted">Last heartbeat</p>
-          <p className="mt-1 text-lg font-medium">
-            {timeAgo(agent.lastHeartbeat)}
-          </p>
-        </Card>
-        <Card>
-          <p className="text-sm text-muted">Connector</p>
-          <p className="mt-1 text-lg font-medium">
-            {agent.connectorVersion ?? "—"}
-          </p>
-        </Card>
-      </div>
+      <Stagger className="mb-6 grid gap-4 sm:grid-cols-3">
+        <StaggerItem>
+          <Card>
+            <p className="text-sm text-muted">Status</p>
+            <p className="mt-1 text-lg font-medium capitalize">{agent.status}</p>
+          </Card>
+        </StaggerItem>
+        <StaggerItem>
+          <Card>
+            <p className="text-sm text-muted">Last heartbeat</p>
+            <p className="mt-1 text-lg font-medium">
+              {timeAgo(agent.lastHeartbeat)}
+            </p>
+          </Card>
+        </StaggerItem>
+        <StaggerItem>
+          <Card>
+            <p className="text-sm text-muted">Connector</p>
+            <p className="mt-1 text-lg font-medium">
+              {agent.connectorVersion ?? "—"}
+            </p>
+          </Card>
+        </StaggerItem>
+      </Stagger>
 
-      <div className="mb-6">
+      <Reveal className="mb-6">
         <PersonaCard
           agentId={id}
           agent={agent}
           agents={agents ?? []}
         />
-      </div>
+      </Reveal>
 
       {agent.kind !== "a2a-external" && spaceId && (
-        <div className="mb-6 grid gap-4 lg:grid-cols-2">
+        <Reveal className="mb-6 grid gap-4 lg:grid-cols-2">
           <ConfigPushPanel spaceId={spaceId} agentId={id} />
           <SnapshotPanel spaceId={spaceId} agentId={id} agentName={agent.name} />
-        </div>
+        </Reveal>
       )}
 
       {agent.kind !== "a2a-external" && spaceId && agent.vmProvider && (
-        <div className="mb-6">
+        <Reveal className="mb-6">
           <WatchdogPanel spaceId={spaceId} agentId={id} agent={agent} />
-        </div>
+        </Reveal>
       )}
 
       {agent.kind !== "a2a-external" && spaceId && (
-        <div className="mb-6">
+        <Reveal className="mb-6">
           <LogPane spaceId={spaceId} agentId={id} />
-        </div>
+        </Reveal>
       )}
 
-      <div className="mb-6">
+      <Reveal className="mb-6">
         {agent.kind === "a2a-external" ? (
           <ExternalA2APanel agentId={id} name={agent.name} />
         ) : (
           <InboundA2APanel agentId={id} />
         )}
-      </div>
+      </Reveal>
 
-      <Card>
-        <h2 className="mb-3 font-semibold">Activity</h2>
-        <ActivityFeed agentId={id} limit={50} />
-      </Card>
+      <Reveal>
+        <Card>
+          <h2 className="mb-3 font-semibold">Activity</h2>
+          <ActivityFeed agentId={id} limit={50} />
+        </Card>
+      </Reveal>
     </div>
   );
 }

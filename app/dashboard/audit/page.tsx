@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
+import { Reveal } from "@/components/site/motion";
 
 const CATEGORIES = [
   "all",
@@ -70,7 +71,7 @@ export default function AuditPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <Reveal as="div" className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Audit log</h1>
           <p className="text-sm text-muted">
@@ -87,23 +88,25 @@ export default function AuditPage() {
             {exporting ? "Exporting…" : "Export JSON"}
           </Button>
         )}
-      </div>
+      </Reveal>
 
       {!isAdmin ? (
-        <Card>
-          <div className="flex items-center gap-3 text-sm text-muted">
-            <ShieldAlert className="h-4 w-4 text-amber-400" />
-            Admins only, you don&apos;t have access to the audit log.
-          </div>
-        </Card>
+        <Reveal delay={0.06}>
+          <Card>
+            <div className="flex items-center gap-3 text-sm text-muted">
+              <ShieldAlert className="h-4 w-4 text-amber-600" />
+              Admins only, you don&apos;t have access to the audit log.
+            </div>
+          </Card>
+        </Reveal>
       ) : (
         <>
-          <div className="mb-4 flex flex-wrap gap-2">
+          <Reveal delay={0.06} className="mb-4 flex flex-wrap gap-2">
             {CATEGORIES.map((c) => (
               <button
                 key={c}
                 onClick={() => setCategory(c)}
-                className={`rounded-full px-3 py-1 text-xs ${
+                className={`rounded-full px-3 py-1 text-xs transition-colors ${
                   category === c
                     ? "bg-accent text-white"
                     : "border border-border text-muted hover:text-foreground"
@@ -112,47 +115,49 @@ export default function AuditPage() {
                 {c}
               </button>
             ))}
-          </div>
+          </Reveal>
 
-          <div className="mb-4 flex items-center gap-2">
+          <Reveal delay={0.1} className="mb-4 flex items-center gap-2">
             <Search className="h-4 w-4 text-muted" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search summaries…"
             />
-          </div>
+          </Reveal>
 
-          <Card>
-            {events === undefined ? (
-              <p className="text-sm text-muted">Loading…</p>
-            ) : filtered.length === 0 ? (
-              <EmptyState
-                title="No matching events"
-                body="Every agent, task, and governance action is appended here permanently."
-              />
-            ) : (
-              <ul className="divide-y divide-border">
-                {filtered.map((e) => (
-                  <li key={e._id} className="flex items-start gap-3 py-3">
-                    <Badge tone={tone[e.category] ?? "default"}>
-                      {e.category}
-                    </Badge>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm">{e.summary}</p>
-                      <p className="text-xs text-muted">
-                        {e.actorType}
-                        {e.action ? ` · ${e.action}` : ""}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-xs text-muted">
-                      {timeAgo(e.createdAt)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          <Reveal delay={0.14}>
+            <Card>
+              {events === undefined ? (
+                <p className="text-sm text-muted">Loading…</p>
+              ) : filtered.length === 0 ? (
+                <EmptyState
+                  title="No matching events"
+                  body="Every agent, task, and governance action is appended here permanently."
+                />
+              ) : (
+                <ul className="divide-y divide-border">
+                  {filtered.map((e) => (
+                    <li key={e._id} className="flex items-start gap-3 py-3">
+                      <Badge tone={tone[e.category] ?? "default"}>
+                        {e.category}
+                      </Badge>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm">{e.summary}</p>
+                        <p className="text-xs text-muted">
+                          {e.actorType}
+                          {e.action ? ` · ${e.action}` : ""}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs text-muted">
+                        {timeAgo(e.createdAt)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </Reveal>
         </>
       )}
     </div>

@@ -21,7 +21,8 @@ import { useActiveSpace } from "@/components/active-space";
 import { Onboarding } from "@/components/onboarding";
 import { timeAgo } from "@/lib/utils";
 import { AlertTriangle, ChevronLeft, Network, Plus } from "@/components/icons";
-import { Stagger, StaggerItem } from "@/components/marketing/motion";
+import { motion, useReducedMotion, type Variants } from "motion/react";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 const TABS = [
   { label: "Overview", href: "/dashboard", active: true },
@@ -55,6 +56,15 @@ const SKILL_ROWS = [
 ];
 
 export default function OverviewPage() {
+  const reduceMotion = useReducedMotion();
+  const agentListStagger: Variants = {
+    hidden: {},
+    show: { transition: { staggerChildren: reduceMotion ? 0 : 0.05 } },
+  };
+  const agentListItem: Variants = {
+    hidden: { opacity: 0, y: reduceMotion ? 0 : 8 },
+    show: { opacity: 1, y: 0, transition: { duration: reduceMotion ? 0.15 : 0.35 } },
+  };
   const { spaceId, active } = useActiveSpace();
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
   const activity = useQuery(
@@ -161,7 +171,13 @@ export default function OverviewPage() {
   return (
     <div className="flex h-full flex-col lg:flex-row">
       {/* Detail panel */}
-      <div className="w-full shrink-0 border-b border-border bg-surface p-5 lg:w-80 lg:border-b-0 lg:border-r">
+      <Reveal
+        as="div"
+        x={-16}
+        y={0}
+        duration={0.5}
+        className="w-full shrink-0 border-b border-border bg-surface p-5 lg:w-80 lg:border-b-0 lg:border-r"
+      >
         <div className="flex items-center gap-3">
           <span className="grid h-9 w-9 place-items-center rounded-xl border border-border bg-surface-2">
             <ChevronLeft className="h-4 w-4 text-muted" />
@@ -177,7 +193,7 @@ export default function OverviewPage() {
         <div className="mt-4 flex items-center justify-between">
           <span className="flex items-center gap-2 text-sm">
             <Badge tone={active?.autonomyPaused ? "red" : "green"}>{online}</Badge>
-            <span className={active?.autonomyPaused ? "text-red-400" : "text-lime-400"}>
+            <span className={active?.autonomyPaused ? "text-red-500" : "text-lime-600"}>
               {active?.autonomyPaused ? "Paused" : "Online"}
             </span>
             <span className="text-xs text-muted">Updated {lastUpdate}</span>
@@ -190,19 +206,24 @@ export default function OverviewPage() {
         <button
           onClick={() => spaceId && seed({ spaceId })}
           disabled={!spaceId}
-          className="mt-4 w-full rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-sm text-muted transition hover:text-foreground"
+          className="mt-4 w-full rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-sm text-muted transition hover:text-foreground active:scale-[0.99]"
         >
           Load demo data
         </button>
 
         <div className="mt-5">
           <p className="mb-2 text-xs uppercase tracking-wider text-muted">Agents</p>
-          <ul className="space-y-1.5">
+          <motion.ul
+            variants={agentListStagger}
+            initial="hidden"
+            animate="show"
+            className="space-y-1.5"
+          >
             {(agents ?? []).slice(0, 8).map((a) => (
-              <li key={a._id}>
+              <motion.li variants={agentListItem} key={a._id}>
                 <Link
                   href={`/dashboard/agents/${a._id}`}
-                  className="flex items-center gap-2.5 rounded-lg border border-border bg-surface-2/50 px-3 py-2 text-sm transition hover:border-muted"
+                  className="flex items-center gap-2.5 rounded-lg border border-border bg-surface-2/50 px-3 py-2 text-sm transition hover:border-muted hover:bg-surface-2"
                 >
                   <StatusDot status={a.status} />
                   <span className="flex-1 truncate">{a.name}</span>
@@ -210,27 +231,27 @@ export default function OverviewPage() {
                     {a.framework ?? a.platform ?? "hermes"}
                   </span>
                 </Link>
-              </li>
+              </motion.li>
             ))}
             {agents?.length === 0 && (
               <li className="rounded-lg border border-dashed border-border p-3 text-xs text-muted">
                 No agents yet, hit Actions to connect one.
               </li>
             )}
-          </ul>
+          </motion.ul>
           <button
             onClick={() => setOpen(true)}
-            className="mt-2 grid w-full place-items-center rounded-lg border border-border bg-surface-2/50 py-2 text-muted transition hover:text-accent"
+            className="mt-2 grid w-full place-items-center rounded-lg border border-border bg-surface-2/50 py-2 text-muted transition hover:text-accent hover:bg-surface-2"
           >
             <Plus className="h-4 w-4" />
           </button>
         </div>
-      </div>
+      </Reveal>
 
       {/* Main panel */}
       <div className="flex-1 overflow-y-auto p-5">
         <Onboarding />
-        <div className="mb-4 flex items-center justify-between">
+        <Reveal className="mb-4 flex items-center justify-between" y={10} duration={0.5}>
           <div className="flex items-center gap-1">
             {TABS.map((t) =>
               t.active ? (
@@ -257,7 +278,7 @@ export default function OverviewPage() {
           >
             Analytics
           </Link>
-        </div>
+        </Reveal>
 
         {/* Bento row 1: skills board + (date chip / media card) */}
         <Stagger className="grid gap-4 xl:grid-cols-[1.5fr_1fr]">
@@ -303,7 +324,8 @@ export default function OverviewPage() {
         </Stagger>
 
         {/* Instruments row: errors + network sensors, live feed */}
-        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <Stagger className="mt-4 grid gap-4 xl:grid-cols-2">
+          <StaggerItem>
           <SensorCard
             icon={<AlertTriangle className="h-4 w-4" />}
             title="Errors"
@@ -318,6 +340,8 @@ export default function OverviewPage() {
             axis={AXIS}
             onGear={() => {}}
           />
+          </StaggerItem>
+          <StaggerItem>
           <SensorCard
             icon={<Network className="h-4 w-4" />}
             title="Agent network"
@@ -331,14 +355,15 @@ export default function OverviewPage() {
             units={["24h", "1h"]}
             onGear={() => {}}
           />
-        </div>
+          </StaggerItem>
+        </Stagger>
 
-        <div className="mt-4">
+        <Reveal className="mt-4" y={14}>
           <Card>
             <h2 className="mb-3 text-xl font-semibold tracking-tight">Live activity</h2>
             <ActivityFeed limit={8} />
           </Card>
-        </div>
+        </Reveal>
       </div>
 
       <RegisterAgentDialog open={open} onClose={() => setOpen(false)} />

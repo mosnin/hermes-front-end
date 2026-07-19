@@ -15,6 +15,7 @@ import {
 } from "@/components/chat/message-bubble";
 import { Markdown } from "@/components/chat/markdown";
 import { ArrowLeft, Brain, Send, Square } from "@/components/icons";
+import { Reveal } from "@/components/site/motion";
 
 export default function ThreadDetailPage({
   params,
@@ -128,10 +129,10 @@ export default function ThreadDetailPage({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-border p-4">
+      <Reveal as="div" y={-8} duration={0.4} className="flex items-center gap-3 border-b border-border p-4">
         <button
           onClick={() => router.push("/dashboard/threads")}
-          className="text-muted hover:text-foreground"
+          className="text-muted transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
@@ -144,7 +145,7 @@ export default function ThreadDetailPage({
         <Badge tone={thread.status === "active" ? "green" : "default"}>
           {thread.status}
         </Badge>
-      </div>
+      </Reveal>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-6">
         {list.map((m) => (

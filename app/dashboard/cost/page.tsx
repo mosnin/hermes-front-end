@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, Input, Toggle } from "@/components/ui";
+import { EASE, Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 import { useActiveSpace } from "@/components/active-space";
 import {
   Activity,
@@ -32,6 +34,7 @@ function compact(n: number): string {
 }
 
 export default function CostPage() {
+  const reduce = useReducedMotion();
   const { spaceId } = useActiveSpace();
   const est = useQuery(api.costs.estimate, spaceId ? { spaceId } : "skip");
 
@@ -71,7 +74,7 @@ export default function CostPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6">
+      <Reveal className="mb-6">
         <h1 className="text-2xl font-semibold">Cost (estimated)</h1>
         <p className="text-sm text-muted">
           An <span className="font-medium">estimate</span> of the operator&apos;s
@@ -85,142 +88,150 @@ export default function CostPage() {
           . Users&apos; own agent compute + LLM tokens are tracked separately
           under Ops &amp; Analytics.
         </p>
-      </div>
+      </Reveal>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Stagger className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((st) => {
           const Icon = st.icon;
           return (
-            <Card key={st.label}>
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted">{st.label}</p>
-                <Icon className="h-4 w-4 text-muted" />
-              </div>
-              <p className="mt-1 text-3xl font-semibold">{st.value}</p>
-              <p className="mt-1 text-xs text-muted">{st.hint}</p>
-            </Card>
+            <StaggerItem key={st.label}>
+              <Card>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted">{st.label}</p>
+                  <Icon className="h-4 w-4 text-muted" />
+                </div>
+                <p className="mt-1 text-3xl font-semibold">{st.value}</p>
+                <p className="mt-1 text-xs text-muted">{st.hint}</p>
+              </Card>
+            </StaggerItem>
           );
         })}
-      </div>
+      </Stagger>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Breakdown: poll vs event-driven, by category */}
-        <Card>
-          <h2 className="mb-3 font-semibold">Cost breakdown</h2>
-          {est ? (
-            <div className="space-y-2">
-              {(
-                [
-                  ["Polling (idle loop)", est.byCategory.poll.fnCalls, est.byCategory.poll.costUsd, "calls"],
-                  ["Heartbeats", est.byCategory.heartbeat.fnCalls, est.byCategory.heartbeat.costUsd, "calls"],
-                  ["Event-driven fn calls", est.byCategory.events.fnCalls, est.byCategory.events.costUsd, "calls"],
-                  ["Document writes", est.byCategory.writes.writes, est.byCategory.writes.costUsd, "writes"],
-                ] as const
-              ).map(([label, count, cost, unit]) => {
-                const pct =
-                  est.estConvexCostUsd > 0
-                    ? (cost / est.estConvexCostUsd) * 100
-                    : 0;
-                return (
-                  <div key={label}>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted">{label}</span>
-                      <span>
-                        {compact(count)} {unit} · {usd(cost)}
-                      </span>
-                    </div>
-                    <div className="mt-1 h-2 w-full rounded-full bg-surface-2">
-                      <div
-                        className="h-2 rounded-full bg-accent-2"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-              <div className="mt-3 flex justify-between border-t border-border pt-2 text-sm font-medium">
-                <span>Total (est.)</span>
-                <span>{usd(est.estConvexCostUsd)} / month</span>
-              </div>
-              <p className="mt-2 text-xs text-muted">
-                Month-to-date over {est.elapsedDays}d, projected to 30d.
-                Observed: {est.observed.a2aMessages} A2A ·{" "}
-                {est.observed.runSteps} steps · {est.observed.activity} activity
-                · {est.observed.workEvents} work events ·{" "}
-                {est.observed.usageRows} usage rows.
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-muted">Estimating…</p>
-          )}
-        </Card>
-
-        {/* The lever: poll interval is the dominant cost driver */}
-        <Card>
-          <div className="mb-3 flex items-center gap-2">
-            <Zap className="h-4 w-4 text-accent" />
-            <h2 className="font-semibold">Lever: the poll loop</h2>
-          </div>
-          {est && lever ? (
-            <>
-              <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>
-                  Always-on agents polling on a {est.assumptions.POLL_INTERVAL_SECONDS}s
-                  loop are the dominant idle cost. Stretching the interval or
-                  moving to event-push slashes the projected bill, same fleet,
-                  same work done.
-                </span>
-              </div>
+        <Reveal x={-16} y={0}>
+          <Card>
+            <h2 className="mb-3 font-semibold">Cost breakdown</h2>
+            {est ? (
               <div className="space-y-2">
-                {leverRows.map((row) => {
-                  const savings = base > 0 ? 1 - row.proj.costUsd / base : 0;
+                {(
+                  [
+                    ["Polling (idle loop)", est.byCategory.poll.fnCalls, est.byCategory.poll.costUsd, "calls"],
+                    ["Heartbeats", est.byCategory.heartbeat.fnCalls, est.byCategory.heartbeat.costUsd, "calls"],
+                    ["Event-driven fn calls", est.byCategory.events.fnCalls, est.byCategory.events.costUsd, "calls"],
+                    ["Document writes", est.byCategory.writes.writes, est.byCategory.writes.costUsd, "writes"],
+                  ] as const
+                ).map(([label, count, cost, unit]) => {
+                  const pct =
+                    est.estConvexCostUsd > 0
+                      ? (cost / est.estConvexCostUsd) * 100
+                      : 0;
                   return (
-                    <div
-                      key={row.label}
-                      className={`flex items-center justify-between rounded-lg border p-3 text-sm ${
-                        row.accent
-                          ? "border-green-500/40 bg-green-500/10"
-                          : "border-border"
-                      }`}
-                    >
-                      <div>
-                        <p className="font-medium">{row.label}</p>
-                        <p className="text-xs text-muted">
-                          {compact(row.proj.fnCalls)} fn calls / month
-                        </p>
+                    <div key={label}>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted">{label}</span>
+                        <span>
+                          {compact(count)} {unit} · {usd(cost)}
+                        </span>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold">
-                          {usd(row.proj.costUsd)}
-                          <span className="text-xs font-normal text-muted">
-                            {" "}
-                            / mo
-                          </span>
-                        </p>
-                        {savings > 0.001 && (
-                          <p className="text-xs text-green-400">
-                            −{Math.round(savings * 100)}% vs 2s
-                          </p>
-                        )}
+                      <div className="mt-1 h-2 w-full rounded-full bg-surface-2">
+                        <motion.div
+                          className="h-2 rounded-full bg-accent-2"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${pct}%` }}
+                          transition={{ duration: reduce ? 0 : 0.7, ease: EASE }}
+                        />
                       </div>
                     </div>
                   );
                 })}
+                <div className="mt-3 flex justify-between border-t border-border pt-2 text-sm font-medium">
+                  <span>Total (est.)</span>
+                  <span>{usd(est.estConvexCostUsd)} / month</span>
+                </div>
+                <p className="mt-2 text-xs text-muted">
+                  Month-to-date over {est.elapsedDays}d, projected to 30d.
+                  Observed: {est.observed.a2aMessages} A2A ·{" "}
+                  {est.observed.runSteps} steps · {est.observed.activity} activity
+                  · {est.observed.workEvents} work events ·{" "}
+                  {est.observed.usageRows} usage rows.
+                </p>
               </div>
-              <p className="mt-3 text-xs text-muted">
-                Event-driven calls and writes are held constant across scenarios;
-                only the idle poll volume changes. Tune assumptions in{" "}
-                <code className="rounded bg-surface-2 px-1 py-0.5">
-                  convex/costs.ts
-                </code>
-                .
-              </p>
-            </>
-          ) : (
-            <p className="text-sm text-muted">Estimating…</p>
-          )}
-        </Card>
+            ) : (
+              <p className="text-sm text-muted">Estimating…</p>
+            )}
+          </Card>
+        </Reveal>
+
+        {/* The lever: poll interval is the dominant cost driver */}
+        <Reveal x={16} y={0}>
+          <Card>
+            <div className="mb-3 flex items-center gap-2">
+              <Zap className="h-4 w-4 text-accent" />
+              <h2 className="font-semibold">Lever: the poll loop</h2>
+            </div>
+            {est && lever ? (
+              <>
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Always-on agents polling on a {est.assumptions.POLL_INTERVAL_SECONDS}s
+                    loop are the dominant idle cost. Stretching the interval or
+                    moving to event-push slashes the projected bill, same fleet,
+                    same work done.
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {leverRows.map((row) => {
+                    const savings = base > 0 ? 1 - row.proj.costUsd / base : 0;
+                    return (
+                      <div
+                        key={row.label}
+                        className={`flex items-center justify-between rounded-lg border p-3 text-sm ${
+                          row.accent
+                            ? "border-green-300 bg-green-50"
+                            : "border-border"
+                        }`}
+                      >
+                        <div>
+                          <p className="font-medium">{row.label}</p>
+                          <p className="text-xs text-muted">
+                            {compact(row.proj.fnCalls)} fn calls / month
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">
+                            {usd(row.proj.costUsd)}
+                            <span className="text-xs font-normal text-muted">
+                              {" "}
+                              / mo
+                            </span>
+                          </p>
+                          {savings > 0.001 && (
+                            <p className="text-xs text-green-700">
+                              −{Math.round(savings * 100)}% vs 2s
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-xs text-muted">
+                  Event-driven calls and writes are held constant across scenarios;
+                  only the idle poll volume changes. Tune assumptions in{" "}
+                  <code className="rounded bg-surface-2 px-1 py-0.5">
+                    convex/costs.ts
+                  </code>
+                  .
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-muted">Estimating…</p>
+            )}
+          </Card>
+        </Reveal>
       </div>
 
       <SpendTrendSection />
@@ -244,50 +255,57 @@ function SpendTrendSection() {
   const max = trend ? Math.max(0.0001, ...trend.map((d) => d.costUsd)) : 0.0001;
   const hasAnySpend = trend ? trend.some((d) => d.costUsd > 0) : false;
 
+  const reduce = useReducedMotion();
+
   return (
-    <Card>
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-muted" />
-          <h2 className="font-semibold">Real spend, last 30 days</h2>
+    <Reveal>
+      <Card className="mt-6">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-muted" />
+            <h2 className="font-semibold">Real spend, last 30 days</h2>
+          </div>
+          {trend && <span className="text-sm text-muted">Total {money(total)}</span>}
         </div>
-        {trend && <span className="text-sm text-muted">Total {money(total)}</span>}
-      </div>
-      {trend === undefined ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : !hasAnySpend ? (
-        <p className="text-sm text-muted">
-          No recorded usage cost yet. This chart reflects real <code>usage.costUsd</code> rows, not
-          the projection above.
-        </p>
-      ) : (
-        <div className="flex h-32 items-end gap-[2px]" role="img" aria-label="Daily spend, last 30 days">
-          {trend.map((d) => {
-            const pct = Math.max(2, (d.costUsd / max) * 100);
-            return (
-              <div
-                key={d.date}
-                className="group relative flex-1"
-                title={`${d.date}: ${money(d.costUsd)}${d.events ? ` (${d.events} usage events)` : ""}`}
-              >
+        {trend === undefined ? (
+          <p className="text-sm text-muted">Loading…</p>
+        ) : !hasAnySpend ? (
+          <p className="text-sm text-muted">
+            No recorded usage cost yet. This chart reflects real <code>usage.costUsd</code> rows, not
+            the projection above.
+          </p>
+        ) : (
+          <div className="flex h-32 items-end gap-[2px]" role="img" aria-label="Daily spend, last 30 days">
+            {trend.map((d, i) => {
+              const pct = Math.max(2, (d.costUsd / max) * 100);
+              return (
                 <div
-                  className={`w-full rounded-t-sm transition-colors ${
-                    d.costUsd > 0 ? "bg-accent/70 group-hover:bg-accent" : "bg-border"
-                  }`}
-                  style={{ height: `${pct}%` }}
-                />
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {trend && trend.length > 0 && (
-        <div className="mt-1 flex justify-between text-[10px] text-muted">
-          <span>{trend[0].date}</span>
-          <span>{trend[trend.length - 1].date}</span>
-        </div>
-      )}
-    </Card>
+                  key={d.date}
+                  className="group relative flex-1"
+                  title={`${d.date}: ${money(d.costUsd)}${d.events ? ` (${d.events} usage events)` : ""}`}
+                >
+                  <motion.div
+                    className={`w-full origin-bottom rounded-t-sm transition-colors ${
+                      d.costUsd > 0 ? "bg-accent/70 group-hover:bg-accent" : "bg-border"
+                    }`}
+                    initial={{ scaleY: reduce ? 1 : 0 }}
+                    animate={{ scaleY: 1 }}
+                    transition={{ duration: reduce ? 0 : 0.4, delay: reduce ? 0 : i * 0.012, ease: EASE }}
+                    style={{ height: `${pct}%` }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {trend && trend.length > 0 && (
+          <div className="mt-1 flex justify-between text-[10px] text-muted">
+            <span>{trend[0].date}</span>
+            <span>{trend[trend.length - 1].date}</span>
+          </div>
+        )}
+      </Card>
+    </Reveal>
   );
 }
 
@@ -348,7 +366,8 @@ function CostControlsSection() {
   const hardCapAction = policy?.hardCapAction ?? "pause";
 
   return (
-    <div className="mb-6 grid gap-4 lg:grid-cols-2">
+    <Stagger className="mb-6 mt-6 grid gap-4 lg:grid-cols-2">
+      <StaggerItem>
       <Card>
         <h2 className="mb-1 font-semibold">Idle hibernation</h2>
         <p className="mb-3 text-xs text-muted">
@@ -440,12 +459,14 @@ function CostControlsSection() {
           )}
         </div>
       </Card>
+      </StaggerItem>
 
+      <StaggerItem>
       <Card>
         <h2 className="mb-1 font-semibold">Hard spend cap</h2>
         <p className="mb-3 text-xs text-muted">
-          When month-to-date spend reaches the cap, autonomy is paused and — if set to "stop
-          VMs" — every hosted agent in this Space is stopped.
+          When month-to-date spend reaches the cap, autonomy is paused, and if set to "stop
+          VMs", every hosted agent in this Space is stopped.
         </p>
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -489,7 +510,7 @@ function CostControlsSection() {
               Save cap
             </Button>
           )}
-          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200">
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               This is enforcement against tracked usage cost, separate from the Convex-cost
@@ -519,7 +540,8 @@ function CostControlsSection() {
           )}
         </div>
       </Card>
-    </div>
+      </StaggerItem>
+    </Stagger>
   );
 }
 
@@ -594,6 +616,7 @@ function PnlSection() {
   const [revInput, setRevInput] = useState("");
 
   return (
+    <Reveal>
     <Card>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-semibold">Per-agent P&amp;L (month to date)</h2>
@@ -604,7 +627,7 @@ function PnlSection() {
             </span>
             <span
               className={`flex items-center gap-1 font-semibold ${
-                summary.totalPnlUsd >= 0 ? "text-green-400" : "text-red-400"
+                summary.totalPnlUsd >= 0 ? "text-green-700" : "text-red-600"
               }`}
             >
               {summary.totalPnlUsd >= 0 ? (
@@ -686,7 +709,7 @@ function PnlSection() {
                     )}
                   </td>
                   <td
-                    className={`py-2 pr-3 font-medium ${r.pnlUsd >= 0 ? "text-green-400" : "text-red-400"}`}
+                    className={`py-2 pr-3 font-medium ${r.pnlUsd >= 0 ? "text-green-700" : "text-red-600"}`}
                   >
                     {money(r.pnlUsd)}
                   </td>
@@ -697,5 +720,6 @@ function PnlSection() {
         </div>
       )}
     </Card>
+    </Reveal>
   );
 }

@@ -8,6 +8,7 @@ import { Badge, Button, Card, Input, Modal } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useDialog } from "@/components/dialog";
 import { useToast } from "@/components/toast";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 const statusTone = { connected: "green", disconnected: "default", error: "red" } as const;
 
@@ -60,7 +61,7 @@ export default function IntegrationsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Integrations</h1>
           <p className="text-sm text-muted">
@@ -73,61 +74,63 @@ export default function IntegrationsPage() {
             Refresh status
           </Button>
         )}
-      </div>
+      </Reveal>
 
       {status && !status.composioConfigured && (
-        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
+        <Reveal delay={0.05} className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           Composio isn&apos;t configured. Set <code>COMPOSIO_API_KEY</code> in the
           Convex environment to enable managed OAuth, tool execution, and
           triggers.
-        </div>
+        </Reveal>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {(catalog ?? []).map((c) => {
           const existing = byToolkit.get(c.toolkit);
           return (
-            <Card key={c.toolkit}>
-              <div className="flex items-center justify-between">
-                <p className="font-medium">{c.name}</p>
-                {existing && (
-                  <Badge tone={statusTone[existing.status]}>{existing.status}</Badge>
-                )}
-              </div>
-              <p className="mt-1 text-sm text-muted">{c.body}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {existing ? (
-                  <>
+            <StaggerItem key={c.toolkit}>
+              <Card>
+                <div className="flex items-center justify-between">
+                  <p className="font-medium">{c.name}</p>
+                  {existing && (
+                    <Badge tone={statusTone[existing.status]}>{existing.status}</Badge>
+                  )}
+                </div>
+                <p className="mt-1 text-sm text-muted">{c.body}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {existing ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        disabled={!canManage}
+                        onClick={() => setTrigOpen({ toolkit: c.toolkit })}
+                      >
+                        Add trigger
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={!canManage || !spaceId}
+                        onClick={() =>
+                          spaceId && remove({ spaceId, integrationId: existing._id })
+                        }
+                      >
+                        Disconnect
+                      </Button>
+                    </>
+                  ) : (
                     <Button
-                      variant="outline"
-                      disabled={!canManage}
-                      onClick={() => setTrigOpen({ toolkit: c.toolkit })}
+                      disabled={!canManage || busy === c.toolkit}
+                      onClick={() => connect(c.toolkit, c.name)}
                     >
-                      Add trigger
+                      {busy === c.toolkit ? "Connecting…" : "Connect"}
                     </Button>
-                    <Button
-                      variant="ghost"
-                      disabled={!canManage || !spaceId}
-                      onClick={() =>
-                        spaceId && remove({ spaceId, integrationId: existing._id })
-                      }
-                    >
-                      Disconnect
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    disabled={!canManage || busy === c.toolkit}
-                    onClick={() => connect(c.toolkit, c.name)}
-                  >
-                    {busy === c.toolkit ? "Connecting…" : "Connect"}
-                  </Button>
-                )}
-              </div>
-            </Card>
+                  )}
+                </div>
+              </Card>
+            </StaggerItem>
           );
         })}
-      </div>
+      </Stagger>
 
       <Modal
         open={!!trigOpen}

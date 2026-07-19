@@ -8,6 +8,7 @@ import { Badge, Button, Card, Input } from "@/components/ui";
 import { ScheduleCard } from "@/components/schedule-card";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { Power, EyeOff } from "@/components/icons";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 type Guards = {
   maxStepsPerRun: number;
@@ -69,100 +70,107 @@ export default function SettingsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6">
+      <Reveal as="div" className="mb-6">
         <h1 className="text-2xl font-semibold">Space settings</h1>
         <p className="text-sm text-muted">
           Autonomy guardrails, the kill switch, and access for {space.name}.
         </p>
-      </div>
+      </Reveal>
 
       {/* Kill switch */}
-      <Card className="mb-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold">Kill switch</h2>
-            <p className="text-sm text-muted">
-              {space.autonomyPaused
-                ? "Autonomy is paused, agents will not dispatch."
-                : "Autonomy is active. Agents and workflows run freely within guards."}
-            </p>
-          </div>
-          <Button
-            variant={space.autonomyPaused ? "primary" : "danger"}
-            disabled={!canAdmin || !spaceId}
-            onClick={() =>
-              spaceId && setPaused({ spaceId, paused: !space.autonomyPaused })
-            }
-          >
-            <Power className="h-4 w-4" />
-            {space.autonomyPaused ? "Resume autonomy" : "Pause all autonomy"}
-          </Button>
-        </div>
-      </Card>
-
-      {/* Shadow mode */}
-      <Card className="mb-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold">Shadow mode</h2>
-            <p className="text-sm text-muted">
-              {space.shadowMode
-                ? "Shadow mode is on, agents propose actions to the ledger instead of executing them."
-                : "Shadow mode is off, agents execute actions directly. When on, agents propose actions to the ledger instead of executing them."}
-            </p>
-          </div>
-          <Button
-            variant={space.shadowMode ? "primary" : "outline"}
-            disabled={!canAdmin || !spaceId}
-            onClick={() =>
-              spaceId &&
-              setShadowMode({ spaceId, shadow: !space.shadowMode })
-            }
-          >
-            <EyeOff className="h-4 w-4" />
-            {space.shadowMode ? "Disable shadow mode" : "Enable shadow mode"}
-          </Button>
-        </div>
-      </Card>
-
-      {/* Guardrails */}
-      <Card className="mb-4">
-        <h2 className="mb-1 font-semibold">Autonomy guardrails</h2>
-        <p className="mb-4 text-sm text-muted">
-          Safe-by-default limits that keep autonomous agents from running away,
-          no human approval required.
-        </p>
-        {guards && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {GUARD_FIELDS.map((f) => (
-              <div key={f.key}>
-                <label className="mb-1 block text-xs text-muted">{f.label}</label>
-                <Input
-                  type="number"
-                  value={guards[f.key]}
-                  disabled={!canAdmin}
-                  onChange={(e) =>
-                    setGuards({ ...guards, [f.key]: Number(e.target.value) })
-                  }
-                />
-                <p className="mt-1 text-[11px] text-muted">{f.hint}</p>
-              </div>
-            ))}
-          </div>
-        )}
-        {canAdmin && guards && (
-          <div className="mt-4 flex justify-end">
+      <Reveal delay={0.05}>
+        <Card className="mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold">Kill switch</h2>
+              <p className="text-sm text-muted">
+                {space.autonomyPaused
+                  ? "Autonomy is paused, agents will not dispatch."
+                  : "Autonomy is active. Agents and workflows run freely within guards."}
+              </p>
+            </div>
             <Button
-              onClick={() => spaceId && setGuardConfig({ spaceId, guardConfig: guards })}
+              variant={space.autonomyPaused ? "primary" : "danger"}
+              disabled={!canAdmin || !spaceId}
+              onClick={() =>
+                spaceId && setPaused({ spaceId, paused: !space.autonomyPaused })
+              }
             >
-              Save guardrails
+              <Power className="h-4 w-4" />
+              {space.autonomyPaused ? "Resume autonomy" : "Pause all autonomy"}
             </Button>
           </div>
-        )}
-      </Card>
+        </Card>
+      </Reveal>
+
+      {/* Shadow mode */}
+      <Reveal delay={0.1}>
+        <Card className="mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold">Shadow mode</h2>
+              <p className="text-sm text-muted">
+                {space.shadowMode
+                  ? "Shadow mode is on, agents propose actions to the ledger instead of executing them."
+                  : "Shadow mode is off, agents execute actions directly. When on, agents propose actions to the ledger instead of executing them."}
+              </p>
+            </div>
+            <Button
+              variant={space.shadowMode ? "primary" : "outline"}
+              disabled={!canAdmin || !spaceId}
+              onClick={() =>
+                spaceId &&
+                setShadowMode({ spaceId, shadow: !space.shadowMode })
+              }
+            >
+              <EyeOff className="h-4 w-4" />
+              {space.shadowMode ? "Disable shadow mode" : "Enable shadow mode"}
+            </Button>
+          </div>
+        </Card>
+      </Reveal>
+
+      {/* Guardrails */}
+      <Reveal delay={0.15}>
+        <Card className="mb-4">
+          <h2 className="mb-1 font-semibold">Autonomy guardrails</h2>
+          <p className="mb-4 text-sm text-muted">
+            Safe-by-default limits that keep autonomous agents from running away,
+            no human approval required.
+          </p>
+          {guards && (
+            <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" gap={0.05}>
+              {GUARD_FIELDS.map((f) => (
+                <StaggerItem key={f.key} y={10}>
+                  <label className="mb-1 block text-xs text-muted">{f.label}</label>
+                  <Input
+                    type="number"
+                    value={guards[f.key]}
+                    disabled={!canAdmin}
+                    onChange={(e) =>
+                      setGuards({ ...guards, [f.key]: Number(e.target.value) })
+                    }
+                  />
+                  <p className="mt-1 text-[11px] text-muted">{f.hint}</p>
+                </StaggerItem>
+              ))}
+            </Stagger>
+          )}
+          {canAdmin && guards && (
+            <div className="mt-4 flex justify-end">
+              <Button
+                onClick={() => spaceId && setGuardConfig({ spaceId, guardConfig: guards })}
+              >
+                Save guardrails
+              </Button>
+            </div>
+          )}
+        </Card>
+      </Reveal>
 
       {/* Members */}
-      <Card>
+      <Reveal delay={0.2}>
+        <Card>
         <h2 className="mb-1 font-semibold">Members & roles</h2>
         <p className="mb-4 text-sm text-muted">
           Roles: viewer · operator · admin · owner. Per-Space isolation means
@@ -198,7 +206,7 @@ export default function SettingsPage() {
                   onClick={() =>
                     spaceId && removeMember({ spaceId, memberId: m._id })
                   }
-                  className="text-xs text-muted hover:text-red-400"
+                  className="text-xs text-muted hover:text-red-500"
                 >
                   Remove
                 </button>
@@ -239,11 +247,12 @@ export default function SettingsPage() {
             </Button>
           </div>
         )}
-      </Card>
+        </Card>
+      </Reveal>
 
-      <div className="mt-6">
+      <Reveal delay={0.25} className="mt-6">
         <ScheduleCard />
-      </div>
+      </Reveal>
     </div>
   );
 }

@@ -8,15 +8,21 @@ import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/compo
 import { useActiveSpace } from "@/components/active-space";
 import { AutoPlanDialog } from "@/components/auto-plan-dialog";
 import { Plus, Sparkles, Target } from "@/components/icons";
+import { EASE, Reveal, Stagger, StaggerItem, CountUp } from "@/components/site/motion";
+import { motion, useReducedMotion } from "motion/react";
 
 const goalTone = { active: "green", at_risk: "yellow", done: "blue", archived: "default" } as const;
 
 function Bar({ progress }: { progress: number }) {
+  const reduce = useReducedMotion();
+  const pct = Math.round(progress * 100);
   return (
     <div className="mt-2 h-2 w-full rounded-full bg-surface-2">
-      <div
+      <motion.div
         className="h-2 rounded-full bg-accent-2"
-        style={{ width: `${Math.round(progress * 100)}%` }}
+        initial={{ width: reduce ? `${pct}%` : 0 }}
+        animate={{ width: `${pct}%` }}
+        transition={{ duration: reduce ? 0 : 0.8, ease: EASE }}
       />
     </div>
   );
@@ -41,7 +47,7 @@ export default function GoalsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal as="div" className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Goals & projects</h1>
           <p className="text-sm text-muted">
@@ -60,7 +66,7 @@ export default function GoalsPage() {
             <Plus className="h-4 w-4" /> New goal
           </Button>
         </div>
-      </div>
+      </Reveal>
 
       {board && board.goals.length === 0 && board.projects.length === 0 ? (
         <EmptyState
@@ -70,52 +76,61 @@ export default function GoalsPage() {
         />
       ) : (
         <div className="grid gap-6 lg:grid-cols-2">
-          <div className="space-y-3">
+          <Reveal as="div" x={-16} className="space-y-3">
             <h2 className="text-sm font-medium text-muted">Goals</h2>
-            {(board?.goals ?? []).map((g) => (
-              <Card key={g._id}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Target className="h-4 w-4 text-accent" />
-                    <span className="font-medium">{g.title}</span>
-                  </div>
-                  <select
-                    value={g.status}
-                    onChange={(e) =>
-                      spaceId &&
-                      updateGoal({ spaceId, goalId: g._id, status: e.target.value as never })
-                    }
-                    className="rounded-md border border-border bg-surface-2 px-2 py-1 text-xs"
-                  >
-                    <option value="active">active</option>
-                    <option value="at_risk">at risk</option>
-                    <option value="done">done</option>
-                    <option value="archived">archived</option>
-                  </select>
-                </div>
-                {g.description && <p className="mt-1 text-sm text-muted">{g.description}</p>}
-                <Bar progress={g.progress} />
-                <p className="mt-1 text-xs text-muted">
-                  {g.done}/{g.total} tasks · {Math.round(g.progress * 100)}%
-                </p>
-              </Card>
-            ))}
-          </div>
-          <div className="space-y-3">
+            <Stagger className="space-y-3" gap={0.06}>
+              {(board?.goals ?? []).map((g) => (
+                <StaggerItem key={g._id}>
+                  <Card>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Target className="h-4 w-4 text-accent" />
+                        <span className="font-medium">{g.title}</span>
+                      </div>
+                      <select
+                        value={g.status}
+                        onChange={(e) =>
+                          spaceId &&
+                          updateGoal({ spaceId, goalId: g._id, status: e.target.value as never })
+                        }
+                        className="rounded-md border border-border bg-surface-2 px-2 py-1 text-xs"
+                      >
+                        <option value="active">active</option>
+                        <option value="at_risk">at risk</option>
+                        <option value="done">done</option>
+                        <option value="archived">archived</option>
+                      </select>
+                    </div>
+                    {g.description && <p className="mt-1 text-sm text-muted">{g.description}</p>}
+                    <Bar progress={g.progress} />
+                    <p className="mt-1 text-xs text-muted">
+                      {g.done}/{g.total} tasks ·{" "}
+                      <CountUp value={Math.round(g.progress * 100)} suffix="%" duration={0.8} pop={false} />
+                    </p>
+                  </Card>
+                </StaggerItem>
+              ))}
+            </Stagger>
+          </Reveal>
+          <Reveal as="div" x={16} className="space-y-3">
             <h2 className="text-sm font-medium text-muted">Projects</h2>
-            {(board?.projects ?? []).map((p) => (
-              <Card key={p._id}>
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{p.name}</span>
-                  <Badge tone={p.status === "done" ? "blue" : "green"}>{p.status}</Badge>
-                </div>
-                <Bar progress={p.progress} />
-                <p className="mt-1 text-xs text-muted">
-                  {p.done}/{p.total} tasks
-                </p>
-              </Card>
-            ))}
-          </div>
+            <Stagger className="space-y-3" gap={0.06}>
+              {(board?.projects ?? []).map((p) => (
+                <StaggerItem key={p._id}>
+                  <Card>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{p.name}</span>
+                      <Badge tone={p.status === "done" ? "blue" : "green"}>{p.status}</Badge>
+                    </div>
+                    <Bar progress={p.progress} />
+                    <p className="mt-1 text-xs text-muted">
+                      {p.done}/{p.total} tasks
+                    </p>
+                  </Card>
+                </StaggerItem>
+              ))}
+            </Stagger>
+          </Reveal>
         </div>
       )}
 

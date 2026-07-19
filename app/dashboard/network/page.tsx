@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { motion, useReducedMotion, type Variants } from "motion/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot, Toggle } from "@/components/ui";
@@ -10,6 +11,24 @@ import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
 import { ArrowRight, Globe, Plus, Send, Target, Trash2, Wrench } from "@/components/icons";
+import { EASE, Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+
+// `Stagger`/`StaggerItem` (Lane A, components/site/motion.tsx) only support
+// block-level tags (div/span/h1-4/p/li), not `ul`/`ol` containers. For the
+// two `<ul>` list containers on this page we cascade children with raw
+// `motion/react` using the same easing/variant shape instead.
+function listContainerVariants(reduce: boolean | null): Variants {
+  return {
+    hidden: {},
+    show: { transition: { staggerChildren: reduce ? 0 : 0.05 } },
+  };
+}
+function listItemVariants(reduce: boolean | null): Variants {
+  return {
+    hidden: { opacity: 0, y: reduce ? 0 : 10 },
+    show: { opacity: 1, y: 0, transition: { duration: reduce ? 0.2 : 0.5, ease: EASE } },
+  };
+}
 
 export default function NetworkPage() {
   const { spaceId } = useActiveSpace();
@@ -43,51 +62,64 @@ export default function NetworkPage() {
   }
 
   const agents = directory ?? [];
+  const reduce = useReducedMotion();
+  const containerV = listContainerVariants(reduce);
+  const itemV = listItemVariants(reduce);
 
   return (
     <div className="p-8">
-      <div className="mb-6">
+      <Reveal className="mb-6" y={12}>
         <h1 className="text-2xl font-semibold">Agent network</h1>
         <p className="text-sm text-muted">
           Agents coordinate in real time through the A2A broker, guarded by
           loop detection, budgets, and the Space kill switch.
         </p>
-      </div>
+      </Reveal>
 
       {agents.length < 2 ? (
-        <EmptyState
-          graphic={<MeshGraphic />}
-          title="Connect at least two agents"
-          body="A2A needs two or more agents to coordinate. Connect another agent (or load demo data), then route messages between them here."
-        />
+        <Reveal>
+          <EmptyState
+            graphic={<MeshGraphic />}
+            title="Connect at least two agents"
+            body="A2A needs two or more agents to coordinate. Connect another agent (or load demo data), then route messages between them here."
+          />
+        </Reveal>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
           <div className="space-y-4">
-            <Card>
-              <h2 className="mb-3 font-semibold">Directory (Agent Cards)</h2>
-              <ul className="space-y-2">
-                {agents.map((c) => (
-                  <li
-                    key={c.id}
-                    className="rounded-lg border border-border px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <StatusDot status={c.status} />
-                      <span className="text-sm font-medium">{c.name}</span>
-                      <Badge>{c.kind}</Badge>
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {c.skills.map((s) => (
-                        <Badge key={s.id} tone="blue">
-                          {s.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </Card>
+            <Reveal x={-16} y={0}>
+              <Card>
+                <h2 className="mb-3 font-semibold">Directory (Agent Cards)</h2>
+                <motion.ul
+                  className="space-y-2"
+                  initial="hidden"
+                  whileInView="show"
+                  viewport={{ once: true, margin: "-60px", amount: 0.2 }}
+                  variants={containerV}
+                >
+                  {agents.map((c) => (
+                    <motion.li key={c.id} variants={itemV}>
+                      <div className="rounded-lg border border-border px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <StatusDot status={c.status} />
+                          <span className="text-sm font-medium">{c.name}</span>
+                          <Badge>{c.kind}</Badge>
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {c.skills.map((s) => (
+                            <Badge key={s.id} tone="blue">
+                              {s.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    </motion.li>
+                  ))}
+                </motion.ul>
+              </Card>
+            </Reveal>
 
+            <Reveal x={-16} y={0} delay={0.06}>
             <Card>
               <h2 className="mb-3 font-semibold">Route a message</h2>
               <div className="space-y-3">
@@ -134,11 +166,13 @@ export default function NetworkPage() {
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>
-                {error && <p className="text-xs text-red-400">{error}</p>}
+                {error && <p className="text-xs text-red-500">{error}</p>}
               </div>
             </Card>
+            </Reveal>
           </div>
 
+          <Reveal x={16} y={0} delay={0.1}>
           <Card>
             <h2 className="mb-3 font-semibold">Live inter-agent messages</h2>
             {messages === undefined ? (
@@ -148,9 +182,15 @@ export default function NetworkPage() {
                 No agent-to-agent messages yet. Route one, or run the A2A demo.
               </p>
             ) : (
-              <ul className="divide-y divide-border">
+              <motion.ul
+                className="divide-y divide-border"
+                initial="hidden"
+                whileInView="show"
+                viewport={{ once: true, margin: "-60px", amount: 0.2 }}
+                variants={containerV}
+              >
                 {messages.map((m) => (
-                  <li key={m._id} className="py-3">
+                  <motion.li key={m._id} variants={itemV} className="py-3">
                     <div className="flex items-center gap-2 text-sm">
                       <span className="font-medium">{m.fromName}</span>
                       <ArrowRight className="h-3 w-3 text-muted" />
@@ -161,11 +201,12 @@ export default function NetworkPage() {
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-muted">{m.content}</p>
-                  </li>
+                  </motion.li>
                 ))}
-              </ul>
+              </motion.ul>
             )}
           </Card>
+          </Reveal>
         </div>
       )}
 
@@ -289,7 +330,7 @@ function CapabilityGrantsSection() {
   }
 
   return (
-    <div className="mt-8">
+    <Reveal className="mt-8">
       <Card>
         <div className="mb-3 flex items-center justify-between">
           <div>
@@ -309,7 +350,7 @@ function CapabilityGrantsSection() {
 
         {grants && grants.length === 0 ? (
           <p className="text-sm text-muted">
-            No capability grants yet — agents that declare required capabilities will resolve to
+            No capability grants yet. Agents that declare required capabilities will resolve to
             zero tools until grants exist here.
           </p>
         ) : (
@@ -337,7 +378,7 @@ function CapabilityGrantsSection() {
                         <Wrench className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" onClick={() => del(g)}>
-                        <Trash2 className="h-4 w-4 text-red-400" />
+                        <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </>
                   )}
@@ -421,7 +462,7 @@ function CapabilityGrantsSection() {
           </div>
         </div>
       </Modal>
-    </div>
+    </Reveal>
   );
 }
 
@@ -459,7 +500,7 @@ function RoutingPreviewSection() {
   }
 
   return (
-    <div className="mt-8">
+    <Reveal className="mt-8">
       <Card>
         <div className="mb-3 flex items-center gap-2">
           <Target className="h-4 w-4 text-muted" />
@@ -467,7 +508,7 @@ function RoutingPreviewSection() {
         </div>
         <p className="mb-3 text-sm text-muted">
           Pick required capabilities to see how the router would score and rank this Space&apos;s
-          agents — the same scorer (capability match + health + recent cost + harness) used to
+          agents, the same scorer (capability match + health + recent cost + harness) used to
           auto-assign tasks and workflow steps.
         </p>
         <div className="mb-4 flex flex-wrap gap-2">
@@ -562,7 +603,7 @@ function RoutingPreviewSection() {
           </div>
         )}
       </Card>
-    </div>
+    </Reveal>
   );
 }
 
@@ -625,7 +666,8 @@ function DirectorySection() {
   }
 
   return (
-    <div className="mt-8 grid gap-4 lg:grid-cols-2">
+    <Stagger className="mt-8 grid gap-4 lg:grid-cols-2" gap={0.1}>
+      <StaggerItem>
       <Card>
         <div className="mb-3 flex items-center justify-between">
           <div>
@@ -670,7 +712,9 @@ function DirectorySection() {
           </p>
         )}
       </Card>
+      </StaggerItem>
 
+      <StaggerItem>
       <Card>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold">Browse the directory</h2>
@@ -707,6 +751,7 @@ function DirectorySection() {
           </ul>
         )}
       </Card>
-    </div>
+      </StaggerItem>
+    </Stagger>
   );
 }

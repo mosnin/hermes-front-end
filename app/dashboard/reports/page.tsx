@@ -5,6 +5,7 @@ import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 export default function ReportsPage() {
   const { spaceId } = useActiveSpace();
@@ -13,7 +14,7 @@ export default function ReportsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal as="div" className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Reports</h1>
           <p className="text-sm text-muted">
@@ -32,32 +33,36 @@ export default function ReportsPage() {
             Generate weekly
           </Button>
         </div>
-      </div>
+      </Reveal>
 
       {reports?.length === 0 ? (
-        <EmptyState
-          title="No reports yet"
-          body="Generate a digest now, or wait for the automatic daily run."
-        />
+        <Reveal delay={0.05}>
+          <EmptyState
+            title="No reports yet"
+            body="Generate a digest now, or wait for the automatic daily run."
+          />
+        </Reveal>
       ) : (
-        <div className="space-y-3">
+        <Stagger className="space-y-3">
           {(reports ?? []).map((r) => (
-            <Card key={r._id}>
-              <div className="flex items-center justify-between">
-                <p className="font-medium">{r.title}</p>
-                <div className="flex items-center gap-2">
-                  <Badge tone="blue">{r.kind}</Badge>
-                  <span className="text-xs text-muted">{timeAgo(r.createdAt)}</span>
+            <StaggerItem key={r._id}>
+              <Card>
+                <div className="flex items-center justify-between">
+                  <p className="font-medium">{r.title}</p>
+                  <div className="flex items-center gap-2">
+                    <Badge tone="blue">{r.kind}</Badge>
+                    <span className="text-xs text-muted">{timeAgo(r.createdAt)}</span>
+                  </div>
                 </div>
-              </div>
-              <p className="mt-2 text-sm text-muted">{r.summary}</p>
-              <p className="mt-2 text-xs text-muted">
-                {new Date(r.periodStart).toLocaleDateString()} –{" "}
-                {new Date(r.periodEnd).toLocaleDateString()}
-              </p>
-            </Card>
+                <p className="mt-2 text-sm text-muted">{r.summary}</p>
+                <p className="mt-2 text-xs text-muted">
+                  {new Date(r.periodStart).toLocaleDateString()} –{" "}
+                  {new Date(r.periodEnd).toLocaleDateString()}
+                </p>
+              </Card>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       )}
     </div>
   );

@@ -20,6 +20,7 @@ import {
   Zap,
 } from "@/components/icons";
 import { WorkflowTrace } from "@/components/workflow-trace";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 type StepDraft = { id: string; name: string; instruction: string; agentId: string };
 
@@ -112,7 +113,7 @@ export default function WorkflowsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal className="mb-6 flex items-center justify-between" y={12}>
         <div>
           <PagePath>workflows</PagePath>
           <h1 className="text-2xl font-semibold">Workflows</h1>
@@ -124,72 +125,78 @@ export default function WorkflowsPage() {
         <Button onClick={() => setOpen(true)}>
           <Plus className="h-4 w-4" /> New workflow
         </Button>
-      </div>
+      </Reveal>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-3">
           <h2 className="text-sm font-medium text-muted">Definitions</h2>
           {workflows?.length === 0 ? (
-            <EmptyState
-              graphic={<OrbitGraphic />}
-              title="No workflows yet"
-              body="Compose a sequence of agent steps. Start a run and watch the engine drive it to completion."
-              action={<Button onClick={() => setOpen(true)}>Create a workflow</Button>}
-            />
+            <Reveal>
+              <EmptyState
+                graphic={<OrbitGraphic />}
+                title="No workflows yet"
+                body="Compose a sequence of agent steps. Start a run and watch the engine drive it to completion."
+                action={<Button onClick={() => setOpen(true)}>Create a workflow</Button>}
+              />
+            </Reveal>
           ) : (
-            (workflows ?? []).map((wf) => (
-              <Card key={wf._id}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium">{wf.name}</p>
-                    {wf.description && (
-                      <p className="text-sm text-muted">{wf.description}</p>
-                    )}
-                    <p className="mt-1 text-xs text-muted">
-                      {wf.steps.length} step{wf.steps.length === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      variant="outline"
-                      title="Run with simulated step completion"
-                      onClick={() =>
-                        spaceId &&
-                        start({
-                          spaceId,
-                          workflowId: wf._id,
-                          autoComplete: true,
-                        })
-                      }
-                    >
-                      <FlaskConical className="h-4 w-4" /> Simulate
-                    </Button>
-                    <Button
-                      title="Run live (agents execute each step)"
-                      onClick={() =>
-                        spaceId &&
-                        start({
-                          spaceId,
-                          workflowId: wf._id,
-                          autoComplete: false,
-                        })
-                      }
-                    >
-                      <Play className="h-4 w-4" /> Run live
-                    </Button>
-                    <button
-                      onClick={() =>
-                        spaceId && remove({ spaceId, workflowId: wf._id })
-                      }
-                      className="text-muted hover:text-red-400"
-                      title="Delete workflow"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </Card>
-            ))
+            <Stagger className="space-y-3">
+              {(workflows ?? []).map((wf) => (
+                <StaggerItem key={wf._id}>
+                  <Card>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium">{wf.name}</p>
+                        {wf.description && (
+                          <p className="text-sm text-muted">{wf.description}</p>
+                        )}
+                        <p className="mt-1 text-xs text-muted">
+                          {wf.steps.length} step{wf.steps.length === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Button
+                          variant="outline"
+                          title="Run with simulated step completion"
+                          onClick={() =>
+                            spaceId &&
+                            start({
+                              spaceId,
+                              workflowId: wf._id,
+                              autoComplete: true,
+                            })
+                          }
+                        >
+                          <FlaskConical className="h-4 w-4" /> Simulate
+                        </Button>
+                        <Button
+                          title="Run live (agents execute each step)"
+                          onClick={() =>
+                            spaceId &&
+                            start({
+                              spaceId,
+                              workflowId: wf._id,
+                              autoComplete: false,
+                            })
+                          }
+                        >
+                          <Play className="h-4 w-4" /> Run live
+                        </Button>
+                        <button
+                          onClick={() =>
+                            spaceId && remove({ spaceId, workflowId: wf._id })
+                          }
+                          className="text-muted hover:text-red-500"
+                          title="Delete workflow"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </Card>
+                </StaggerItem>
+              ))}
+            </Stagger>
           )}
         </div>
 
@@ -198,29 +205,33 @@ export default function WorkflowsPage() {
           {runs?.length === 0 ? (
             <p className="text-sm text-muted">No runs yet. Start a workflow.</p>
           ) : (
-            (runs ?? []).map((r) => (
-              <Card key={r._id}>
-                <button
-                  className="flex w-full items-center justify-between"
-                  onClick={() =>
-                    setSelectedRun(selectedRun === r._id ? null : r._id)
-                  }
-                >
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-accent" />
-                    <span className="text-sm">
-                      {r.stepsDone} done · {r.hops} hops · {r.trigger}
-                    </span>
-                  </div>
-                  <Badge tone={runTone[r.status]}>{r.status}</Badge>
-                </button>
-                <p className="mt-1 text-xs text-muted">
-                  started {timeAgo(r.startedAt)}
-                  {r.error ? ` · ${r.error}` : ""}
-                </p>
-                {selectedRun === r._id && <WorkflowTrace runId={r._id} />}
-              </Card>
-            ))
+            <Stagger className="space-y-3">
+              {(runs ?? []).map((r) => (
+                <StaggerItem key={r._id}>
+                  <Card>
+                    <button
+                      className="flex w-full items-center justify-between"
+                      onClick={() =>
+                        setSelectedRun(selectedRun === r._id ? null : r._id)
+                      }
+                    >
+                      <div className="flex items-center gap-2">
+                        <Zap className="h-4 w-4 text-accent" />
+                        <span className="text-sm">
+                          {r.stepsDone} done · {r.hops} hops · {r.trigger}
+                        </span>
+                      </div>
+                      <Badge tone={runTone[r.status]}>{r.status}</Badge>
+                    </button>
+                    <p className="mt-1 text-xs text-muted">
+                      started {timeAgo(r.startedAt)}
+                      {r.error ? ` · ${r.error}` : ""}
+                    </p>
+                    {selectedRun === r._id && <WorkflowTrace runId={r._id} />}
+                  </Card>
+                </StaggerItem>
+              ))}
+            </Stagger>
           )}
         </div>
       </div>
@@ -301,7 +312,7 @@ export default function WorkflowsPage() {
                       {steps.length > 1 && (
                         <button
                           onClick={() => removeStep(s.id)}
-                          className="text-muted hover:text-red-400"
+                          className="text-muted hover:text-red-500"
                           title="Remove step"
                         >
                           <X className="h-4 w-4" />
@@ -317,7 +328,7 @@ export default function WorkflowsPage() {
                     placeholder="Instruction for the agent…"
                   />
                   {incomplete && (
-                    <p className="mt-1 text-xs text-red-400">
+                    <p className="mt-1 text-xs text-red-500">
                       Both a name and an instruction are required.
                     </p>
                   )}

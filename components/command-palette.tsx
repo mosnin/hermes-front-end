@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { api } from "@/convex/_generated/api";
 import { useActiveSpace } from "./active-space";
 import { useToast } from "./toast";
 import { runGlobalAction } from "./global-actions";
+import { DURATION, EASE } from "@/components/site/motion";
+import { UI_SPRING } from "@/components/ui";
 import {
   Activity,
   BarChart3,
@@ -94,6 +97,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -194,80 +198,92 @@ export function CommandPalette() {
     }
   }
 
-  if (!open) return null;
-
   let idx = -1;
   const groups = [...new Set(rows.map((r) => r.group))];
 
   return (
-    <div
-      className="fixed inset-0 z-[120] flex items-start justify-center bg-black/60 p-4 pt-[12vh]"
-      onClick={() => setOpen(false)}
-    >
-      <div
-        className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 border-b border-border px-4">
-          <Search className="h-4 w-4 text-muted" />
-          <input
-            autoFocus
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setActive(0);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setActive((a) => Math.min(a + 1, rows.length - 1));
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setActive((a) => Math.max(a - 1, 0));
-              } else if (e.key === "Enter" && rows[active]) {
-                run(rows[active]);
-              }
-            }}
-            placeholder="Search agents, threads, tasks, skills… or jump to a page"
-            className="w-full bg-transparent py-4 text-sm outline-none placeholder:text-muted"
-          />
-          <kbd className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">esc</kbd>
-        </div>
-        <div className="max-h-[50vh] overflow-y-auto p-2">
-          {rows.length === 0 && (
-            <p className="px-3 py-6 text-center text-sm text-muted">
-              {q.length >= 2 ? "No matches." : "Type to search…"}
-            </p>
-          )}
-          {groups.map((group) => (
-            <div key={group}>
-              <p className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-wide text-muted">
-                {group}
-              </p>
-              {rows
-                .filter((r) => r.group === group)
-                .map((r) => {
-                  idx++;
-                  const i = idx;
-                  return (
-                    <button
-                      key={`${r.group}-${r.label}-${i}`}
-                      onMouseEnter={() => setActive(i)}
-                      onClick={() => run(r)}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm",
-                        active === i ? "bg-surface-2" : "hover:bg-surface-2",
-                      )}
-                    >
-                      <span className={cn("truncate", r.danger && "text-red-400")}>{r.label}</span>
-                      {r.sub && <span className="text-xs text-muted">{r.sub}</span>}
-                    </button>
-                  );
-                })}
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-[120] flex items-start justify-center bg-[#1f1f1c]/40 p-4 pt-[12vh] backdrop-blur-[2px]"
+          onClick={() => setOpen(false)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: reduce ? DURATION.reduced : DURATION.instant, ease: EASE }}
+        >
+          <motion.div
+            className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            initial={reduce ? false : { opacity: 0, y: 16, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={reduce ? undefined : { opacity: 0, y: 10, scale: 0.98 }}
+            transition={UI_SPRING.panel}
+          >
+            <div className="flex items-center gap-2 border-b border-border px-4">
+              <Search className="h-4 w-4 text-muted" />
+              <input
+                autoFocus
+                value={q}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setActive(0);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setActive((a) => Math.min(a + 1, rows.length - 1));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setActive((a) => Math.max(a - 1, 0));
+                  } else if (e.key === "Enter" && rows[active]) {
+                    run(rows[active]);
+                  }
+                }}
+                placeholder="Search agents, threads, tasks, skills… or jump to a page"
+                className="w-full bg-transparent py-4 text-sm outline-none placeholder:text-muted"
+              />
+              <kbd className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">esc</kbd>
             </div>
-          ))}
-        </div>
-      </div>
-    </div>
+            <div className="max-h-[50vh] overflow-y-auto p-2">
+              {rows.length === 0 && (
+                <p className="px-3 py-6 text-center text-sm text-muted">
+                  {q.length >= 2 ? "No matches." : "Type to search…"}
+                </p>
+              )}
+              {groups.map((group) => (
+                <div key={group}>
+                  <p className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-wide text-muted">
+                    {group}
+                  </p>
+                  {rows
+                    .filter((r) => r.group === group)
+                    .map((r) => {
+                      idx++;
+                      const i = idx;
+                      return (
+                        <motion.button
+                          key={`${r.group}-${r.label}-${i}`}
+                          onMouseEnter={() => setActive(i)}
+                          onClick={() => run(r)}
+                          whileTap={reduce ? undefined : { scale: 0.98 }}
+                          transition={{ duration: 0.12, ease: EASE }}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm",
+                            active === i ? "bg-surface-2" : "hover:bg-surface-2",
+                          )}
+                        >
+                          <span className={cn("truncate", r.danger && "text-red-500")}>{r.label}</span>
+                          {r.sub && <span className="text-xs text-muted">{r.sub}</span>}
+                        </motion.button>
+                      );
+                    })}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

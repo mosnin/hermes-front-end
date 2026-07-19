@@ -9,6 +9,7 @@ import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
 import { Copy, Eye, EyeOff, KeyRound, Plus, Trash2 } from "@/components/icons";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 function RevealValue({
   spaceId,
@@ -106,7 +107,7 @@ export default function SecretsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal as="div" className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Secrets vault</h1>
           <p className="text-sm text-muted">
@@ -120,21 +121,23 @@ export default function SecretsPage() {
             Add secret
           </Button>
         )}
-      </div>
+      </Reveal>
 
       {!canAdmin ? (
-        <Card>
-          <div className="flex items-center gap-3">
-            <KeyRound className="h-5 w-5 text-muted" />
-            <div>
-              <p className="font-medium">Admins only</p>
-              <p className="text-sm text-muted">
-                You need the admin role to view and manage this Space&apos;s
-                secrets.
-              </p>
+        <Reveal delay={0.06}>
+          <Card>
+            <div className="flex items-center gap-3">
+              <KeyRound className="h-5 w-5 text-muted" />
+              <div>
+                <p className="font-medium">Admins only</p>
+                <p className="text-sm text-muted">
+                  You need the admin role to view and manage this Space&apos;s
+                  secrets.
+                </p>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </Reveal>
       ) : (secrets ?? []).length === 0 ? (
         <EmptyState
           title="No secrets yet"
@@ -147,11 +150,12 @@ export default function SecretsPage() {
           }
         />
       ) : (
-        <div className="space-y-3">
+        <Stagger className="space-y-3" gap={0.06}>
           {(secrets ?? []).map((s) => {
             const isRevealed = revealId === s._id;
             return (
-              <Card key={s._id}>
+              <StaggerItem key={s._id}>
+              <Card>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium">{s.name}</p>
@@ -193,9 +197,10 @@ export default function SecretsPage() {
                   </div>
                 </div>
               </Card>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Add secret">

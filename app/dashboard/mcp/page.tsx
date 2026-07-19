@@ -8,6 +8,7 @@ import { Badge, Button, Card, EmptyState, Input, Modal } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { Boxes, Plus, Trash2 } from "@/components/icons";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 type Transport = "sse" | "http" | "stdio";
 type McpScope = "space" | "agent";
@@ -122,7 +123,7 @@ export default function McpPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">MCP servers</h1>
           <p className="text-sm text-muted">
@@ -134,44 +135,50 @@ export default function McpPage() {
           <Plus className="h-4 w-4" />
           Add MCP
         </Button>
-      </div>
+      </Reveal>
 
-      <h2 className="mb-3 text-sm font-medium text-muted">Common MCP servers</h2>
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Reveal delay={0.05} as="h2" className="mb-3 text-sm font-medium text-muted">
+        Common MCP servers
+      </Reveal>
+      <Stagger className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {CATALOG.map((c) => (
-          <Card key={c.name}>
+          <StaggerItem key={c.name}>
+            <Card>
+              <div className="flex items-center gap-2">
+                <Boxes className="h-4 w-4 text-muted" />
+                <p className="font-medium">{c.name}</p>
+                <Badge tone="blue">{c.transport}</Badge>
+              </div>
+              <p className="mt-1 text-sm text-muted">{c.body}</p>
+              <div className="mt-4">
+                <Button
+                  variant="outline"
+                  disabled={!canManage}
+                  onClick={() => openPreset(c)}
+                >
+                  Add
+                </Button>
+              </div>
+            </Card>
+          </StaggerItem>
+        ))}
+        <StaggerItem>
+          <Card>
             <div className="flex items-center gap-2">
-              <Boxes className="h-4 w-4 text-muted" />
-              <p className="font-medium">{c.name}</p>
-              <Badge tone="blue">{c.transport}</Badge>
+              <Plus className="h-4 w-4 text-muted" />
+              <p className="font-medium">Custom MCP</p>
             </div>
-            <p className="mt-1 text-sm text-muted">{c.body}</p>
+            <p className="mt-1 text-sm text-muted">
+              Connect any MCP server by URL.
+            </p>
             <div className="mt-4">
-              <Button
-                variant="outline"
-                disabled={!canManage}
-                onClick={() => openPreset(c)}
-              >
-                Add
+              <Button disabled={!canManage} onClick={() => openPreset()}>
+                Add custom
               </Button>
             </div>
           </Card>
-        ))}
-        <Card>
-          <div className="flex items-center gap-2">
-            <Plus className="h-4 w-4 text-muted" />
-            <p className="font-medium">Custom MCP</p>
-          </div>
-          <p className="mt-1 text-sm text-muted">
-            Connect any MCP server by URL.
-          </p>
-          <div className="mt-4">
-            <Button disabled={!canManage} onClick={() => openPreset()}>
-              Add custom
-            </Button>
-          </div>
-        </Card>
-      </div>
+        </StaggerItem>
+      </Stagger>
 
       <p className="mb-4 text-xs text-muted">
         Preset URLs are placeholders, edit them to your real MCP endpoint
@@ -182,40 +189,44 @@ export default function McpPage() {
       {servers === undefined ? (
         <p className="text-sm text-muted">Loading…</p>
       ) : servers.length === 0 ? (
-        <EmptyState
-          title="No MCP servers yet"
-          body="Add one from the catalog above, or connect a custom MCP server."
-        />
+        <Reveal>
+          <EmptyState
+            title="No MCP servers yet"
+            body="Add one from the catalog above, or connect a custom MCP server."
+          />
+        </Reveal>
       ) : (
-        <div className="space-y-2">
+        <Stagger className="space-y-2">
           {servers.map((s) => (
-            <Card key={s._id} className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium">{s.name}</p>
-                  <Badge tone="blue">{s.transport}</Badge>
-                  <Badge>
-                    {s.scope === "agent"
-                      ? `agent: ${agentName(s.agentId)}`
-                      : "space"}
-                  </Badge>
-                  <Badge tone={statusTone[s.status]}>{s.status}</Badge>
+            <StaggerItem key={s._id}>
+              <Card className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{s.name}</p>
+                    <Badge tone="blue">{s.transport}</Badge>
+                    <Badge>
+                      {s.scope === "agent"
+                        ? `agent: ${agentName(s.agentId)}`
+                        : "space"}
+                    </Badge>
+                    <Badge tone={statusTone[s.status]}>{s.status}</Badge>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted">{s.url}</p>
                 </div>
-                <p className="mt-1 truncate text-xs text-muted">{s.url}</p>
-              </div>
-              <Button
-                variant="ghost"
-                disabled={!canManage || !spaceId}
-                onClick={() =>
-                  spaceId && remove({ spaceId, mcpId: s._id })
-                }
-              >
-                <Trash2 className="h-4 w-4" />
-                Remove
-              </Button>
-            </Card>
+                <Button
+                  variant="ghost"
+                  disabled={!canManage || !spaceId}
+                  onClick={() =>
+                    spaceId && remove({ spaceId, mcpId: s._id })
+                  }
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Remove
+                </Button>
+              </Card>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Add MCP server">

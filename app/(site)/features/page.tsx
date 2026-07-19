@@ -2,7 +2,15 @@
 
 import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
-import { SectionHead, DarkPill, PillLabel } from "@/components/site/ui";
+import { SectionHead, DarkPill, PillLabel, RADIUS, TYPE_H1, TYPE_H2 } from "@/components/site/ui";
+import {
+  Reveal,
+  Stagger,
+  StaggerItem,
+  Parallax,
+  TextReveal,
+  EASE,
+} from "@/components/site/motion";
 import {
   ConnectMock,
   OrchestrateMock,
@@ -16,32 +24,11 @@ import {
    list with one highlighted beige row and simple rows). Four pillars reuse
    the shared mockups; the remaining two (Real-time, Skills and memory) get
    small inline beige mock cards in the same visual language. Closes with a
-   centered CTA band.
+   centered CTA band. All reveals/stagger/parallax come from Lane A's shared
+   components/site/motion.tsx so the vocabulary matches the rest of the site.
 --------------------------------------------------------------------------- */
 
-const CARD = "rounded-[26px] bg-[var(--site-card)] p-6 sm:p-8";
-
-function Rise({
-  children,
-  delay = 0,
-  className,
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  className?: string;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.7, delay, ease: [0.22, 0.6, 0.24, 1] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
+const CARD = cn(RADIUS.card, "bg-[var(--site-card)] p-6 sm:p-8");
 
 /** Real-time: a stream of pushed events arriving with latency badges. */
 function RealtimeMock() {
@@ -59,10 +46,10 @@ function RealtimeMock() {
         {rows.map((r, i) => (
           <motion.div
             key={r.label}
-            initial={{ opacity: 0, x: -10 }}
+            initial={{ opacity: 0, x: reduce ? 0 : -10 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true, margin: "-40px" }}
-            transition={{ delay: reduce ? 0 : i * 0.07, duration: 0.4 }}
+            transition={{ delay: reduce ? 0 : i * 0.07, duration: reduce ? 0.3 : 0.4, ease: EASE }}
             className={cn(
               "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-[14px]",
               r.active
@@ -99,10 +86,10 @@ function SkillsMock() {
         {chips.map((c, i) => (
           <motion.span
             key={c}
-            initial={{ opacity: 0, y: 6 }}
+            initial={{ opacity: 0, y: reduce ? 0 : 6 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ delay: reduce ? 0 : i * 0.07, duration: 0.4 }}
+            transition={{ delay: reduce ? 0 : i * 0.07, duration: reduce ? 0.3 : 0.4, ease: EASE }}
             className={cn(
               "rounded-full px-3.5 py-2 text-[13.5px]",
               i === 2
@@ -118,10 +105,10 @@ function SkillsMock() {
         {["Vector search: 3 matches", "Grounded response ready"].map((r, i) => (
           <motion.div
             key={r}
-            initial={{ opacity: 0, x: -10 }}
+            initial={{ opacity: 0, x: reduce ? 0 : -10 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            transition={{ delay: reduce ? 0 : 0.35 + i * 0.08, duration: 0.4 }}
+            transition={{ delay: reduce ? 0 : 0.35 + i * 0.08, duration: reduce ? 0.3 : 0.4, ease: EASE }}
             className="flex items-center gap-2.5 rounded-xl bg-white/55 px-3.5 py-2.5 text-[13.5px] text-[#6c6a64]"
           >
             <svg viewBox="0 0 12 12" className="h-3 w-3 shrink-0 text-[#8b5cf6]" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -265,37 +252,41 @@ export default function FeaturesPage() {
     <main>
       {/* Hero */}
       <section className="mx-auto max-w-[1060px] px-5 pb-8 pt-24 text-center sm:px-7 sm:pt-32">
-        <Rise>
+        <Reveal>
           <PillLabel>Features</PillLabel>
-        </Rise>
-        <Rise delay={0.06}>
-          <h1 className="mx-auto mt-6 max-w-[760px] text-[44px] font-medium leading-[1.06] tracking-[-0.015em] text-[var(--site-ink)] sm:text-[64px]">
-            An operations layer for ongoing agent work
-          </h1>
-        </Rise>
-        <Rise delay={0.12}>
+        </Reveal>
+        <h1 className={cn(TYPE_H1, "mx-auto mt-6 max-w-[760px] text-[var(--site-ink)]")}>
+          <TextReveal text="An operations layer for ongoing agent work" delay={0.08} />
+        </h1>
+        <Reveal delay={0.3}>
           <p className="mx-auto mt-6 max-w-[460px] text-[18px] leading-relaxed text-[var(--site-body)]">
             Not one-off prompts. Fleets with jobs, guardrails, and receipts,
             connected, orchestrated, and governed from one control plane.
           </p>
-        </Rise>
-        <Rise delay={0.18}>
+        </Reveal>
+        <Reveal delay={0.38}>
           <div className="mt-10">
             <DarkPill href="/pricing">See pricing</DarkPill>
           </div>
-        </Rise>
+        </Reveal>
       </section>
 
       {/* Six product pillars */}
       {PILLARS.map((s) => (
         <section key={s.label} className="mx-auto max-w-[1060px] px-5 pt-24 sm:px-7">
-          <Rise>
+          <Reveal>
             <SectionHead label={s.label} title={s.title} sub={s.sub} explore="/pricing" />
-          </Rise>
+          </Reveal>
           <div className="mt-12 grid items-start gap-10 lg:grid-cols-2">
-            <Rise className={s.flip ? "lg:order-2" : ""}>{s.mock}</Rise>
-            <Rise delay={0.08} className={s.flip ? "lg:order-1" : ""}>
-              <div className="rounded-[18px] bg-[var(--site-card)] p-5">
+            <Parallax offset={20} className={s.flip ? "lg:order-2" : ""}>
+              <Reveal>{s.mock}</Reveal>
+            </Parallax>
+            <Reveal delay={0.08} className={s.flip ? "lg:order-1" : ""}>
+              <motion.div
+                whileHover={{ y: -3 }}
+                transition={{ duration: 0.25, ease: EASE }}
+                className={cn(RADIUS.compact, "bg-[var(--site-card)] p-5")}
+              >
                 <p className="flex items-center gap-2.5 text-[15.5px] font-medium text-[var(--site-ink)]">
                   <HighlightIcon />
                   {s.highlight.title}
@@ -303,16 +294,20 @@ export default function FeaturesPage() {
                 <p className="mt-2 pl-[30px] text-[13.5px] leading-relaxed text-[#75726c]">
                   {s.highlight.body}
                 </p>
-              </div>
-              <ul className="mt-2 space-y-1">
-                {s.points.map((pt) => (
-                  <li key={pt} className="flex items-center gap-2.5 px-5 py-3 text-[15.5px] text-[var(--site-ink)]">
-                    <RowIcon />
-                    {pt}
-                  </li>
-                ))}
-              </ul>
-            </Rise>
+              </motion.div>
+              <Stagger className="mt-2" gap={0.06}>
+                <ul className="space-y-1">
+                  {s.points.map((pt) => (
+                    <StaggerItem as="li" key={pt} y={10}>
+                      <div className="flex items-center gap-2.5 px-5 py-3 text-[15.5px] text-[var(--site-ink)]">
+                        <RowIcon />
+                        {pt}
+                      </div>
+                    </StaggerItem>
+                  ))}
+                </ul>
+              </Stagger>
+            </Reveal>
           </div>
         </section>
       ))}
@@ -320,8 +315,8 @@ export default function FeaturesPage() {
       {/* Closing CTA band */}
       <section className="mt-24 bg-[var(--site-band)] py-24">
         <div className="mx-auto max-w-[1060px] px-5 text-center sm:px-7">
-          <Rise>
-            <h2 className="mx-auto max-w-[520px] text-[34px] font-medium leading-[1.12] tracking-[-0.01em] text-[var(--site-ink)] sm:text-[40px]">
+          <Reveal>
+            <h2 className={cn(TYPE_H2, "mx-auto max-w-[520px]")}>
               One fleet, every guardrail, ready today
             </h2>
             <p className="mx-auto mt-4 max-w-[420px] text-[15.5px] leading-relaxed text-[var(--site-body)]">
@@ -331,7 +326,7 @@ export default function FeaturesPage() {
             <div className="mt-8">
               <DarkPill href="/pricing">See pricing</DarkPill>
             </div>
-          </Rise>
+          </Reveal>
         </div>
       </section>
     </main>

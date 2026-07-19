@@ -8,6 +8,7 @@ import { KnowledgeGraphic } from "@/components/marketing/graphics";
 import { useActiveSpace } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { FileText, Link2, Plus, Search } from "@/components/icons";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 type Memory = {
   _id: string;
@@ -127,7 +128,7 @@ export default function KnowledgePage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal className="mb-6 flex items-center justify-between" as="div">
         <div>
           <h1 className="text-2xl font-semibold">Knowledge</h1>
           <p className="text-sm text-muted">
@@ -146,9 +147,9 @@ export default function KnowledgePage() {
             <Plus className="h-4 w-4" /> Add memory
           </Button>
         </div>
-      </div>
+      </Reveal>
 
-      <div className="mb-6 flex gap-2">
+      <Reveal delay={0.05} className="mb-6 flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <Input
@@ -173,50 +174,54 @@ export default function KnowledgePage() {
             Clear
           </Button>
         )}
-      </div>
+      </Reveal>
 
       {list.length === 0 ? (
-        <EmptyState
-          graphic={<KnowledgeGraphic />}
-          title={results ? "No matching memory" : "No memory yet"}
-          body={
-            results
-              ? "Try a different search."
-              : "Add company policies, learnings, or context. Agents retrieve it automatically via the context engine."
-          }
-        />
+        <Reveal delay={0.1}>
+          <EmptyState
+            graphic={<KnowledgeGraphic />}
+            title={results ? "No matching memory" : "No memory yet"}
+            body={
+              results
+                ? "Try a different search."
+                : "Add company policies, learnings, or context. Agents retrieve it automatically via the context engine."
+            }
+          />
+        </Reveal>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((m) => (
-            <Card key={m._id}>
-              <div className="flex items-start justify-between gap-2">
-                <p className="font-medium">{m.title}</p>
-                <Badge tone={m.scope === "company" ? "blue" : "default"}>
-                  {m.scope}
-                </Badge>
-              </div>
-              <p className="mt-2 line-clamp-4 text-xs text-muted">{m.content}</p>
-              <div className="mt-3 flex items-center justify-between">
-                <div className="flex flex-wrap gap-1">
-                  <Badge>{m.source}</Badge>
-                  {(m.tags ?? []).map((t) => (
-                    <Badge key={t} tone="blue">
-                      {t}
-                    </Badge>
-                  ))}
+            <StaggerItem key={m._id}>
+              <Card>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-medium">{m.title}</p>
+                  <Badge tone={m.scope === "company" ? "blue" : "default"}>
+                    {m.scope}
+                  </Badge>
                 </div>
-                <button
-                  onClick={() =>
-                    spaceId && remove({ spaceId, memoryId: m._id as never })
-                  }
-                  className="text-xs text-muted hover:text-red-400"
-                >
-                  Delete
-                </button>
-              </div>
-            </Card>
+                <p className="mt-2 line-clamp-4 text-xs text-muted">{m.content}</p>
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="flex flex-wrap gap-1">
+                    <Badge>{m.source}</Badge>
+                    {(m.tags ?? []).map((t) => (
+                      <Badge key={t} tone="blue">
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() =>
+                      spaceId && remove({ spaceId, memoryId: m._id as never })
+                    }
+                    className="text-xs text-muted hover:text-red-500"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </Card>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Add memory">

@@ -1,37 +1,20 @@
 "use client";
 
-import Link from "next/link";
 import { motion } from "motion/react";
+import { cn } from "@/lib/utils";
 import { ImagePlaceholder } from "@/components/site/painting";
+import { DarkPill, RADIUS, TYPE_H1, TYPE_H2 } from "@/components/site/ui";
+import { Reveal, Stagger, StaggerItem, TextReveal, Parallax, EASE } from "@/components/site/motion";
 
 /* ---------------------------------------------------------------------------
    About. Editorial headline, short prose, a numbered principles list with
    hairline separators (ported from the previous app/about/page.tsx), a team
    row of four portrait placeholders, and a closing CTA. The prior page had
-   no Clerk SignUpButton, so the closing CTA links to /pricing.
+   no Clerk SignUpButton, so the closing CTA links to /pricing. Now wired
+   through Lane A's shared motion.tsx primitives: a word-by-word TextReveal
+   headline, Stagger cascades for the principles list and team row (replacing
+   the page-local per-item delay math), and a magnetic closing CTA.
 --------------------------------------------------------------------------- */
-
-function Rise({
-  children,
-  delay = 0,
-  className,
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  className?: string;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.7, delay, ease: [0.22, 0.6, 0.24, 1] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
 
 const PRINCIPLES = [
   {
@@ -60,12 +43,10 @@ export default function AboutPage() {
     <main>
       {/* Hero */}
       <section className="mx-auto max-w-[1060px] px-5 pb-16 pt-24 sm:px-7 sm:pt-32">
-        <Rise>
-          <h1 className="max-w-[820px] text-[44px] font-medium leading-[1.06] tracking-[-0.015em] text-[var(--site-ink)] sm:text-[64px]">
-            The panel that keeps autonomous companies honest
-          </h1>
-        </Rise>
-        <Rise delay={0.1}>
+        <h1 className={cn(TYPE_H1, "max-w-[820px] text-[var(--site-ink)]")}>
+          <TextReveal text="The panel that keeps autonomous companies honest" as="span" />
+        </h1>
+        <Reveal delay={0.15}>
           <div className="mt-8 max-w-[640px] space-y-5 text-[17px] leading-relaxed text-[var(--site-body)]">
             <p>
               Agents are cheap now. Trustworthy, ongoing, observable agent
@@ -84,14 +65,14 @@ export default function AboutPage() {
               what turns a demo into infrastructure a company can run on.
             </p>
           </div>
-        </Rise>
+        </Reveal>
       </section>
 
       {/* Principles */}
       <section className="mx-auto max-w-[1060px] px-5 pb-24 sm:px-7">
-        <div className="border-t border-[var(--site-line)]">
+        <Stagger className="border-t border-[var(--site-line)]" gap={0.1}>
           {PRINCIPLES.map((p, i) => (
-            <Rise key={p.title} delay={i * 0.06}>
+            <StaggerItem key={p.title}>
               <div className="grid gap-3 border-b border-[var(--site-line)] py-9 sm:grid-cols-[80px_1fr] sm:gap-8">
                 <p className="font-mono text-[14px] text-[#a3a09a]">
                   {String(i + 1).padStart(2, "0")}
@@ -105,50 +86,48 @@ export default function AboutPage() {
                   </p>
                 </div>
               </div>
-            </Rise>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </section>
 
       {/* Team */}
       <section className="bg-[var(--site-band)] py-20">
         <div className="mx-auto max-w-[1060px] px-5 sm:px-7">
-          <Rise>
-            <h2 className="text-[34px] font-medium tracking-[-0.01em] text-[var(--site-ink)] sm:text-[40px]">
-              The people building it
-            </h2>
-          </Rise>
-          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <Reveal>
+            <h2 className={TYPE_H2}>The people building it</h2>
+          </Reveal>
+          <Stagger className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4" gap={0.07}>
             {TEAM.map((t, i) => (
-              <Rise key={`${t.name}-${i}`} delay={i * 0.06}>
-                <ImagePlaceholder label="Portrait" className="aspect-[0.85] rounded-[20px]" />
-                <p className="mt-4 text-[15.5px] font-medium text-[var(--site-ink)]">{t.name}</p>
-                <p className="mt-1 text-[13.5px] text-[var(--site-body)]">{t.role}</p>
-              </Rise>
+              <StaggerItem key={`${t.name}-${i}`}>
+                <motion.div
+                  whileHover={{ y: -4 }}
+                  transition={{ duration: 0.25, ease: EASE }}
+                >
+                  <Parallax offset={14} direction={i % 2 === 0 ? "up" : "down"}>
+                    <ImagePlaceholder label="Portrait" className={cn("aspect-[0.85]", RADIUS.image)} />
+                  </Parallax>
+                  <p className="mt-4 text-[15.5px] font-medium text-[var(--site-ink)]">{t.name}</p>
+                  <p className="mt-1 text-[13.5px] text-[var(--site-body)]">{t.role}</p>
+                </motion.div>
+              </StaggerItem>
             ))}
-          </div>
+          </Stagger>
         </div>
       </section>
 
       {/* Closing CTA */}
       <section className="mx-auto max-w-[1060px] px-5 py-24 text-center sm:px-7">
-        <Rise>
-          <h2 className="text-[34px] font-medium tracking-[-0.01em] text-[var(--site-ink)] sm:text-[40px]">
-            Ready to run your fleet?
-          </h2>
+        <Reveal>
+          <h2 className={TYPE_H2}>Ready to run your fleet?</h2>
           <p className="mx-auto mt-3 max-w-[400px] text-[15.5px] leading-relaxed text-[var(--site-body)]">
             Start free, upgrade a Space when the work is real. No card
             required to try it out.
           </p>
           <div className="mt-8 flex items-center justify-center">
-            <Link
-              href="/pricing"
-              className="rounded-full bg-[#1f1f1c] px-6 py-3 text-[15px] font-medium text-white transition hover:bg-black"
-            >
-              Get started
-            </Link>
+            <DarkPill href="/pricing">Get started</DarkPill>
           </div>
-        </Rise>
+        </Reveal>
       </section>
     </main>
   );

@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { Plus, Search } from "@/components/icons";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 type Skill = {
   _id: string;
@@ -75,7 +76,7 @@ export default function SkillsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Skills</h1>
           <p className="text-sm text-muted">
@@ -86,9 +87,9 @@ export default function SkillsPage() {
         <Button onClick={() => setOpen(true)}>
           <Plus className="h-4 w-4" /> New skill
         </Button>
-      </div>
+      </Reveal>
 
-      <div className="mb-6 flex gap-2">
+      <Reveal delay={0.05} className="mb-6 flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <Input
@@ -113,44 +114,48 @@ export default function SkillsPage() {
             Clear
           </Button>
         )}
-      </div>
+      </Reveal>
 
       {list.length === 0 ? (
-        <EmptyState
-          title={results ? "No matching skills" : "No skills yet"}
-          body={
-            results
-              ? "Try a different search."
-              : "Save a prompt, playbook, or set of instructions your agents can reuse."
-          }
-        />
+        <Reveal delay={0.1}>
+          <EmptyState
+            title={results ? "No matching skills" : "No skills yet"}
+            body={
+              results
+                ? "Try a different search."
+                : "Save a prompt, playbook, or set of instructions your agents can reuse."
+            }
+          />
+        </Reveal>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((s) => (
-            <Card key={s._id}>
-              <div className="flex items-start justify-between">
-                <p className="font-medium">{s.name}</p>
-                <button
-                  onClick={() => spaceId && remove({ spaceId, skillId: s._id as never })}
-                  className="text-xs text-muted hover:text-red-400"
-                >
-                  Delete
-                </button>
-              </div>
-              {s.description && (
-                <p className="mt-1 text-sm text-muted">{s.description}</p>
-              )}
-              <p className="mt-2 line-clamp-3 text-xs text-muted">{s.content}</p>
-              <div className="mt-3 flex flex-wrap gap-1">
-                {(s.tags ?? []).map((t) => (
-                  <Badge key={t} tone="blue">
-                    {t}
-                  </Badge>
-                ))}
-              </div>
-            </Card>
+            <StaggerItem key={s._id}>
+              <Card>
+                <div className="flex items-start justify-between">
+                  <p className="font-medium">{s.name}</p>
+                  <button
+                    onClick={() => spaceId && remove({ spaceId, skillId: s._id as never })}
+                    className="text-xs text-muted hover:text-red-500"
+                  >
+                    Delete
+                  </button>
+                </div>
+                {s.description && (
+                  <p className="mt-1 text-sm text-muted">{s.description}</p>
+                )}
+                <p className="mt-2 line-clamp-3 text-xs text-muted">{s.content}</p>
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {(s.tags ?? []).map((t) => (
+                    <Badge key={t} tone="blue">
+                      {t}
+                    </Badge>
+                  ))}
+                </div>
+              </Card>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="New skill">

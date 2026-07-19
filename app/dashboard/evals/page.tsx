@@ -9,6 +9,8 @@ import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
 import { BarChart3, FlaskConical, Loader2, Plus, Sparkles, Star, Trash2 } from "@/components/icons";
+import { EASE, Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import { motion, useReducedMotion } from "motion/react";
 
 function Stars({ value }: { value: number }) {
   const rounded = Math.round(value);
@@ -46,6 +48,7 @@ export default function EvalsPage() {
   const [autoDimension, setAutoDimension] = useState("");
   const [autoBusy, setAutoBusy] = useState(false);
 
+  const reduce = useReducedMotion();
   const agentName = (id: Id<"agents">) => agents?.find((a) => a._id === id)?.name;
 
   const maxCount = Math.max(1, ...((scorecards ?? []).map((s) => s.count)));
@@ -93,7 +96,7 @@ export default function EvalsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal as="div" className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Agent evals</h1>
           <p className="text-sm text-muted">
@@ -108,30 +111,35 @@ export default function EvalsPage() {
             <Plus className="h-4 w-4" /> Log evaluation
           </Button>
         </div>
-      </div>
+      </Reveal>
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Stagger className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" gap={0.06}>
         {(scorecards ?? []).map((s) => (
-          <Card key={s.agentId}>
-            <div className="flex items-start justify-between gap-2">
-              <p className="font-medium">{s.name}</p>
-              <Badge>{s.count} evals</Badge>
-            </div>
-            <div className="mt-3 flex items-center gap-2">
-              <Stars value={s.avg} />
-              <span className="text-sm text-muted">
-                {s.count ? `${s.avg.toFixed(1)}/5` : "N/5"}
-              </span>
-            </div>
-            <div className="mt-3 h-2 rounded-full bg-surface-2">
-              <div
-                className="h-2 rounded-full bg-accent"
-                style={{ width: `${(s.count / maxCount) * 100}%`, minWidth: s.count ? 2 : 0 }}
-              />
-            </div>
-          </Card>
+          <StaggerItem key={s.agentId}>
+            <Card>
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-medium">{s.name}</p>
+                <Badge>{s.count} evals</Badge>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <Stars value={s.avg} />
+                <span className="text-sm text-muted">
+                  {s.count ? `${s.avg.toFixed(1)}/5` : "N/5"}
+                </span>
+              </div>
+              <div className="mt-3 h-2 rounded-full bg-surface-2">
+                <motion.div
+                  className="h-2 rounded-full bg-accent"
+                  initial={{ width: reduce ? `${(s.count / maxCount) * 100}%` : 0 }}
+                  animate={{ width: `${(s.count / maxCount) * 100}%` }}
+                  transition={{ duration: reduce ? 0 : 0.8, ease: EASE }}
+                  style={{ minWidth: s.count ? 2 : 0 }}
+                />
+              </div>
+            </Card>
+          </StaggerItem>
         ))}
-      </div>
+      </Stagger>
 
       <h2 className="mb-3 font-semibold">Recent evaluations</h2>
       {evals && evals.length === 0 ? (
@@ -145,27 +153,29 @@ export default function EvalsPage() {
           }
         />
       ) : (
-        <Card>
-          <ul className="divide-y divide-border">
-            {(evals ?? []).map((e) => (
-              <li key={e._id} className="flex items-start gap-3 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">
-                      {agentName(e.agentId) ?? "Agent"}
-                    </span>
-                    <Stars value={e.rating} />
-                    {e.dimension && <Badge tone="blue">{e.dimension}</Badge>}
+        <Reveal delay={0.06}>
+          <Card>
+            <ul className="divide-y divide-border">
+              {(evals ?? []).map((e) => (
+                <li key={e._id} className="flex items-start gap-3 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">
+                        {agentName(e.agentId) ?? "Agent"}
+                      </span>
+                      <Stars value={e.rating} />
+                      {e.dimension && <Badge tone="blue">{e.dimension}</Badge>}
+                    </div>
+                    {e.comment && (
+                      <p className="mt-1 text-sm text-muted">{e.comment}</p>
+                    )}
                   </div>
-                  {e.comment && (
-                    <p className="mt-1 text-sm text-muted">{e.comment}</p>
-                  )}
-                </div>
-                <span className="shrink-0 text-xs text-muted">{timeAgo(e.createdAt)}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+                  <span className="shrink-0 text-xs text-muted">{timeAgo(e.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </Reveal>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Log evaluation">
@@ -293,6 +303,7 @@ function qualityTone(score: number | null): "default" | "green" | "yellow" | "re
 function BenchmarkSection() {
   const { spaceId } = useActiveSpace();
   const canOperate = useCan("operator");
+  const reduce = useReducedMotion();
   const benchmarks = useQuery(api.evals.listBenchmarks, spaceId ? { spaceId } : "skip");
   const batches = useQuery(api.evals.listBatches, spaceId ? { spaceId } : "skip");
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
@@ -384,7 +395,7 @@ function BenchmarkSection() {
 
   return (
     <div className="mt-10">
-      <div className="mb-3 flex items-center justify-between">
+      <Reveal as="div" className="mb-3 flex items-center justify-between">
         <div>
           <h2 className="font-semibold">Cross-harness benchmarks</h2>
           <p className="text-sm text-muted">
@@ -394,7 +405,7 @@ function BenchmarkSection() {
         <Button variant="ghost" onClick={() => setNewOpen(true)}>
           <FlaskConical className="h-4 w-4" /> New benchmark
         </Button>
-      </div>
+      </Reveal>
 
       {benchmarks && benchmarks.length === 0 ? (
         <EmptyState
@@ -408,92 +419,97 @@ function BenchmarkSection() {
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <h3 className="mb-3 text-sm font-semibold text-muted">Benchmarks</h3>
-            <ul className="divide-y divide-border">
-              {(benchmarks ?? []).map((b) => (
-                <li key={b._id} className="flex items-center justify-between gap-2 py-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{b.name}</p>
-                    {b.description && (
-                      <p className="truncate text-xs text-muted">{b.description}</p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      onClick={() =>
-                        setTrendBenchmarkId((cur) => (cur === b._id ? null : b._id))
-                      }
-                      title="View quality/cost trend across runs"
-                    >
-                      <BarChart3 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        setRunOpen(b._id);
-                        setSelectedAgents(new Set());
-                      }}
-                    >
-                      Run
-                    </Button>
-                    {canOperate && (
+          <Reveal as="div" x={-16}>
+            <Card>
+              <h3 className="mb-3 text-sm font-semibold text-muted">Benchmarks</h3>
+              <ul className="divide-y divide-border">
+                {(benchmarks ?? []).map((b) => (
+                  <li key={b._id} className="flex items-center justify-between gap-2 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{b.name}</p>
+                      {b.description && (
+                        <p className="truncate text-xs text-muted">{b.description}</p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
                       <Button
                         variant="ghost"
-                        onClick={() => deleteBenchmark(b._id, b.name)}
-                        title="Delete benchmark"
+                        onClick={() =>
+                          setTrendBenchmarkId((cur) => (cur === b._id ? null : b._id))
+                        }
+                        title="View quality/cost trend across runs"
                       >
-                        <Trash2 className="h-4 w-4 text-red-400" />
+                        <BarChart3 className="h-4 w-4" />
                       </Button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          <Card>
-            <h3 className="mb-3 text-sm font-semibold text-muted">Recent batches</h3>
-            {batches && batches.length === 0 ? (
-              <p className="text-sm text-muted">No runs yet.</p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {(batches ?? []).map((b) => (
-                  <li key={b.batchId} className="py-3">
-                    <button
-                      onClick={() => setActiveBatch(b.batchId)}
-                      className="flex w-full items-center justify-between gap-2 text-left"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{b.benchmarkName}</p>
-                        <p className="text-xs text-muted">
-                          {b.runCount} run{b.runCount === 1 ? "" : "s"} · {timeAgo(b.startedAt)}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {b.avgQuality != null && (
-                          <Badge tone={qualityTone(b.avgQuality)}>
-                            {(b.avgQuality * 100).toFixed(0)}% quality
-                          </Badge>
-                        )}
-                        <Badge>${b.totalCostUsd.toFixed(4)}</Badge>
-                        {b.status === "running" && <Loader2 className="h-4 w-4 animate-spin" />}
-                      </div>
-                    </button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setRunOpen(b._id);
+                          setSelectedAgents(new Set());
+                        }}
+                      >
+                        Run
+                      </Button>
+                      {canOperate && (
+                        <Button
+                          variant="ghost"
+                          onClick={() => deleteBenchmark(b._id, b.name)}
+                          title="Delete benchmark"
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
-            )}
-          </Card>
+            </Card>
+          </Reveal>
+
+          <Reveal as="div" x={16} delay={0.06}>
+            <Card>
+              <h3 className="mb-3 text-sm font-semibold text-muted">Recent batches</h3>
+              {batches && batches.length === 0 ? (
+                <p className="text-sm text-muted">No runs yet.</p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {(batches ?? []).map((b) => (
+                    <li key={b.batchId} className="py-3">
+                      <button
+                        onClick={() => setActiveBatch(b.batchId)}
+                        className="flex w-full items-center justify-between gap-2 text-left"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{b.benchmarkName}</p>
+                          <p className="text-xs text-muted">
+                            {b.runCount} run{b.runCount === 1 ? "" : "s"} · {timeAgo(b.startedAt)}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {b.avgQuality != null && (
+                            <Badge tone={qualityTone(b.avgQuality)}>
+                              {(b.avgQuality * 100).toFixed(0)}% quality
+                            </Badge>
+                          )}
+                          <Badge>${b.totalCostUsd.toFixed(4)}</Badge>
+                          {b.status === "running" && <Loader2 className="h-4 w-4 animate-spin" />}
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </Reveal>
         </div>
       )}
 
       {trendBenchmarkId && (
+        <Reveal>
         <Card className="mt-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-muted">
-              Trend across runs — {benchmarks?.find((b) => b._id === trendBenchmarkId)?.name ?? "Benchmark"}
+              Trend across runs: {benchmarks?.find((b) => b._id === trendBenchmarkId)?.name ?? "Benchmark"}
             </h3>
             <Button variant="ghost" onClick={() => setTrendBenchmarkId(null)}>
               Close
@@ -509,17 +525,21 @@ function BenchmarkSection() {
                 <button
                   key={t.batchId}
                   onClick={() => setActiveBatch(t.batchId)}
-                  className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-lg px-1 py-1 hover:bg-surface-2"
+                  className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-lg px-1 py-1 transition-colors hover:bg-surface-2"
                   title={`${t.runCount} run(s) · ${timeAgo(t.startedAt)}`}
                 >
                   <div className="flex h-24 w-full items-end justify-center gap-1">
-                    <div
+                    <motion.div
                       className="w-3 rounded-t bg-accent"
-                      style={{ height: `${Math.max(4, (t.avgQuality ?? 0) * 96)}px` }}
+                      initial={{ height: reduce ? Math.max(4, (t.avgQuality ?? 0) * 96) : 0 }}
+                      animate={{ height: Math.max(4, (t.avgQuality ?? 0) * 96) }}
+                      transition={{ duration: reduce ? 0 : 0.6, ease: EASE }}
                     />
-                    <div
-                      className="w-3 rounded-t bg-sky-400"
-                      style={{ height: `${Math.max(4, (t.totalCostUsd / trendMaxCost) * 96)}px` }}
+                    <motion.div
+                      className="w-3 rounded-t bg-sky-500"
+                      initial={{ height: reduce ? Math.max(4, (t.totalCostUsd / trendMaxCost) * 96) : 0 }}
+                      animate={{ height: Math.max(4, (t.totalCostUsd / trendMaxCost) * 96) }}
+                      transition={{ duration: reduce ? 0 : 0.6, delay: reduce ? 0 : 0.08, ease: EASE }}
                     />
                   </div>
                   <span className="text-[10px] text-muted">{timeAgo(t.startedAt)}</span>
@@ -532,14 +552,16 @@ function BenchmarkSection() {
               <span className="h-2 w-2 rounded-full bg-accent" /> avg quality
             </span>
             <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-sky-400" /> total cost (relative)
+              <span className="h-2 w-2 rounded-full bg-sky-500" /> total cost (relative)
             </span>
             <span className="ml-auto">Click a bar to open that batch&apos;s comparison</span>
           </div>
         </Card>
+        </Reveal>
       )}
 
       {activeBatch && (
+        <Reveal>
         <Card className="mt-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-muted">Cost vs quality</h3>
@@ -580,9 +602,11 @@ function BenchmarkSection() {
                         {r.qualityScore != null ? (
                           <div className="flex items-center gap-2">
                             <div className="h-1.5 w-16 rounded-full bg-surface-2">
-                              <div
+                              <motion.div
                                 className="h-1.5 rounded-full bg-accent"
-                                style={{ width: `${r.qualityScore * 100}%` }}
+                                initial={{ width: reduce ? `${r.qualityScore * 100}%` : 0 }}
+                                animate={{ width: `${r.qualityScore * 100}%` }}
+                                transition={{ duration: reduce ? 0 : 0.7, ease: EASE }}
                               />
                             </div>
                             <span>{(r.qualityScore * 100).toFixed(0)}%</span>
@@ -594,9 +618,11 @@ function BenchmarkSection() {
                       <td className="py-2 pr-3">
                         <div className="flex items-center gap-2">
                           <div className="h-1.5 w-16 rounded-full bg-surface-2">
-                            <div
-                              className="h-1.5 rounded-full bg-sky-400"
-                              style={{ width: `${((r.costUsd ?? 0) / maxCost) * 100}%` }}
+                            <motion.div
+                              className="h-1.5 rounded-full bg-sky-500"
+                              initial={{ width: reduce ? `${((r.costUsd ?? 0) / maxCost) * 100}%` : 0 }}
+                              animate={{ width: `${((r.costUsd ?? 0) / maxCost) * 100}%` }}
+                              transition={{ duration: reduce ? 0 : 0.7, ease: EASE }}
                             />
                           </div>
                           <span>{r.costUsd != null ? `$${r.costUsd.toFixed(4)}` : "—"}</span>
@@ -612,6 +638,7 @@ function BenchmarkSection() {
             </div>
           )}
         </Card>
+        </Reveal>
       )}
 
       <Modal open={newOpen} onClose={() => setNewOpen(false)} title="New benchmark">
@@ -658,7 +685,7 @@ function BenchmarkSection() {
       >
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            Select the agents to run this benchmark against — pick agents on different harnesses/models to compare.
+            Select the agents to run this benchmark against, picking agents on different harnesses/models to compare.
           </p>
           <div className="max-h-64 space-y-1 overflow-y-auto">
             {(agents ?? []).map((a) => (

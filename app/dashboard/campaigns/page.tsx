@@ -17,6 +17,7 @@ import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
 import { Megaphone, Pause, Play, Plus, Trash2 } from "@/components/icons";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 const statusTone = {
   active: "green",
@@ -95,7 +96,7 @@ export default function CampaignsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal as="div" className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Campaigns</h1>
           <p className="max-w-2xl text-sm text-muted">
@@ -108,7 +109,7 @@ export default function CampaignsPage() {
             <Plus className="h-4 w-4" /> New campaign
           </Button>
         )}
-      </div>
+      </Reveal>
 
       {campaigns && campaigns.length === 0 ? (
         <EmptyState
@@ -121,11 +122,12 @@ export default function CampaignsPage() {
           }
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Stagger className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" gap={0.06}>
           {(campaigns ?? []).map((c) => {
             const m = c.metrics ?? {};
             return (
-              <Card key={c._id}>
+              <StaggerItem key={c._id}>
+              <Card>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Megaphone className="h-4 w-4 text-accent" />
@@ -192,16 +194,17 @@ export default function CampaignsPage() {
                     )}
                     <button
                       onClick={() => del(c._id, c.name)}
-                      className="ml-auto inline-flex items-center gap-1 text-xs text-muted hover:text-red-400"
+                      className="ml-auto inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-red-500"
                     >
                       <Trash2 className="h-3.5 w-3.5" /> Remove
                     </button>
                   </div>
                 )}
               </Card>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="New campaign">

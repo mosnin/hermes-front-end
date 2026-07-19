@@ -1,26 +1,33 @@
 "use client";
 
-import { motion, useReducedMotion } from "motion/react";
+import { useEffect } from "react";
 
 /**
- * Route-transition wrapper: templates remount on every navigation, so each
- * dashboard page eases in with a short rise — the whole app feels responsive
- * without any per-page wiring. Honors prefers-reduced-motion.
+ * Next.js `template.tsx` convention: this component gets a brand-new
+ * instance on every navigation within `/dashboard`, even between sibling
+ * routes that share the same layout. The actual page-transition motion
+ * (fade + rise, with a real exit before the next route enters) now lives
+ * once at the persistent shell level — `PageTransition` wraps `{children}`
+ * in `app/dashboard/layout.tsx` — because a layout doesn't remount on
+ * navigation the way this file does, so that's the only place an
+ * AnimatePresence exit animation can actually run. Layering another
+ * transition here on top would just double-animate every route change.
+ *
+ * What this remount-per-navigation guarantee is still good for: resetting
+ * the app's scrollable content pane back to the top on every route change.
+ * `<main>` (the scroll container, see layout.tsx) never unmounts across a
+ * client-side navigation, so without this its scroll position would carry
+ * over from whatever the previous page left it at, and a short page would
+ * open still scrolled halfway down.
  */
 export default function DashboardTemplate({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const reduce = useReducedMotion();
-  return (
-    <motion.div
-      className="h-full"
-      initial={reduce ? false : { opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.28, ease: [0.22, 0.8, 0.3, 1] }}
-    >
-      {children}
-    </motion.div>
-  );
+  useEffect(() => {
+    document.getElementById("main-content")?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, []);
+
+  return <>{children}</>;
 }

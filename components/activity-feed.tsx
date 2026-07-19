@@ -1,12 +1,13 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, EmptyState, SkeletonRows } from "./ui";
+import { Badge, EmptyState, SkeletonRows, UI_SPRING } from "./ui";
 import { timeAgo } from "@/lib/utils";
 import { useActiveSpace } from "./active-space";
+import { DURATION } from "@/components/site/motion";
 
 const typeTone: Record<string, "default" | "green" | "yellow" | "red" | "blue"> = {
   system: "blue",
@@ -26,6 +27,7 @@ export function ActivityFeed({
   limit?: number;
 }) {
   const { spaceId } = useActiveSpace();
+  const reduce = useReducedMotion();
   const events = useQuery(
     api.activity.feed,
     spaceId ? { spaceId, agentId, limit } : "skip",
@@ -51,11 +53,11 @@ export function ActivityFeed({
         {events.map((e) => (
           <motion.li
             key={e._id}
-            layout
-            initial={{ opacity: 0, y: -14, scale: 0.98 }}
+            layout={!reduce}
+            initial={reduce ? false : { opacity: 0, y: -14, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ type: "spring", stiffness: 380, damping: 32 }}
+            transition={reduce ? { duration: DURATION.reduced } : UI_SPRING.pop}
             className="flex items-start gap-3 py-3"
           >
             <Badge tone={typeTone[e.type] ?? "default"}>{e.type}</Badge>

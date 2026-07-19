@@ -1,10 +1,23 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { motion } from "motion/react";
+import { motion, useScroll, useTransform, useReducedMotion, type MotionValue } from "motion/react";
 import { SignedIn, SignedOut, SignUpButton } from "@clerk/nextjs";
+import { cn } from "@/lib/utils";
 import { ImagePlaceholder } from "@/components/site/painting";
-import { SectionHead, ExplorePill } from "@/components/site/ui";
+import { SectionHead, ExplorePill, RADIUS, TYPE_H1, TYPE_H2 } from "@/components/site/ui";
+import {
+  Reveal,
+  Stagger,
+  StaggerItem,
+  TextReveal,
+  CountUp,
+  Marquee,
+  MagneticButton,
+  StickyScene,
+  Parallax,
+} from "@/components/site/motion";
 import {
   ConnectMock,
   OrchestrateMock,
@@ -17,30 +30,10 @@ import {
    Home. Structure mirrors the reference composition: hero image dissolving
    into a giant centered headline, logo row, stats, feature trio, testimonial
    grid, control-plane diagram, four product sections with animated mockups,
-   trust band, news. All imagery = placeholders.
+   trust band, news. All imagery = placeholders. Motion: hero parallax + word
+   reveal, scroll-reveal on every section, a marquee logo row, count-up
+   stats, magnetic CTAs, and staggered card grids.
 --------------------------------------------------------------------------- */
-
-function Rise({
-  children,
-  delay = 0,
-  className,
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  className?: string;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.7, delay, ease: [0.22, 0.6, 0.24, 1] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
 
 /** Small circular "+" affordance sitting in the corner of a logo/portrait tile. */
 function CornerPlus({ dark }: { dark?: boolean }) {
@@ -60,30 +53,67 @@ function CornerPlus({ dark }: { dark?: boolean }) {
 
 function GetStartedPill({ big }: { big?: boolean }) {
   const cls = big
-    ? "rounded-full bg-[#1f1f1c] px-6 py-3 text-[15px] font-medium text-white transition hover:bg-black"
-    : "rounded-full bg-[#1f1f1c] px-5 py-2.5 text-[14px] font-medium text-white transition hover:bg-black";
+    ? "rounded-full bg-[#1f1f1c] px-6 py-3 text-[15px] font-medium text-white transition-colors hover:bg-black"
+    : "rounded-full bg-[#1f1f1c] px-5 py-2.5 text-[14px] font-medium text-white transition-colors hover:bg-black";
   return (
     <>
       <SignedOut>
         <SignUpButton mode="modal">
-          <button className={cls}>Get started</button>
+          <MagneticButton strength={big ? 0.36 : 0.28} range={big ? 16 : 10}>
+            <button className={cls}>Get started</button>
+          </MagneticButton>
         </SignUpButton>
       </SignedOut>
       <SignedIn>
-        <Link href="/dashboard" className={`inline-block ${cls}`}>
-          Open dashboard
-        </Link>
+        <MagneticButton strength={big ? 0.36 : 0.28} range={big ? 16 : 10}>
+          <Link href="/dashboard" className={`inline-block ${cls}`}>
+            Open dashboard
+          </Link>
+        </MagneticButton>
       </SignedIn>
     </>
+  );
+}
+
+/** SOC 2 / GDPR / ISO badge: a static ring plus a slowly, continuously
+ *  rotating dashed inner ring (ambient loop, transform-only), fully stopped
+ *  under reduced motion. */
+function TrustBadge({ label }: { label: string }) {
+  const reduce = useReducedMotion();
+  return (
+    <span className="relative grid h-[76px] w-[76px] shrink-0 place-items-center rounded-full border-[1.5px] border-[#c9c6bf]">
+      <motion.span
+        aria-hidden
+        className="absolute inset-[6px] rounded-full border border-dashed border-[#d6d3cc]"
+        animate={reduce ? undefined : { rotate: 360 }}
+        transition={reduce ? undefined : { duration: 44, repeat: Infinity, ease: "linear" }}
+      />
+      {[0, 90, 180, 270].map((deg) => (
+        <svg
+          key={deg}
+          viewBox="0 0 10 10"
+          className="absolute left-1/2 top-1/2 h-2 w-2 text-[#c9c6bf]"
+          style={{
+            transform: `translate(-50%, -50%) rotate(${deg}deg) translateY(-31px) rotate(${-deg}deg)`,
+          }}
+          aria-hidden
+        >
+          <path d="M5 0l1.1 3.4H10L6.9 5.5 8 9 5 6.9 2 9l1.1-3.5L0 3.4h3.9z" fill="currentColor" />
+        </svg>
+      ))}
+      <span className="relative px-2 text-center text-[11.5px] font-semibold leading-tight text-[#75726c]">
+        {label}
+      </span>
+    </span>
   );
 }
 
 const LOGOS = ["hermes", "openclaw", "goose", "slack", "telegram", "discord", "composio"];
 
 const STATS = [
-  { value: "10x", label: "Faster agent onboarding" },
-  { value: "90%", label: "Lower idle cost" },
-  { value: "~1s", label: "Work push latency" },
+  { number: 10, suffix: "x", label: "Faster agent onboarding" },
+  { number: 90, suffix: "%", label: "Lower idle cost" },
+  { number: 1, prefix: "~", suffix: "s", label: "Work push latency" },
 ];
 
 const TRIO = [
@@ -374,51 +404,267 @@ const NEWS = [
   { title: "Inside the guardrail engine", meta: "Product · 5 min read" },
 ];
 
+/* ---------------------------------------------------------------------------
+   Product sections: on desktop with motion enabled, the four Connect /
+   Orchestrate / Govern / Integrate sections play as a pinned scroll scene
+   (StickyScene from Lane A's motion engine) that cross-fades between stages
+   as the user scrolls, with a step rail on the edge. Reduced motion and
+   small screens fall back to the plain stacked reveal list below so nothing
+   ever overlaps or gets clipped. Only transform/opacity are scroll-driven. */
+
+/** Cross-fade window for scene `index` of `count`, tuned so each stage holds
+ *  fully visible for the middle of its scroll segment and fades at the
+ *  edges; the first stage starts visible and the last stays visible. */
+function sceneWindow(index: number, count: number) {
+  const step = 1 / count;
+  const start = index * step;
+  const end = start + step;
+  const fade = step * 0.35;
+  return {
+    inStart: index === 0 ? 0 : start,
+    inEnd: Math.min(start + fade, end),
+    outStart: Math.max(end - fade, start),
+    outEnd: index === count - 1 ? 1 : end,
+  };
+}
+
+/** Detects a `min-width` media query client-side, defaulting to `false` (the
+ *  server-safe stacked layout) until it can measure after mount. */
+function useMinWidth(px: number) {
+  const [match, setMatch] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${px}px)`);
+    const update = () => setMatch(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [px]);
+  return match;
+}
+
+function PinnedScenePanel({
+  section,
+  index,
+  count,
+  progress,
+}: {
+  section: (typeof SECTIONS)[number];
+  index: number;
+  count: number;
+  progress: MotionValue<number>;
+}) {
+  const w = sceneWindow(index, count);
+  const opacity = useTransform(
+    progress,
+    [w.inStart, w.inEnd, w.outStart, w.outEnd],
+    [index === 0 ? 1 : 0, 1, 1, index === count - 1 ? 1 : 0],
+  );
+  const y = useTransform(
+    progress,
+    [w.inStart, w.inEnd, w.outStart, w.outEnd],
+    [index === 0 ? 0 : 22, 0, 0, index === count - 1 ? 0 : -22],
+  );
+  const pointerEvents = useTransform(opacity, (v) => (v > 0.5 ? "auto" : "none"));
+  // Not just pointer-events: fully hide the off-stage scene from screen
+  // readers and the tab order too, so keyboard/AT users never land on a
+  // link that is transparent on screen.
+  const visibility = useTransform(opacity, (v) => (v > 0.5 ? "visible" : "hidden"));
+
+  return (
+    <motion.div
+      style={{ opacity, y, pointerEvents, visibility }}
+      className="absolute inset-0 flex flex-col justify-center px-5 sm:px-7"
+    >
+      <div className="mx-auto w-full max-w-[1060px]">
+        <SectionHead label={section.label} title={section.title} sub={section.sub} explore="/features" />
+        <div className="mt-10 grid items-center gap-10 lg:grid-cols-2">
+          <div className={section.flip ? "lg:order-2" : ""}>{section.mock}</div>
+          <div className={section.flip ? "lg:order-1" : ""}>
+            <div className={cn(RADIUS.compact, "bg-[var(--site-card)] p-5")}>
+              <p className="flex items-center gap-2.5 text-[15.5px] font-medium text-[var(--site-ink)]">
+                <section.highlight.icon className="h-[18px] w-[18px] shrink-0 text-[#33322e]" />
+                {section.highlight.title}
+              </p>
+              <p className="mt-2 pl-[30px] text-[13.5px] leading-relaxed text-[#75726c]">
+                {section.highlight.body}
+              </p>
+            </div>
+            <ul className="mt-2 space-y-1">
+              {section.points.map((pt) => (
+                <li key={pt.label} className="flex items-center gap-2.5 px-5 py-3 text-[15.5px] text-[var(--site-ink)]">
+                  <pt.icon className="h-[18px] w-[18px] shrink-0 text-[#55534e]" />
+                  {pt.label}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function SceneRailItem({
+  label,
+  index,
+  count,
+  progress,
+}: {
+  label: string;
+  index: number;
+  count: number;
+  progress: MotionValue<number>;
+}) {
+  const w = sceneWindow(index, count);
+  const emphasis = useTransform(
+    progress,
+    [w.inStart, w.inEnd, w.outStart, w.outEnd],
+    [index === 0 ? 1 : 0.32, 1, 1, index === count - 1 ? 1 : 0.32],
+  );
+  const dotScale = useTransform(emphasis, [0.32, 1], [1, 1.7]);
+  return (
+    <motion.div style={{ opacity: emphasis }} className="flex items-center gap-2.5">
+      <motion.span style={{ scale: dotScale }} className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--site-ink)]" />
+      <span className="text-[12.5px] font-medium uppercase tracking-[0.08em] text-[var(--site-ink)]">{label}</span>
+    </motion.div>
+  );
+}
+
+function SceneRail({ progress, count, labels }: { progress: MotionValue<number>; count: number; labels: string[] }) {
+  return (
+    <div className="pointer-events-none absolute right-10 top-1/2 hidden -translate-y-1/2 flex-col items-start gap-4 xl:flex">
+      {labels.map((label, i) => (
+        <SceneRailItem key={label} label={label} index={i} count={count} progress={progress} />
+      ))}
+    </div>
+  );
+}
+
+/** Pinned sequence: the track scrolls for 100vh per section while the scene
+ *  stays fixed at the top of the viewport, cross-fading between stages. */
+function PinnedProductScenes() {
+  return (
+    <StickyScene height={`${SECTIONS.length * 100}vh`} className="mt-24">
+      {(progress) => (
+        <div className="relative h-full w-full bg-white">
+          {SECTIONS.map((s, i) => (
+            <PinnedScenePanel key={s.label} section={s} index={i} count={SECTIONS.length} progress={progress} />
+          ))}
+          <SceneRail progress={progress} count={SECTIONS.length} labels={SECTIONS.map((s) => s.label)} />
+        </div>
+      )}
+    </StickyScene>
+  );
+}
+
+/** Plain stacked reveal: one section per scroll position, no pin. Used under
+ *  reduced motion and on small screens where a pinned scene has no room. */
+function StackedProductSections() {
+  return (
+    <>
+      {SECTIONS.map((s) => (
+        <section key={s.label} className="mx-auto max-w-[1060px] px-5 pt-24 sm:px-7">
+          <Reveal>
+            <SectionHead label={s.label} title={s.title} sub={s.sub} explore="/features" />
+          </Reveal>
+          <div className="mt-12 grid items-start gap-10 lg:grid-cols-2">
+            <Reveal className={s.flip ? "lg:order-2" : ""}>{s.mock}</Reveal>
+            <Reveal delay={0.08} className={s.flip ? "lg:order-1" : ""}>
+              <div className={cn(RADIUS.compact, "bg-[var(--site-card)] p-5")}>
+                <p className="flex items-center gap-2.5 text-[15.5px] font-medium text-[var(--site-ink)]">
+                  <s.highlight.icon className="h-[18px] w-[18px] shrink-0 text-[#33322e]" />
+                  {s.highlight.title}
+                </p>
+                <p className="mt-2 pl-[30px] text-[13.5px] leading-relaxed text-[#75726c]">
+                  {s.highlight.body}
+                </p>
+              </div>
+              <ul className="mt-2 space-y-1">
+                {s.points.map((pt) => (
+                  <li key={pt.label} className="flex items-center gap-2.5 px-5 py-3 text-[15.5px] text-[var(--site-ink)]">
+                    <pt.icon className="h-[18px] w-[18px] shrink-0 text-[#55534e]" />
+                    {pt.label}
+                  </li>
+                ))}
+              </ul>
+            </Reveal>
+          </div>
+        </section>
+      ))}
+    </>
+  );
+}
+
+/** Picks pinned vs. stacked: pinned scenes need real height and full motion,
+ *  so anything under the `lg` breakpoint or with reduced motion gets the
+ *  always-safe stacked layout instead. */
+function ProductSections() {
+  const reduce = useReducedMotion();
+  const isDesktop = useMinWidth(1024);
+  if (reduce || !isDesktop) {
+    return <StackedProductSections />;
+  }
+  return <PinnedProductScenes />;
+}
+
+function Hero() {
+  const ref = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
+  const imgY = useTransform(scrollYProgress, [0, 1], reduce ? [0, 0] : [0, 140]);
+  const imgOpacity = useTransform(scrollYProgress, [0, 1], reduce ? [1, 1] : [1, 0.4]);
+
+  return (
+    <section ref={ref} className="relative overflow-hidden">
+      <motion.div className="absolute inset-x-0 top-0 h-[540px]" style={{ y: imgY, opacity: imgOpacity }}>
+        <ImagePlaceholder label="Hero image" fadeBottom className="h-full w-full" />
+      </motion.div>
+      <div className="relative mx-auto max-w-[1060px] px-5 pb-6 pt-[360px] text-center sm:px-7">
+        <TextReveal
+          as="h1"
+          text="The new standard in agent operations"
+          className={cn(TYPE_H1, "mx-auto max-w-[640px] text-[#33322e]")}
+        />
+        <Reveal delay={0.32}>
+          <p className="mx-auto mt-6 max-w-[430px] text-[18px] leading-relaxed text-[var(--site-body)]">
+            Meet the control plane that connects your agents, automates the
+            manual work and keeps every action accountable.
+          </p>
+        </Reveal>
+        <Reveal delay={0.42}>
+          <div className="mt-8">
+            <GetStartedPill big />
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
 export default function HomePage() {
   return (
     <main>
-      {/* Hero */}
-      <section className="relative">
-        <div className="absolute inset-x-0 top-0 h-[540px]">
-          <ImagePlaceholder label="Hero image" fadeBottom className="h-full w-full" />
-        </div>
-        <div className="relative mx-auto max-w-[1060px] px-5 pb-6 pt-[360px] text-center sm:px-7">
-          <Rise>
-            <h1 className="mx-auto text-[44px] font-medium leading-[1.06] tracking-[-0.015em] text-[#33322e] sm:text-[64px]">
-              The new standard
-              <br />
-              in agent operations
-            </h1>
-          </Rise>
-          <Rise delay={0.1}>
-            <p className="mx-auto mt-6 max-w-[430px] text-[18px] leading-relaxed text-[var(--site-body)]">
-              Meet the control plane that connects your agents, automates the
-              manual work and keeps every action accountable.
-            </p>
-          </Rise>
-          <Rise delay={0.18}>
-            <div className="mt-8">
-              <GetStartedPill big />
-            </div>
-          </Rise>
-        </div>
-      </section>
+      <Hero />
 
       {/* Logo row */}
       <section className="mx-auto max-w-[1060px] px-5 pb-6 pt-24 sm:px-7">
-        <p className="text-center text-[13.5px] text-[#a3a09a]">
-          Built for teams that run agents in production
-        </p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-x-12 gap-y-5">
-          {LOGOS.map((l) => (
-            <span
-              key={l}
-              className="text-[21px] font-semibold lowercase tracking-tight text-[#b9b6af]"
-            >
-              {l}
-            </span>
-          ))}
-        </div>
+        <Reveal>
+          <p className="text-center text-[13.5px] text-[#a3a09a]">
+            Built for teams that run agents in production
+          </p>
+        </Reveal>
+        <Reveal delay={0.06} className="mt-8">
+          <Marquee>
+            {LOGOS.map((l) => (
+              <span
+                key={l}
+                className="text-[21px] font-semibold lowercase tracking-tight text-[#b9b6af]"
+              >
+                {l}
+              </span>
+            ))}
+          </Marquee>
+        </Reveal>
         <div className="mt-16 border-b border-[var(--site-line)]" />
       </section>
 
@@ -426,102 +672,112 @@ export default function HomePage() {
       <section className="mx-auto max-w-[1060px] px-5 py-20 sm:px-7">
         <div className="grid max-w-[720px] grid-cols-1 gap-8 sm:grid-cols-3 sm:gap-0">
           {STATS.map((s, i) => (
-            <Rise key={s.label} delay={i * 0.08}>
+            <Reveal key={s.label} delay={i * 0.08}>
               <div className={i > 0 ? "sm:border-l sm:border-[var(--site-line)] sm:pl-10" : ""}>
-                <p className="text-[38px] font-medium tracking-tight text-[var(--site-ink)]">{s.value}</p>
+                <p className="text-[38px] font-medium tracking-tight text-[var(--site-ink)]">
+                  <CountUp value={s.number} prefix={s.prefix} suffix={s.suffix} />
+                </p>
                 <p className="mt-1 text-[14.5px] text-[var(--site-body)]">{s.label}</p>
               </div>
-            </Rise>
+            </Reveal>
           ))}
         </div>
       </section>
 
       {/* Feature trio */}
       <section className="mx-auto max-w-[1060px] px-5 pb-24 sm:px-7">
-        <Rise>
-          <h2 className="text-[34px] font-medium tracking-[-0.01em] text-[var(--site-ink)] sm:text-[40px]">
-            Built for autonomy. Designed for trust.
-          </h2>
-        </Rise>
-        <div className="mt-14 grid gap-12 sm:grid-cols-3">
-          {TRIO.map((t, i) => (
-            <Rise key={t.title} delay={i * 0.08}>
+        <Reveal>
+          <h2 className={TYPE_H2}>Built for autonomy. Designed for trust.</h2>
+        </Reveal>
+        <Stagger className="mt-14 grid gap-12 sm:grid-cols-3">
+          {TRIO.map((t) => (
+            <StaggerItem key={t.title}>
               <div className="text-[var(--site-ink)]">{t.icon}</div>
               <h3 className="mt-5 text-[16.5px] font-medium text-[var(--site-ink)]">{t.title}</h3>
               <p className="mt-3 text-[15.5px] leading-relaxed text-[var(--site-body)]">{t.body}</p>
-            </Rise>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
         <div className="mt-20 border-b border-[var(--site-line)]" />
       </section>
 
       {/* Trusted by operators */}
       <section className="mx-auto max-w-[1060px] px-5 pb-24 sm:px-7">
         <div className="text-center">
-          <Rise>
-            <h2 className="text-[34px] font-medium tracking-[-0.01em] text-[var(--site-ink)] sm:text-[40px]">
-              Trusted by operators
-            </h2>
+          <Reveal>
+            <h2 className={TYPE_H2}>Trusted by operators</h2>
             <p className="mx-auto mt-3 max-w-[360px] text-[15.5px] leading-relaxed text-[var(--site-body)]">
               Run your fleet like the world&apos;s best ops teams, without
               needing one.
             </p>
-          </Rise>
+          </Reveal>
         </div>
 
         <div className="mt-12 grid gap-4 md:grid-cols-[1fr_1fr_2.05fr]">
-          <Rise className="grid">
-            <div className="relative grid min-h-[240px] place-items-center rounded-[22px] bg-[var(--site-card)] p-8">
-              <span className="text-[30px] font-semibold tracking-tight text-[#8d8a83]">acme·co</span>
-              <CornerPlus />
-            </div>
-          </Rise>
-          <Rise delay={0.06} className="grid">
-            <div className="relative">
-              <ImagePlaceholder label="Portrait" className="min-h-[240px] rounded-[22px]" />
-              <CornerPlus />
-            </div>
-          </Rise>
-          <Rise delay={0.12} className="grid">
-            <div className="relative overflow-hidden rounded-[22px]">
-              <ImagePlaceholder label="Image" className="absolute inset-0" />
-              <div className="relative flex min-h-[240px] flex-col justify-between p-6">
-                <p className="text-[13.5px] font-medium text-[#55534e]">
-                  {QUOTES[0].name} · {QUOTES[0].role}
-                </p>
-                <p className="max-w-[420px] text-[15.5px] leading-relaxed text-[#3c3a35]">
-                  &ldquo;{QUOTES[0].quote}&rdquo;
-                </p>
+          <Reveal className="grid">
+            <Parallax offset={14} direction="up">
+              <div className={cn(RADIUS.tile, "relative grid min-h-[240px] place-items-center bg-[var(--site-card)] p-8")}>
+                <span className="text-[30px] font-semibold tracking-tight text-[#8d8a83]">acme·co</span>
+                <CornerPlus />
               </div>
-            </div>
-          </Rise>
+            </Parallax>
+          </Reveal>
+          <Reveal delay={0.06} className="grid">
+            <Parallax offset={22} direction="down">
+              <div className="relative">
+                <ImagePlaceholder label="Portrait" className={cn("min-h-[240px]", RADIUS.tile)} />
+                <CornerPlus />
+              </div>
+            </Parallax>
+          </Reveal>
+          <Reveal delay={0.12} className="grid">
+            <Parallax offset={10} direction="up">
+              <div className={cn(RADIUS.tile, "relative overflow-hidden")}>
+                <ImagePlaceholder label="Image" className="absolute inset-0" />
+                <div className="relative flex min-h-[240px] flex-col justify-between p-6">
+                  <p className="text-[13.5px] font-medium text-[#55534e]">
+                    {QUOTES[0].name} · {QUOTES[0].role}
+                  </p>
+                  <p className="max-w-[420px] text-[15.5px] leading-relaxed text-[#3c3a35]">
+                    &ldquo;{QUOTES[0].quote}&rdquo;
+                  </p>
+                </div>
+              </div>
+            </Parallax>
+          </Reveal>
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-[2.05fr_1fr_1fr]">
-          <Rise className="grid">
-            <div className="relative overflow-hidden rounded-[22px]">
-              <ImagePlaceholder label="Image" className="absolute inset-0" />
-              <div className="relative flex min-h-[240px] flex-col justify-between p-6">
-                <p className="text-[13.5px] font-medium text-[#55534e]">
-                  {QUOTES[1].name} · {QUOTES[1].role}
-                </p>
-                <p className="max-w-[420px] text-[15.5px] leading-relaxed text-[#3c3a35]">
-                  &ldquo;{QUOTES[1].quote}&rdquo;
-                </p>
+          <Reveal className="grid">
+            <Parallax offset={16} direction="down">
+              <div className={cn(RADIUS.tile, "relative overflow-hidden")}>
+                <ImagePlaceholder label="Image" className="absolute inset-0" />
+                <div className="relative flex min-h-[240px] flex-col justify-between p-6">
+                  <p className="text-[13.5px] font-medium text-[#55534e]">
+                    {QUOTES[1].name} · {QUOTES[1].role}
+                  </p>
+                  <p className="max-w-[420px] text-[15.5px] leading-relaxed text-[#3c3a35]">
+                    &ldquo;{QUOTES[1].quote}&rdquo;
+                  </p>
+                </div>
               </div>
-            </div>
-          </Rise>
-          <Rise delay={0.06} className="grid">
-            <div className="relative grid min-h-[240px] place-items-center rounded-[22px] bg-[#1f1f1c] p-8">
-              <span className="text-[26px] font-semibold tracking-tight text-white/85">nordic·ai</span>
-              <CornerPlus dark />
-            </div>
-          </Rise>
-          <Rise delay={0.12} className="grid">
-            <div className="relative">
-              <ImagePlaceholder label="Portrait" className="min-h-[240px] rounded-[22px]" />
-              <CornerPlus />
-            </div>
-          </Rise>
+            </Parallax>
+          </Reveal>
+          <Reveal delay={0.06} className="grid">
+            <Parallax offset={12} direction="up">
+              <div className={cn(RADIUS.tile, "relative grid min-h-[240px] place-items-center bg-[#1f1f1c] p-8")}>
+                <span className="text-[26px] font-semibold tracking-tight text-white/85">nordic·ai</span>
+                <CornerPlus dark />
+              </div>
+            </Parallax>
+          </Reveal>
+          <Reveal delay={0.12} className="grid">
+            <Parallax offset={20} direction="down">
+              <div className="relative">
+                <ImagePlaceholder label="Portrait" className={cn("min-h-[240px]", RADIUS.tile)} />
+                <CornerPlus />
+              </div>
+            </Parallax>
+          </Reveal>
         </div>
       </section>
 
@@ -545,44 +801,15 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Product sections */}
-      {SECTIONS.map((s) => (
-        <section key={s.label} className="mx-auto max-w-[1060px] px-5 pt-24 sm:px-7">
-          <Rise>
-            <SectionHead label={s.label} title={s.title} sub={s.sub} explore="/features" />
-          </Rise>
-          <div className="mt-12 grid items-start gap-10 lg:grid-cols-2">
-            <Rise className={s.flip ? "lg:order-2" : ""}>{s.mock}</Rise>
-            <Rise delay={0.08} className={s.flip ? "lg:order-1" : ""}>
-              <div className="rounded-[18px] bg-[var(--site-card)] p-5">
-                <p className="flex items-center gap-2.5 text-[15.5px] font-medium text-[var(--site-ink)]">
-                  <s.highlight.icon className="h-[18px] w-[18px] shrink-0 text-[#33322e]" />
-                  {s.highlight.title}
-                </p>
-                <p className="mt-2 pl-[30px] text-[13.5px] leading-relaxed text-[#75726c]">
-                  {s.highlight.body}
-                </p>
-              </div>
-              <ul className="mt-2 space-y-1">
-                {s.points.map((pt) => (
-                  <li key={pt.label} className="flex items-center gap-2.5 px-5 py-3 text-[15.5px] text-[var(--site-ink)]">
-                    <pt.icon className="h-[18px] w-[18px] shrink-0 text-[#55534e]" />
-                    {pt.label}
-                  </li>
-                ))}
-              </ul>
-            </Rise>
-          </div>
-        </section>
-      ))}
+      {/* Product sections: pinned scroll scenes on desktop, stacked reveal
+          under reduced motion or on small screens. */}
+      <ProductSections />
 
       {/* Safe and secure band */}
       <section className="mt-24 bg-[var(--site-band)] py-20">
         <div className="mx-auto grid max-w-[1060px] items-center gap-10 px-5 sm:px-7 md:grid-cols-[1.4fr_1fr]">
-          <Rise>
-            <h2 className="text-[34px] font-medium tracking-[-0.01em] text-[var(--site-ink)] sm:text-[40px]">
-              Safe and secure
-            </h2>
+          <Reveal>
+            <h2 className={TYPE_H2}>Safe and secure</h2>
             <p className="mt-4 max-w-[480px] text-[15.5px] leading-relaxed text-[var(--site-body)]">
               Your trust is our foundation. Cadre is designed with a deep
               commitment to data privacy and security, from fail-closed admin
@@ -591,62 +818,40 @@ export default function HomePage() {
             <div className="mt-6">
               <ExplorePill href="/status" />
             </div>
-          </Rise>
-          <Rise delay={0.1}>
+          </Reveal>
+          <Reveal delay={0.1}>
             <div className="flex items-center justify-start gap-5 md:justify-end">
               {["SOC 2", "GDPR", "ISO 27001"].map((b) => (
-                <span
-                  key={b}
-                  className="relative grid h-[76px] w-[76px] shrink-0 place-items-center rounded-full border-[1.5px] border-[#c9c6bf]"
-                >
-                  <span
-                    aria-hidden
-                    className="absolute inset-[6px] rounded-full border border-dashed border-[#d6d3cc]"
-                  />
-                  {[0, 90, 180, 270].map((deg) => (
-                    <svg
-                      key={deg}
-                      viewBox="0 0 10 10"
-                      className="absolute left-1/2 top-1/2 h-2 w-2 text-[#c9c6bf]"
-                      style={{
-                        transform: `translate(-50%, -50%) rotate(${deg}deg) translateY(-31px) rotate(${-deg}deg)`,
-                      }}
-                      aria-hidden
-                    >
-                      <path d="M5 0l1.1 3.4H10L6.9 5.5 8 9 5 6.9 2 9l1.1-3.5L0 3.4h3.9z" fill="currentColor" />
-                    </svg>
-                  ))}
-                  <span className="relative px-2 text-center text-[11.5px] font-semibold leading-tight text-[#75726c]">
-                    {b}
-                  </span>
-                </span>
+                <TrustBadge key={b} label={b} />
               ))}
             </div>
-          </Rise>
+          </Reveal>
         </div>
       </section>
 
       {/* News */}
       <section className="mx-auto max-w-[1060px] px-5 py-24 sm:px-7">
         <div className="flex items-end justify-between">
-          <Rise>
-            <h2 className="text-[34px] font-medium tracking-[-0.01em] text-[var(--site-ink)]">News</h2>
-          </Rise>
+          <Reveal>
+            <h2 className={TYPE_H2}>News</h2>
+          </Reveal>
           <Link href="/changelog" className="text-[14.5px] font-medium text-[var(--site-ink)] hover:opacity-70">
             See more
           </Link>
         </div>
         <div className="mt-8 grid gap-6 sm:grid-cols-3">
           {NEWS.map((n, i) => (
-            <Rise key={n.title} delay={i * 0.07}>
+            <Reveal key={n.title} delay={i * 0.07}>
               <Link href="/changelog" className="group block">
-                <ImagePlaceholder label="Cover" className="aspect-[1.05] rounded-[20px]" />
+                <Parallax offset={12} direction={i % 2 === 0 ? "up" : "down"}>
+                  <ImagePlaceholder label="Cover" className={cn("aspect-[1.05]", RADIUS.image)} />
+                </Parallax>
                 <p className="mt-4 text-[16.5px] font-medium leading-snug text-[var(--site-ink)] group-hover:opacity-70">
                   {n.title}
                 </p>
                 <p className="mt-2 text-[12.5px] uppercase tracking-wide text-[#a3a09a]">{n.meta}</p>
               </Link>
-            </Rise>
+            </Reveal>
           ))}
         </div>
       </section>

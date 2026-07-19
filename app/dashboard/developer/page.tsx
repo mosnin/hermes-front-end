@@ -16,6 +16,21 @@ import { useToast } from "@/components/toast";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 import { Copy, KeyRound, Plus, Terminal } from "@/components/icons";
+import { EASE, Reveal } from "@/components/site/motion";
+import { motion, useReducedMotion, type Variants } from "motion/react";
+
+// Semantic <ul>/<li>, so this hand-rolls the Stagger/StaggerItem variant
+// shape directly on motion.ul/motion.li (those helpers only support
+// block-level container tags, not lists).
+function listContainer(reduce: boolean | null): Variants {
+  return { hidden: {}, show: { transition: { staggerChildren: reduce ? 0 : 0.04 } } };
+}
+function listItem(reduce: boolean | null): Variants {
+  return {
+    hidden: { opacity: 0, y: reduce ? 0 : 10 },
+    show: { opacity: 1, y: 0, transition: { duration: reduce ? 0.3 : 0.5, ease: EASE } },
+  };
+}
 
 export default function DeveloperPage() {
   const { spaceId } = useActiveSpace();
@@ -30,6 +45,7 @@ export default function DeveloperPage() {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [newKey, setNewKey] = useState<string | null>(null);
+  const reduce = useReducedMotion();
 
   const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL ?? "";
   const site = convexUrl.replace(".convex.cloud", ".convex.site");
@@ -66,7 +82,7 @@ export default function DeveloperPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <Reveal as="div" className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Developer</h1>
           <p className="text-sm text-muted">
@@ -79,7 +95,7 @@ export default function DeveloperPage() {
             Create key
           </Button>
         )}
-      </div>
+      </Reveal>
 
       {/* Keys list */}
       {keys === undefined ? (
@@ -98,10 +114,18 @@ export default function DeveloperPage() {
           }
         />
       ) : (
+        <Reveal delay={0.06}>
         <Card className="mb-4 p-0">
-          <ul className="divide-y divide-border">
+          <motion.ul
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true, margin: "-40px", amount: 0.2 }}
+            variants={listContainer(reduce)}
+            className="divide-y divide-border"
+          >
             {keys.map((k) => (
-              <li
+              <motion.li
+                variants={listItem(reduce)}
                 key={k._id}
                 className="flex items-center gap-3 px-5 py-3 text-sm"
               >
@@ -153,13 +177,15 @@ export default function DeveloperPage() {
                     Revoke
                   </Button>
                 )}
-              </li>
+              </motion.li>
             ))}
-          </ul>
+          </motion.ul>
         </Card>
+        </Reveal>
       )}
 
       {/* Using your key */}
+      <Reveal delay={0.1}>
       <Card>
         <div className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-muted" />
@@ -173,12 +199,13 @@ export default function DeveloperPage() {
           {`curl -H "Authorization: Bearer hk_..." \\\n  ${site}/api/v1/ping`}
         </pre>
       </Card>
+      </Reveal>
 
       {/* Create modal */}
       <Modal open={open} onClose={closeModal} title="Create API key">
         {newKey ? (
           <div>
-            <p className="text-sm text-amber-400">
+            <p className="text-sm text-amber-700">
               Copy your key now. For security it won&apos;t be shown again.
             </p>
             <pre className="mt-3 overflow-x-auto rounded-lg border border-border bg-surface-2 p-3 text-xs">

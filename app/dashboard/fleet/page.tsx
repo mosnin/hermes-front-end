@@ -12,6 +12,8 @@ import { Boxes, Cloud, KeyRound, Plus, RefreshCw, Rocket, Trash2 } from "@/compo
 import { TemplatesPanel } from "@/components/fleet/TemplatesPanel";
 import { AutoscalePanel } from "@/components/fleet/AutoscalePanel";
 import { RestartPanel } from "@/components/fleet/RestartPanel";
+import { CountUp, EASE, Reveal } from "@/components/site/motion";
+import { motion, useReducedMotion, type Variants } from "motion/react";
 
 const deployTone = {
   provisioning: "yellow",
@@ -20,11 +22,23 @@ const deployTone = {
   failed: "red",
 } as const;
 
+function fleetListContainer(reduce: boolean | null): Variants {
+  return { hidden: {}, show: { transition: { staggerChildren: reduce ? 0 : 0.04 } } };
+}
+
+function fleetListItem(reduce: boolean | null): Variants {
+  return {
+    hidden: { opacity: 0, y: reduce ? 0 : 10 },
+    show: { opacity: 1, y: 0, transition: { duration: reduce ? 0.3 : 0.5, ease: EASE } },
+  };
+}
+
 export default function FleetPage() {
   const { spaceId } = useActiveSpace();
   const canAdmin = useCan("admin");
   const canOperate = useCan("operator");
   const toast = useToast();
+  const reduce = useReducedMotion();
 
   const provider = useQuery(api.fleet.providerStatus, {});
   const harnessCatalog = useQuery(api.fleet.harnessCatalog, {});
@@ -127,7 +141,7 @@ export default function FleetPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal as="div" className="mb-6 flex items-center justify-between">
         <div>
           <PagePath>fleet</PagePath>
           <h1 className="text-2xl font-semibold">Fleet</h1>
@@ -145,9 +159,9 @@ export default function FleetPage() {
             <Rocket className="h-4 w-4" /> Deploy agents
           </Button>
         </div>
-      </div>
+      </Reveal>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <Reveal delay={0.06} className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
           <Cloud className="h-4 w-4 text-accent" />
           Cloudflare:
@@ -161,7 +175,7 @@ export default function FleetPage() {
           <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
             <span className="text-muted">Hosted agents:</span>
             <span className="font-semibold">
-              {hostedUsed}{" "}
+              <CountUp value={hostedUsed} duration={1} pop={false} />{" "}
               <span className="font-normal text-muted">
                 / {hostedLimit && hostedLimit >= 100000 ? "∞" : hostedLimit ?? "—"}
               </span>
@@ -171,77 +185,94 @@ export default function FleetPage() {
             )}
           </div>
         )}
-      </div>
+      </Reveal>
 
       {!provider?.cloudflare && (
-        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
-          <p className="font-medium text-amber-300">Cadre Cloud isn&apos;t enabled yet</p>
+        <Reveal delay={0.1} className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+          <p className="font-medium text-amber-800">Cadre Cloud isn&apos;t enabled yet</p>
           <p className="mt-1 text-muted">
             Managed hosting requires <code>CLOUDFLARE_FLEET_WORKER_URL</code> +{" "}
             <code>CLOUDFLARE_FLEET_SECRET</code> (deploy the worker in
             connector/fleet-worker). Until then, deploy still creates agents
             and hands you one-time tokens to connect them manually.
           </p>
-        </div>
+        </Reveal>
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-        <Card>
-          <h2 className="mb-3 font-semibold">Deployed agents</h2>
-          {fleet?.length === 0 ? (
-            <EmptyState
-              title="No fleet agents yet"
-              body="Deploy your first batch of agents onto the cloud."
-              action={<Button onClick={() => setOpen(true)} disabled={!canOperate}>Deploy agents</Button>}
-            />
-          ) : (
-            <ul className="divide-y divide-border">
-              {(fleet ?? []).map((a) => (
-                <li key={a._id} className="flex items-center gap-3 py-2">
-                  <StatusDot status={a.status} />
-                  <span className="flex-1 truncate text-sm">{a.name}</span>
-                  <Badge>{a.region ?? a.vmProvider}</Badge>
-                  {a.harness && a.harness !== "hermes" && (
-                    <Badge tone="blue">{a.harness}</Badge>
-                  )}
-                  <Badge tone={deployTone[a.deploymentStatus ?? "provisioning"]}>
-                    {a.deploymentStatus ?? "provisioning"}
-                  </Badge>
-                  {canAdmin && (
-                    <button
-                      onClick={() => spaceId && terminate({ spaceId, agentId: a._id })}
-                      className="text-muted hover:text-red-400"
-                      title="Terminate"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <Reveal as="div" x={-16}>
+          <Card>
+            <h2 className="mb-3 font-semibold">Deployed agents</h2>
+            {fleet?.length === 0 ? (
+              <EmptyState
+                title="No fleet agents yet"
+                body="Deploy your first batch of agents onto the cloud."
+                action={<Button onClick={() => setOpen(true)} disabled={!canOperate}>Deploy agents</Button>}
+              />
+            ) : (
+              // Semantic <ul>/<li>, so this hand-rolls the Stagger/StaggerItem
+              // variant shape directly on motion.ul/motion.li (those helpers
+              // only support block-level container tags, not lists).
+              <motion.ul
+                initial="hidden"
+                whileInView="show"
+                viewport={{ once: true, margin: "-40px", amount: 0.2 }}
+                variants={fleetListContainer(reduce)}
+                className="divide-y divide-border"
+              >
+                {(fleet ?? []).map((a) => (
+                  <motion.li
+                    key={a._id}
+                    variants={fleetListItem(reduce)}
+                    className="flex items-center gap-3 py-2"
+                  >
+                    <StatusDot status={a.status} />
+                    <span className="flex-1 truncate text-sm">{a.name}</span>
+                    <Badge>{a.region ?? a.vmProvider}</Badge>
+                    {a.harness && a.harness !== "hermes" && (
+                      <Badge tone="blue">{a.harness}</Badge>
+                    )}
+                    <Badge tone={deployTone[a.deploymentStatus ?? "provisioning"]}>
+                      {a.deploymentStatus ?? "provisioning"}
+                    </Badge>
+                    {canAdmin && (
+                      <button
+                        onClick={() => spaceId && terminate({ spaceId, agentId: a._id })}
+                        className="text-muted transition-colors hover:text-red-500"
+                        title="Terminate"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </motion.li>
+                ))}
+              </motion.ul>
+            )}
+          </Card>
+        </Reveal>
 
-        <Card>
-          <h2 className="mb-3 font-semibold">Org chart</h2>
-          {tree.roots.length === 0 ? (
-            <p className="text-sm text-muted">No agents yet.</p>
-          ) : (
-            <div className="space-y-1">
-              {tree.roots.map((n) => (
-                <OrgNode key={n.id} node={n} byParent={tree.byParent} depth={0} />
-              ))}
-            </div>
-          )}
-        </Card>
+        <Reveal as="div" x={16} delay={0.06}>
+          <Card>
+            <h2 className="mb-3 font-semibold">Org chart</h2>
+            {tree.roots.length === 0 ? (
+              <p className="text-sm text-muted">No agents yet.</p>
+            ) : (
+              <div className="space-y-1">
+                {tree.roots.map((n) => (
+                  <OrgNode key={n.id} node={n} byParent={tree.byParent} depth={0} />
+                ))}
+              </div>
+            )}
+          </Card>
+        </Reveal>
       </div>
 
       {spaceId && (
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Reveal delay={0.1} className="mt-4 grid gap-4 lg:grid-cols-2">
           <AutoscalePanel spaceId={spaceId} />
           <TemplatesPanel spaceId={spaceId} />
           <RestartPanel spaceId={spaceId} />
-        </div>
+        </Reveal>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Deploy agents">
@@ -353,8 +384,8 @@ export default function FleetPage() {
           </div>
 
           {tokens && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-              <p className="mb-2 text-xs text-amber-300">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="mb-2 text-xs text-amber-800">
                 Cloudflare isn&apos;t configured, connect these agents manually with
                 their one-time tokens:
               </p>

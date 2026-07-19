@@ -7,6 +7,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { Plus } from "@/components/icons";
+import { CountUp, Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 const COLUMNS = [
   { key: "todo", label: "To do" },
@@ -74,27 +75,27 @@ export default function TasksPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal as="div" className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Tasks</h1>
           <p className="text-sm text-muted">
             Assign work to agents and move it across the board.
           </p>
           <p className="mt-1 text-xs text-muted">
-            {doneCount}/{total} done
+            <CountUp value={doneCount} duration={0.8} pop={false} />/{total} done
           </p>
         </div>
         <Button onClick={() => setOpen(true)}>
           <Plus className="h-4 w-4" /> New task
         </Button>
-      </div>
+      </Reveal>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <Stagger className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" gap={0.08}>
         {COLUMNS.map((col) => {
           const items = (tasks ?? []).filter((t) => t.status === col.key);
           return (
+            <StaggerItem key={col.key}>
             <div
-              key={col.key}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "move";
@@ -160,7 +161,7 @@ export default function TasksPage() {
                       </select>
                       <button
                         onClick={() => spaceId && remove({ spaceId, taskId: t._id })}
-                        className="text-xs text-muted hover:text-red-400"
+                        className="text-xs text-muted transition-colors hover:text-red-500"
                       >
                         Delete
                       </button>
@@ -175,9 +176,10 @@ export default function TasksPage() {
                 )}
               </div>
             </div>
+            </StaggerItem>
           );
         })}
-      </div>
+      </Stagger>
 
       <Modal open={open} onClose={() => setOpen(false)} title="New task">
         <div className="space-y-4">

@@ -18,6 +18,7 @@ import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
 import { ShieldCheck, Settings, ChevronDown, ChevronRight, Check, X } from "@/components/icons";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -49,16 +50,16 @@ function PreviewDiff({ preview }: { preview: unknown }) {
     const { before, after } = preview as { before?: unknown; after?: unknown };
     return (
       <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-2">
-          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-red-400">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-2">
+          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-red-700">
             Before
           </p>
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words text-xs text-muted">
             {typeof before === "string" ? before : JSON.stringify(before, null, 2) ?? "—"}
           </pre>
         </div>
-        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2">
-          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-emerald-400">
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2">
+          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-emerald-700">
             After
           </p>
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words text-xs text-muted">
@@ -172,7 +173,7 @@ function NotificationPrefsPanel({ onClose }: { onClose: () => void }) {
               <Input
                 placeholder={
                   prefs?.hasWebhookSecret
-                    ? "•••••••• (set — leave blank to keep)"
+                    ? "•••••••• (set, leave blank to keep)"
                     : "Signing secret (HMAC-SHA256, optional)"
                 }
                 value={webhookSecret}
@@ -301,7 +302,7 @@ export default function ApprovalsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal as="div" className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Approvals</h1>
           <p className="text-sm text-muted">
@@ -319,15 +320,15 @@ export default function ApprovalsPage() {
             </Button>
           )}
         </div>
-      </div>
+      </Reveal>
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <Reveal delay={0.06} className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-2">
           {FILTERS.map((f) => (
             <button
               key={f.key}
               onClick={() => setFilter(f.key)}
-              className={`rounded-full px-3 py-1 text-xs ${
+              className={`rounded-full px-3 py-1 text-xs transition-colors ${
                 filter === f.key
                   ? "bg-accent text-white"
                   : "border border-border text-muted hover:text-foreground"
@@ -362,7 +363,7 @@ export default function ApprovalsPage() {
             )}
           </div>
         )}
-      </div>
+      </Reveal>
 
       {approvals === undefined ? (
         <Card>
@@ -374,12 +375,13 @@ export default function ApprovalsPage() {
           body="When an agent or workflow hits a gate you marked high-risk, it pauses here for a human decision."
         />
       ) : (
-        <div className="space-y-3">
+        <Stagger className="space-y-3" gap={0.06}>
           {approvals.map((a) => {
             const isExpanded = !!expanded[a._id];
             const hasPreview = a.preview !== undefined && a.preview !== null;
             return (
-              <Card key={a._id}>
+              <StaggerItem key={a._id}>
+              <Card>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 flex-1 items-start gap-3">
                     {a.status === "pending" && canAdmin && (
@@ -457,9 +459,10 @@ export default function ApprovalsPage() {
                   )}
                 </div>
               </Card>
+              </StaggerItem>
             );
           })}
-        </div>
+        </Stagger>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title="Request approval">

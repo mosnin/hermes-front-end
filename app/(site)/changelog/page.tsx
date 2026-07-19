@@ -1,37 +1,19 @@
 "use client";
 
 import { motion } from "motion/react";
-import { PillLabel } from "@/components/site/ui";
+import { cn } from "@/lib/utils";
+import { PillLabel, TYPE_H1 } from "@/components/site/ui";
+import { Reveal, Stagger, StaggerItem, TextReveal, CountUp, EASE } from "@/components/site/motion";
 
 /* ---------------------------------------------------------------------------
    Changelog. "News" editorial header, then entries as plain rows: uppercase
    meta line (date · category), title, body. Hairline separators, no cards,
    no icons. Ported from the previous app/changelog/page.tsx; each entry's
    bullet items are folded into a single body paragraph and every version's
-   tags/copy are preserved.
+   tags/copy are preserved. Header headline is now a word-by-word TextReveal;
+   entries cascade in through a single Stagger container instead of manual
+   per-row delay math, with a small hover nudge per row.
 --------------------------------------------------------------------------- */
-
-function Rise({
-  children,
-  delay = 0,
-  className,
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  className?: string;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.7, delay, ease: [0.22, 0.6, 0.24, 1] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
 
 const ENTRIES: {
   version: string;
@@ -89,28 +71,34 @@ export default function ChangelogPage() {
     <main>
       {/* Header */}
       <section className="mx-auto max-w-[1060px] px-5 pb-16 pt-24 sm:px-7 sm:pt-32">
-        <Rise>
+        <Reveal>
           <PillLabel>News</PillLabel>
-        </Rise>
-        <Rise delay={0.08}>
-          <h1 className="mt-5 max-w-[640px] text-[44px] font-medium leading-[1.06] tracking-[-0.015em] text-[var(--site-ink)] sm:text-[64px]">
-            What shipped
-          </h1>
-        </Rise>
-        <Rise delay={0.14}>
+        </Reveal>
+        <h1 className={cn(TYPE_H1, "mt-5 max-w-[640px] text-[var(--site-ink)]")}>
+          <TextReveal text="What shipped" as="span" delay={0.08} />
+        </h1>
+        <Reveal delay={0.3}>
           <p className="mt-5 max-w-[520px] text-[17px] leading-relaxed text-[var(--site-body)]">
             Every release, in the order it shipped. No vaporware, no
             marketing gloss.
           </p>
-        </Rise>
+          <p className="mt-6 text-[13.5px] text-[#a3a09a]">
+            <CountUp value={ENTRIES.length} duration={0.9} className="font-medium text-[var(--site-ink)]" />
+            {" "}releases shipped since launch
+          </p>
+        </Reveal>
       </section>
 
       {/* Entries */}
       <section className="mx-auto max-w-[720px] px-5 pb-24 sm:px-7">
-        <div className="border-t border-[var(--site-line)]">
-          {ENTRIES.map((e, i) => (
-            <Rise key={e.version} delay={Math.min(i * 0.05, 0.2)}>
-              <article className="border-b border-[var(--site-line)] py-9">
+        <Stagger className="border-t border-[var(--site-line)]" gap={0.06}>
+          {ENTRIES.map((e) => (
+            <StaggerItem key={e.version} as="div">
+              <motion.article
+                className="border-b border-[var(--site-line)] py-9"
+                whileHover={{ x: 3 }}
+                transition={{ duration: 0.2, ease: EASE }}
+              >
                 <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-[#a3a09a]">
                   {e.date} · {e.version} · {e.category}
                 </p>
@@ -120,10 +108,10 @@ export default function ChangelogPage() {
                 <p className="mt-3 text-[15.5px] leading-relaxed text-[var(--site-body)]">
                   {e.body}
                 </p>
-              </article>
-            </Rise>
+              </motion.article>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </section>
     </main>
   );

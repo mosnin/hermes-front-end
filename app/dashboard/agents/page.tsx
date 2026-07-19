@@ -11,6 +11,7 @@ import { RegisterAgentDialog } from "@/components/register-agent-dialog";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 import { Globe, Plus } from "@/components/icons";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 export default function AgentsPage() {
   const { spaceId } = useActiveSpace();
@@ -24,7 +25,7 @@ export default function AgentsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+      <Reveal className="mb-6 flex items-center justify-between" y={12}>
         <div>
           <PagePath>agents</PagePath>
           <h1 className="text-2xl font-semibold">Agents</h1>
@@ -40,46 +41,50 @@ export default function AgentsPage() {
             <Plus className="h-4 w-4" /> Connect agent
           </Button>
         </div>
-      </div>
+      </Reveal>
 
       {agents?.length === 0 ? (
-        <EmptyState
-          graphic={<MeshGraphic />}
-          title="No agents connected"
-          body="Deploy an agent anywhere, then connect it here to give it threads, tasks, and skills."
-          action={<Button onClick={() => setOpen(true)}>Connect your first agent</Button>}
-        />
+        <Reveal>
+          <EmptyState
+            graphic={<MeshGraphic />}
+            title="No agents connected"
+            body="Deploy an agent anywhere, then connect it here to give it threads, tasks, and skills."
+            action={<Button onClick={() => setOpen(true)}>Connect your first agent</Button>}
+          />
+        </Reveal>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {(agents ?? []).map((a) => (
-            <Link key={a._id} href={`/dashboard/agents/${a._id}`}>
-              <Card className="h-full transition hover:border-accent">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <StatusDot status={a.status} />
-                    <span className="font-medium">{a.name}</span>
+            <StaggerItem key={a._id}>
+              <Link href={`/dashboard/agents/${a._id}`}>
+                <Card className="h-full transition hover:border-accent">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <StatusDot status={a.status} />
+                      <span className="font-medium">{a.name}</span>
+                    </div>
+                    <Badge>{a.platform ?? a.kind ?? "—"}</Badge>
                   </div>
-                  <Badge>{a.platform ?? a.kind ?? "—"}</Badge>
-                </div>
-                {a.description && (
-                  <p className="mt-2 line-clamp-2 text-sm text-muted">
-                    {a.description}
+                  {a.description && (
+                    <p className="mt-2 line-clamp-2 text-sm text-muted">
+                      {a.description}
+                    </p>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {(a.capabilities ?? []).slice(0, 4).map((c) => (
+                      <Badge key={c} tone="blue">
+                        {c}
+                      </Badge>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs text-muted">
+                    Last seen {timeAgo(a.lastHeartbeat)}
                   </p>
-                )}
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {(a.capabilities ?? []).slice(0, 4).map((c) => (
-                    <Badge key={c} tone="blue">
-                      {c}
-                    </Badge>
-                  ))}
-                </div>
-                <p className="mt-3 text-xs text-muted">
-                  Last seen {timeAgo(a.lastHeartbeat)}
-                </p>
-              </Card>
-            </Link>
+                </Card>
+              </Link>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       )}
 
       <RegisterAgentDialog open={open} onClose={() => setOpen(false)} />

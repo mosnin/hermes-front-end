@@ -6,6 +6,7 @@ import { Badge, Button, Card } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { Check, Sparkles } from "@/components/icons";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 type PlanId = "free" | "team" | "enterprise";
 
@@ -92,14 +93,15 @@ export default function BillingPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6">
+      <Reveal as="div" className="mb-6">
         <h1 className="text-2xl font-semibold">Billing &amp; plans</h1>
         <p className="text-sm text-muted">
           Your plan tier and usage for this Space.
         </p>
-      </div>
+      </Reveal>
 
       {/* Current usage */}
+      <Reveal delay={0.05}>
       <Card className="mb-6">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Usage this month</h2>
@@ -159,60 +161,60 @@ export default function BillingPage() {
             })}
         </div>
       </Card>
+      </Reveal>
 
       {/* Plan cards */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <Stagger className="grid gap-4 lg:grid-cols-3">
         {PLANS.map((p) => {
           const isCurrent = p.id === currentPlan;
           return (
-            <Card
-              key={p.id}
-              className={isCurrent ? "border-accent-2 ring-1 ring-accent-2" : ""}
-            >
-              <div className="mb-1 flex items-center justify-between">
-                <h3 className="text-lg font-semibold">{p.name}</h3>
-                {isCurrent && (
-                  <Badge tone="green">
-                    <Sparkles className="h-3 w-3" />
+            <StaggerItem key={p.id}>
+              <Card className={isCurrent ? "border-accent-2 ring-1 ring-accent-2" : ""}>
+                <div className="mb-1 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">{p.name}</h3>
+                  {isCurrent && (
+                    <Badge tone="green">
+                      <Sparkles className="h-3 w-3" />
+                      Current plan
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-2xl font-semibold">{p.price}</p>
+                <p className="mb-4 text-sm text-muted">{p.blurb}</p>
+                <ul className="mb-5 space-y-2">
+                  {p.features.map((f) => (
+                    <li key={f} className="flex items-center gap-2 text-sm">
+                      <Check className="h-4 w-4 text-accent-2" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                {isCurrent ? (
+                  <Button variant="outline" disabled>
                     Current plan
-                  </Badge>
+                  </Button>
+                ) : p.id === "enterprise" ? (
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      (window.location.href = "mailto:sales@cadre.to")
+                    }
+                  >
+                    Contact sales
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={!canAdmin || !spaceId}
+                    onClick={() => changePlan(p.id)}
+                  >
+                    {p.id === "team" ? "Upgrade" : "Switch"}
+                  </Button>
                 )}
-              </div>
-              <p className="text-2xl font-semibold">{p.price}</p>
-              <p className="mb-4 text-sm text-muted">{p.blurb}</p>
-              <ul className="mb-5 space-y-2">
-                {p.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2 text-sm">
-                    <Check className="h-4 w-4 text-accent-2" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-              {isCurrent ? (
-                <Button variant="outline" disabled>
-                  Current plan
-                </Button>
-              ) : p.id === "enterprise" ? (
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    (window.location.href = "mailto:sales@cadre.to")
-                  }
-                >
-                  Contact sales
-                </Button>
-              ) : (
-                <Button
-                  disabled={!canAdmin || !spaceId}
-                  onClick={() => changePlan(p.id)}
-                >
-                  {p.id === "team" ? "Upgrade" : "Switch"}
-                </Button>
-              )}
-            </Card>
+              </Card>
+            </StaggerItem>
           );
         })}
-      </div>
+      </Stagger>
 
       <p className="mt-6 text-xs text-muted">
         Note: real metered billing (Stripe) is wired up in a later phase. For

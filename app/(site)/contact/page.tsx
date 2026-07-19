@@ -1,37 +1,18 @@
 "use client";
 
 import { motion } from "motion/react";
-import { DarkPill } from "@/components/site/ui";
+import { cn } from "@/lib/utils";
+import { DarkPill, RADIUS, TYPE_H1 } from "@/components/site/ui";
+import { Reveal, Stagger, StaggerItem, TextReveal, Parallax, EASE } from "@/components/site/motion";
 
 /* ---------------------------------------------------------------------------
    Contact. Two columns: left is a headline, short copy, and a black pill
    mailto link; right is a quiet band card listing sales, support, and
    security contact rows, each with a thin inline icon and address.
    sales@ and support@ addresses ported from the previous
-   app/contact/page.tsx CHANNELS list.
+   app/contact/page.tsx CHANNELS list. Headline now a word-by-word TextReveal;
+   the three contact rows cascade in via Stagger with a subtle hover lift.
 --------------------------------------------------------------------------- */
-
-function Rise({
-  children,
-  delay = 0,
-  className,
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  className?: string;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.7, delay, ease: [0.22, 0.6, 0.24, 1] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
 
 function SalesIcon() {
   return (
@@ -95,48 +76,57 @@ export default function ContactPage() {
       <section className="mx-auto max-w-[1060px] px-5 py-24 sm:px-7 sm:py-32">
         <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
           {/* Left: headline, copy, mailto pill */}
-          <Rise>
-            <h1 className="text-[44px] font-medium leading-[1.06] tracking-[-0.015em] text-[var(--site-ink)] sm:text-[56px]">
-              Tell us what your
-              <br />
-              fleet needs to do
+          <div>
+            <h1 className={cn(TYPE_H1, "text-[var(--site-ink)]")}>
+              <TextReveal text="Tell us what your" as="span" className="block" />
+              <TextReveal text="fleet needs to do" as="span" className="block" delay={0.15} />
             </h1>
-            <p className="mt-6 max-w-[420px] text-[17px] leading-relaxed text-[var(--site-body)]">
-              A human reads every message. Whether you are wiring up a first
-              agent or rolling out guardrails across a whole org, write in
-              and we will point you the right way.
-            </p>
-            <div className="mt-8">
-              <DarkPill href="mailto:sales@cadre.to">Email sales@cadre.to</DarkPill>
-            </div>
-          </Rise>
+            <Reveal delay={0.35}>
+              <p className="mt-6 max-w-[420px] text-[17px] leading-relaxed text-[var(--site-body)]">
+                A human reads every message. Whether you are wiring up a first
+                agent or rolling out guardrails across a whole org, write in
+                and we will point you the right way.
+              </p>
+              <div className="mt-8">
+                <DarkPill href="mailto:sales@cadre.to">Email sales@cadre.to</DarkPill>
+              </div>
+            </Reveal>
+          </div>
 
           {/* Right: quiet card of contact rows */}
-          <Rise delay={0.1}>
-            <div className="rounded-[24px] bg-[var(--site-band)] p-3">
-              <div className="divide-y divide-[var(--site-line)]">
-                {ROWS.map((r) => (
-                  <div key={r.label} className="flex items-start gap-4 p-5">
-                    <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#55534e] ring-1 ring-inset ring-[var(--site-line)]">
-                      <r.icon />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-[15.5px] font-medium text-[var(--site-ink)]">{r.label}</p>
-                      <p className="mt-1 text-[14px] leading-relaxed text-[var(--site-body)]">
-                        {r.body}
-                      </p>
-                      <a
-                        href={`mailto:${r.email}`}
-                        className="mt-2 inline-block text-[14.5px] font-medium text-[var(--site-ink)] underline decoration-[var(--site-line)] underline-offset-4 transition hover:decoration-[var(--site-ink)]"
+          <Reveal delay={0.15}>
+            <Parallax offset={10} direction="down">
+              <div className={cn(RADIUS.card, "bg-[var(--site-band)] p-3")}>
+                <Stagger className="divide-y divide-[var(--site-line)]" gap={0.08}>
+                  {ROWS.map((r) => (
+                    <StaggerItem key={r.label}>
+                      <motion.div
+                        className="flex items-start gap-4 p-5"
+                        whileHover={{ x: 3 }}
+                        transition={{ duration: 0.2, ease: EASE }}
                       >
-                        {r.email}
-                      </a>
-                    </div>
-                  </div>
-                ))}
+                        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#55534e] ring-1 ring-inset ring-[var(--site-line)]">
+                          <r.icon />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-[15.5px] font-medium text-[var(--site-ink)]">{r.label}</p>
+                          <p className="mt-1 text-[14px] leading-relaxed text-[var(--site-body)]">
+                            {r.body}
+                          </p>
+                          <a
+                            href={`mailto:${r.email}`}
+                            className="mt-2 inline-block text-[14.5px] font-medium text-[var(--site-ink)] underline decoration-[var(--site-line)] underline-offset-4 transition hover:decoration-[var(--site-ink)]"
+                          >
+                            {r.email}
+                          </a>
+                        </div>
+                      </motion.div>
+                    </StaggerItem>
+                  ))}
+                </Stagger>
               </div>
-            </div>
-          </Rise>
+            </Parallax>
+          </Reveal>
         </div>
       </section>
     </main>

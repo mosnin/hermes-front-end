@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useReducedMotion } from "motion/react";
 import { StatusDot } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ export function MissionGraph({
   agents: GraphAgent[];
   edges: GraphEdge[];
 }) {
+  const reduce = useReducedMotion();
   // Polar layout in a normalized 0..100 viewBox so the graph scales fluidly.
   const positions = useMemo(() => {
     const cx = 50;
@@ -87,18 +89,23 @@ export function MissionGraph({
                 y1={a.y}
                 x2={b.x}
                 y2={b.y}
-                className="stroke-indigo-400/30"
+                className="stroke-indigo-400/45"
                 strokeWidth={weight}
                 strokeLinecap="round"
               />
-              {/* Animated packet travelling along the edge. */}
-              <circle r="0.7" className="fill-indigo-300">
-                <animateMotion
-                  dur={`${2.4 + (i % 4) * 0.5}s`}
-                  repeatCount="indefinite"
-                  path={`M ${a.x} ${a.y} L ${b.x} ${b.y}`}
-                />
-              </circle>
+              {/* Animated packet travelling along the edge; a static midpoint
+                  dot stands in for it when reduced motion is set. */}
+              {reduce ? (
+                <circle cx={(a.x + b.x) / 2} cy={(a.y + b.y) / 2} r="0.6" className="fill-indigo-400/70" />
+              ) : (
+                <circle r="0.7" className="fill-indigo-500">
+                  <animateMotion
+                    dur={`${2.4 + (i % 4) * 0.5}s`}
+                    repeatCount="indefinite"
+                    path={`M ${a.x} ${a.y} L ${b.x} ${b.y}`}
+                  />
+                </circle>
+              )}
             </g>
           );
         })}
@@ -122,16 +129,16 @@ export function MissionGraph({
           >
             <div className="flex flex-col items-center gap-1">
               <div className="relative">
-                {a.online && (
+                {a.online && !reduce && (
                   <span className="absolute inset-0 -z-10 animate-ping rounded-full bg-emerald-400/30" />
                 )}
                 <div
                   className={cn(
                     "grid h-10 w-10 place-items-center rounded-full border bg-surface-2 text-xs font-semibold shadow-lg",
                     a.online
-                      ? "border-emerald-400/60 text-emerald-300"
+                      ? "border-emerald-500/60 text-emerald-700"
                       : a.status === "degraded"
-                        ? "border-amber-400/50 text-amber-300"
+                        ? "border-amber-500/50 text-amber-700"
                         : "border-border text-muted",
                   )}
                   title={`${a.name} · ${a.status}`}

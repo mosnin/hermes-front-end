@@ -8,6 +8,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Card, EmptyState, Input, Modal } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 const CATALOG = [
   {
@@ -101,95 +102,101 @@ export default function BridgesPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6">
+      <Reveal className="mb-6">
         <h1 className="text-2xl font-semibold">Chat bridges</h1>
         <p className="text-sm text-muted">
           Control your agents from Slack, Telegram, or Discord, message a bot,
           your agent replies.
         </p>
-      </div>
+      </Reveal>
 
-      <div className="mb-4 rounded-lg border border-border bg-surface/50 p-3 text-sm text-muted">
+      <Reveal delay={0.05} className="mb-4 rounded-lg border border-border bg-surface/50 p-3 text-sm text-muted">
         Connecting a bridge registers the route here. The bot token and webhook
         are provisioned by the bridge worker, a connector / fleet-worker-style
         deployment that relays messages between the chat platform and your agent.
-      </div>
+      </Reveal>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {CATALOG.map((c) => (
-          <Card key={c.type}>
-            <div className="flex items-center gap-2">
-              <c.Icon className="h-5 w-5 text-muted" />
-              <p className="font-medium">{c.name}</p>
-            </div>
-            <p className="mt-1 text-sm text-muted">{c.body}</p>
-            <div className="mt-4">
-              <Button
-                disabled={!canManage || !spaceId}
-                onClick={() => openConnect(c.type, c.name)}
-              >
-                Connect
-              </Button>
-            </div>
-          </Card>
+          <StaggerItem key={c.type}>
+            <Card>
+              <div className="flex items-center gap-2">
+                <c.Icon className="h-5 w-5 text-muted" />
+                <p className="font-medium">{c.name}</p>
+              </div>
+              <p className="mt-1 text-sm text-muted">{c.body}</p>
+              <div className="mt-4">
+                <Button
+                  disabled={!canManage || !spaceId}
+                  onClick={() => openConnect(c.type, c.name)}
+                >
+                  Connect
+                </Button>
+              </div>
+            </Card>
+          </StaggerItem>
         ))}
-      </div>
+      </Stagger>
 
       <h2 className="mb-3 mt-8 text-lg font-semibold">Connected bridges</h2>
       {bridges && bridges.length === 0 ? (
-        <EmptyState
-          title="No bridges yet"
-          body="Connect Slack, Telegram, or Discord above to start controlling your agents from chat."
-        />
+        <Reveal>
+          <EmptyState
+            title="No bridges yet"
+            body="Connect Slack, Telegram, or Discord above to start controlling your agents from chat."
+          />
+        </Reveal>
       ) : (
-        <div className="space-y-3">
+        <Stagger className="space-y-3">
           {(bridges ?? []).map((b) => (
-            <Card key={b._id}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <Badge tone="blue">{typeLabel[b.type] ?? b.type}</Badge>
-                  <div>
-                    <p className="font-medium">{b.name}</p>
-                    <p className="text-xs text-muted">
-                      Routed to {agentName(b.agentId) ?? "no agent"}
-                    </p>
+            <StaggerItem key={b._id}>
+              <Card>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <Badge tone="blue">{typeLabel[b.type] ?? b.type}</Badge>
+                    <div>
+                      <p className="font-medium">{b.name}</p>
+                      <p className="text-xs text-muted">
+                        Routed to {agentName(b.agentId) ?? "no agent"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={statusTone[b.status]}>{b.status}</Badge>
+                    <select
+                      value={b.agentId ?? ""}
+                      disabled={!canManage || !spaceId}
+                      onChange={(e) => {
+                        if (!spaceId) return;
+                        const val = e.target.value;
+                        setAgent({
+                          spaceId,
+                          bridgeId: b._id,
+                          agentId: val ? (val as Id<"agents">) : null,
+                        });
+                      }}
+                      className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
+                    >
+                      <option value="">Route to agent…</option>
+                      {(agents ?? []).map((a) => (
+                        <option key={a._id} value={a._id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      variant="ghost"
+                      disabled={!canManage || !spaceId}
+                      onClick={() => removeBridge(b._id, b.name)}
+                    >
+                      Remove
+                    </Button>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={statusTone[b.status]}>{b.status}</Badge>
-                  <select
-                    value={b.agentId ?? ""}
-                    disabled={!canManage || !spaceId}
-                    onChange={(e) => {
-                      if (!spaceId) return;
-                      const val = e.target.value;
-                      setAgent({
-                        spaceId,
-                        bridgeId: b._id,
-                        agentId: val ? (val as Id<"agents">) : null,
-                      });
-                    }}
-                    className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
-                  >
-                    <option value="">Route to agent…</option>
-                    {(agents ?? []).map((a) => (
-                      <option key={a._id} value={a._id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    variant="ghost"
-                    disabled={!canManage || !spaceId}
-                    onClick={() => removeBridge(b._id, b.name)}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </div>
-            </Card>
+              </Card>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       )}
 
       <Modal

@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { Settings } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { RingGauge, type RingColor } from "./ui";
+import { DURATION, EASE } from "@/components/site/motion";
 
 const SPARK_COLORS: Record<string, { stroke: string; fill: string }> = {
   accent: { stroke: "#ff5b04", fill: "rgba(255,91,4,0.14)" },
@@ -87,7 +88,7 @@ export function AreaSpark({
               strokeWidth="1.6"
               initial={{ pathLength: 0 }}
               animate={{ pathLength: 1 }}
-              transition={{ duration: 1.1, ease: [0.3, 0.6, 0.3, 1] }}
+              transition={{ duration: 1.1, ease: EASE }}
               style={{ filter: `drop-shadow(0 0 4px ${c.fill.replace("0.1", "0.5")})` }}
             />
           </>
@@ -177,27 +178,27 @@ export function SensorCard({
     <motion.div
       className={cn(
         "relative rounded-3xl border bg-surface p-5",
-        alert ? "border-red-500/60" : "border-border",
+        alert ? "border-red-500/60 shadow-[0_0_24px_rgba(239,68,68,0.12)]" : "border-border",
         className,
       )}
-      // Alert cards breathe: the red glow pulses until the condition clears.
-      animate={
-        alert && !reduce
-          ? {
-              boxShadow: [
-                "0 0 16px rgba(239,68,68,0.08)",
-                "0 0 32px rgba(239,68,68,0.22)",
-                "0 0 16px rgba(239,68,68,0.08)",
-              ],
-            }
-          : { boxShadow: alert ? "0 0 24px rgba(239,68,68,0.12)" : "none" }
-      }
-      transition={alert && !reduce ? { duration: 2.4, repeat: Infinity, ease: "easeInOut" } : undefined}
+      whileHover={reduce ? undefined : { y: -3, transition: { duration: DURATION.instant, ease: EASE } }}
     >
+      {/* Alert cards breathe: a separate glow layer pulses opacity only (never
+          box-shadow directly, which would repaint the whole card every frame)
+          so the loop stays compositor-only and fully stops under reduced
+          motion instead of animating an un-gated shadow. */}
+      {alert && !reduce && (
+        <motion.span
+          aria-hidden
+          className="pointer-events-none absolute -inset-2 -z-10 rounded-[32px] shadow-[0_0_36px_rgba(239,68,68,0.32)]"
+          animate={{ opacity: [0.35, 1, 0.35] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+        />
+      )}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            {icon && <span className={alert ? "text-red-400" : "text-muted"}>{icon}</span>}
+            {icon && <span className={alert ? "text-red-500" : "text-muted"}>{icon}</span>}
             <h3 className="truncate text-sm font-medium">{title}</h3>
           </div>
           {lastUpdate && (
@@ -222,7 +223,7 @@ export function SensorCard({
       </div>
 
       {alert && alertLabel && (
-        <div className="mt-3 inline-block rounded-lg bg-surface-2 px-3 py-1.5 text-xs text-red-400">
+        <div className="mt-3 inline-block rounded-lg bg-surface-2 px-3 py-1.5 text-xs text-red-500">
           {alertLabel}
         </div>
       )}

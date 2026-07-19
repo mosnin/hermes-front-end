@@ -10,6 +10,7 @@ import { Boxes, Copy, Search } from "@/components/icons";
 import { TemplateCard, MarketplaceTemplate } from "@/components/marketplace/TemplateCard";
 import { TemplateDetailModal } from "@/components/marketplace/InstallDialog";
 import { SaveAgentDialog } from "@/components/marketplace/SaveAgentDialog";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 type CategoryValue = "all" | "sales" | "support" | "engineering" | "ops" | "marketing" | "custom";
 
@@ -52,20 +53,20 @@ export default function MarketplacePage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+      <Reveal as="div" className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Template marketplace</h1>
           <p className="text-sm text-muted">
-            Curated agent templates — harness, bundled skills, and suggested config, ready to
+            Curated agent templates: harness, bundled skills, and suggested config, ready to
             install into this Space.
           </p>
         </div>
         <Button variant="outline" onClick={() => setSaveOpen(true)}>
           <Copy className="h-4 w-4" /> Save an agent as template
         </Button>
-      </div>
+      </Reveal>
 
-      <div className="mb-4 max-w-sm">
+      <Reveal as="div" delay={0.05} className="mb-4 max-w-sm">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <Input
@@ -75,43 +76,49 @@ export default function MarketplacePage() {
             className="pl-9"
           />
         </div>
-      </div>
+      </Reveal>
 
-      <div className="mb-6 overflow-x-auto">
+      <Reveal as="div" delay={0.1} className="mb-6 overflow-x-auto">
         <Segmented options={CATEGORIES} value={category} onChange={setCategory} />
-      </div>
+      </Reveal>
 
       {templates === undefined ? (
         <SkeletonRows rows={6} />
       ) : templates.length === 0 ? (
-        <EmptyState
-          title={search.trim() ? "No templates match your search" : "No templates yet"}
-          body={
-            search.trim()
-              ? "Try a different search term, or clear the search to browse all templates."
-              : "Curated templates will appear here once seeded, or use \"Save an agent as template\" above to add your own."
-          }
-          graphic={<Boxes className="h-full w-full text-muted" />}
-        />
+        <Reveal>
+          <EmptyState
+            title={search.trim() ? "No templates match your search" : "No templates yet"}
+            body={
+              search.trim()
+                ? "Try a different search term, or clear the search to browse all templates."
+                : "Curated templates will appear here once seeded, or use \"Save an agent as template\" above to add your own."
+            }
+            graphic={<Boxes className="h-full w-full text-muted" />}
+          />
+        </Reveal>
       ) : (
         <div className="space-y-8">
           {featured.length > 0 && (
             <div>
               <h2 className="mb-3 text-sm font-medium text-muted">Featured</h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {featured.map((t) => (
-                  <TemplateCard key={t._id} template={t} onClick={() => setOpenId(t._id)} />
+                  <StaggerItem key={t._id}>
+                    <TemplateCard template={t} onClick={() => setOpenId(t._id)} />
+                  </StaggerItem>
                 ))}
-              </div>
+              </Stagger>
             </div>
           )}
           <div>
             {featured.length > 0 && <h2 className="mb-3 text-sm font-medium text-muted">All templates</h2>}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {rest.map((t) => (
-                <TemplateCard key={t._id} template={t} onClick={() => setOpenId(t._id)} />
+                <StaggerItem key={t._id}>
+                  <TemplateCard template={t} onClick={() => setOpenId(t._id)} />
+                </StaggerItem>
               ))}
-            </div>
+            </Stagger>
           </div>
         </div>
       )}

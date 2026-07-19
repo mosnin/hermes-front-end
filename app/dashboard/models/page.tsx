@@ -7,6 +7,7 @@ import { Button, Card, Input } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { Cpu, Plus, X } from "@/components/icons";
+import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
 
 type ModelPolicy = {
   primary: string;
@@ -71,15 +72,16 @@ export default function ModelsPage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6">
+      <Reveal as="div" className="mb-6">
         <h1 className="text-2xl font-semibold">Model router</h1>
         <p className="text-sm text-muted">
           Choose the default model, fallback chain, and per-capability
           overrides. Agents and workflows route through this.
         </p>
-      </div>
+      </Reveal>
 
       {/* Effective primary */}
+      <Reveal delay={0.06}>
       <Card className="mb-4">
         <div className="flex items-center gap-3">
           <Cpu className="h-5 w-5 text-muted" />
@@ -91,8 +93,10 @@ export default function ModelsPage() {
           </div>
         </div>
       </Card>
+      </Reveal>
 
       {/* Editor */}
+      <Reveal delay={0.1}>
       <Card className="mb-4">
         <h2 className="mb-1 font-semibold">Routing policy</h2>
         <p className="mb-4 text-sm text-muted">
@@ -148,9 +152,9 @@ export default function ModelsPage() {
               No overrides, every capability uses the primary model.
             </p>
           ) : (
-            <div className="flex flex-col gap-2">
+            <Stagger className="flex flex-col gap-2" gap={0.05}>
               {caps.map((row, i) => (
-                <div key={i} className="flex items-center gap-2">
+                <StaggerItem key={i} className="flex items-center gap-2">
                   <Input
                     value={row.capability}
                     disabled={!canAdmin}
@@ -182,15 +186,15 @@ export default function ModelsPage() {
                       onClick={() =>
                         setCaps(caps.filter((_, j) => j !== i))
                       }
-                      className="text-muted hover:text-red-400"
+                      className="text-muted transition-colors hover:text-red-500"
                       aria-label="Remove override"
                     >
                       <X className="h-4 w-4" />
                     </button>
                   )}
-                </div>
+                </StaggerItem>
               ))}
-            </div>
+            </Stagger>
           )}
         </div>
 
@@ -202,6 +206,7 @@ export default function ModelsPage() {
           </div>
         )}
       </Card>
+      </Reveal>
     </div>
   );
 }
