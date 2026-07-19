@@ -664,3 +664,58 @@ describe("evals: listBatches / compareBatch rollups (feature 13)", () => {
     expect(batches[0].avgQuality).toBeNull();
   });
 });
+
+describe("evals: scorecards rollup (cycle 5 — bounded scan)", () => {
+  test("averages ratings per agent, includes zero-eval agents at 0, and sorts best-first", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "user_owner", org_id: "org_scorecards" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "Scorecards" });
+
+    const good = (
+      await owner.action(api.agents.create, { spaceId, name: "Good Agent" })
+    ).agentId as Id<"agents">;
+    const mixed = (
+      await owner.action(api.agents.create, { spaceId, name: "Mixed Agent" })
+    ).agentId as Id<"agents">;
+    const untested = (
+      await owner.action(api.agents.create, { spaceId, name: "Untested Agent" })
+    ).agentId as Id<"agents">;
+
+    await owner.mutation(api.evals.log, { spaceId, agentId: good, rating: 5 });
+    await owner.mutation(api.evals.log, { spaceId, agentId: good, rating: 5 });
+    await owner.mutation(api.evals.log, { spaceId, agentId: mixed, rating: 4 });
+    await owner.mutation(api.evals.log, { spaceId, agentId: mixed, rating: 2 });
+
+    const cards = await owner.query(api.evals.scorecards, { spaceId });
+    expect(cards).toHaveLength(3);
+
+    const byId = new Map(cards.map((c) => [c.agentId, c]));
+    expect(byId.get(good)!.count).toBe(2);
+    expect(byId.get(good)!.avg).toBe(5);
+    expect(byId.get(mixed)!.count).toBe(2);
+    expect(byId.get(mixed)!.avg).toBe(3);
+    expect(byId.get(untested)!.count).toBe(0);
+    expect(byId.get(untested)!.avg).toBe(0);
+
+    // Best-average first.
+    expect(cards[0].agentId).toBe(good);
+  });
+
+  test("operator can log an eval but a stranger to the Space cannot", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "user_owner", org_id: "org_scorecards2" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "Scorecards2" });
+    const agentId = (
+      await owner.action(api.agents.create, { spaceId, name: "Agent" })
+    ).agentId as Id<"agents">;
+
+    const stranger = t.withIdentity({ subject: "user_stranger", org_id: "org_scorecards2" });
+    await expect(
+      stranger.mutation(api.evals.log, { spaceId, agentId, rating: 5 }),
+    ).rejects.toThrow();
+
+    await owner.mutation(api.evals.log, { spaceId, agentId, rating: 4 });
+    const evals = await owner.query(api.evals.list, { spaceId });
+    expect(evals).toHaveLength(1);
+  });
+});

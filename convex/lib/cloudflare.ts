@@ -80,6 +80,21 @@ export function harnessCapabilities(harness: string): string[] {
   return ["chat", "workflow"];
 }
 
+/**
+ * Shape forwarded to the fleet worker's /spawn as `containerPolicy`, mirroring
+ * the enforceable fields on `securityProfiles` (convex/securityProfiles.ts) —
+ * kept as a standalone type here (rather than importing Doc<"securityProfiles">)
+ * so this file has no dependency on a specific profile row shape.
+ */
+export interface ContainerPolicy {
+  egressAllowlist?: string[];
+  fsQuotaMb?: number;
+  secretScopes?: string[];
+  toolAllowlist?: string[];
+  /** Extra opaque policy, passed through untouched. */
+  extra?: unknown;
+}
+
 export function cloudflareConfigured(): boolean {
   return !!process.env.CLOUDFLARE_FLEET_WORKER_URL && !!process.env.CLOUDFLARE_FLEET_SECRET;
 }
@@ -122,6 +137,18 @@ export async function spawnAgent(args: {
    * at container boot without it. Optional override for other harnesses.
    */
   agentCommand?: string;
+  /**
+   * Security profile policy (feature 17, convex/securityProfiles.ts) forwarded
+   * verbatim to the fleet worker's /spawn so the container boundary can layer
+   * it into env/limits — closes the cross-team request from
+   * convex/securityProfiles.ts's module docstring. Convex itself has no
+   * network boundary to enforce egress/fs/secret scoping from, so this is
+   * best-effort: the worker turns it into env vars the harness's connector
+   * MAY read (see docs/HARNESS_SPEC.md "Container policy"); only
+   * `toolAllowlist` is actually enforced today, server-side, via
+   * securityProfiles.assertToolAllowed.
+   */
+  containerPolicy?: ContainerPolicy;
 }): Promise<{ vmId: string; harness: string; harnessVersion: string | null }> {
   const data = await call("/spawn", {
     token: args.token,
@@ -133,6 +160,7 @@ export async function spawnAgent(args: {
     harness: args.harness,
     imageRef: args.imageRef,
     agentCommand: args.agentCommand,
+    containerPolicy: args.containerPolicy,
   });
   return {
     vmId: data.id ?? data.vmId ?? "",

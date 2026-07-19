@@ -295,6 +295,65 @@ describe("fleet.deploy — harness-agnostic runtime", () => {
   });
 });
 
+describe("fleet.deploy — security profile / container policy forwarding", () => {
+  test("attaches securityProfileId to the deployed agent", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    const profileId = await owner.mutation(api.securityProfiles.create, {
+      spaceId,
+      name: "Locked down",
+      egressAllowlist: ["api.example.com"],
+      fsQuotaMb: 512,
+      toolAllowlist: ["search"],
+    });
+
+    const res = await owner.action(api.fleet.deploy, {
+      spaceId,
+      count: 1,
+      securityProfileId: profileId,
+    });
+    expect(res.deployed).toHaveLength(1);
+
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet[0].securityProfileId).toBe(profileId);
+  });
+
+  test("rejects a securityProfileId from another Space", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    const other = t.withIdentity({ subject: "user_owner", org_id: "org_other" });
+    const otherSpaceId = (await other.mutation(api.spaces.create, {
+      name: "Other",
+    })) as Id<"spaces">;
+    const otherProfileId = await other.mutation(api.securityProfiles.create, {
+      spaceId: otherSpaceId,
+      name: "Foreign profile",
+    });
+
+    await expect(
+      owner.action(api.fleet.deploy, {
+        spaceId,
+        count: 1,
+        securityProfileId: otherProfileId,
+      }),
+    ).rejects.toThrow(/[Ss]ecurity profile not found/);
+
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet).toHaveLength(0);
+  });
+
+  test("deploy without a securityProfileId leaves it unset (back-compat)", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    await owner.action(api.fleet.deploy, { spaceId, count: 1 });
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet[0].securityProfileId).toBeUndefined();
+  });
+});
+
 describe("fleet.rollingRestart — drain-aware rolling restart", () => {
   async function deployRunning(
     t: ReturnType<typeof convexTest>,

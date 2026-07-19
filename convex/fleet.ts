@@ -22,6 +22,7 @@ import {
   KNOWN_HARNESS_IDS,
   HARNESS_CATALOG,
   harnessCapabilities,
+  type ContainerPolicy,
 } from "./lib/cloudflare";
 
 /** The control-plane URL deployed agents connect back to (Convex HTTP actions). */
@@ -144,6 +145,7 @@ export const insertFleetAgent = internalMutation({
     harness: v.optional(v.string()),
     harnessVersion: v.optional(v.string()),
     imageRef: v.optional(v.string()),
+    securityProfileId: v.optional(v.id("securityProfiles")),
   },
   handler: async (ctx, { spaceId, ...rest }) => {
     const scope = await resolveScope(ctx, spaceId);
@@ -214,6 +216,10 @@ export const deploy = action({
     // argv template for CLI-shaped harnesses (-> HERMES_AGENT_COMMAND). See
     // docs/HARNESS_SPEC.md "generic-cli requires agentCommand".
     agentCommand: v.optional(v.string()),
+    // Security profile (feature 17, convex/securityProfiles.ts) to attach and
+    // forward as container policy on spawn — see docs/HARNESS_SPEC.md
+    // "Container policy".
+    securityProfileId: v.optional(v.id("securityProfiles")),
   },
   handler: async (
     ctx,
@@ -248,6 +254,27 @@ export const deploy = action({
       );
     }
 
+    // Resolve the security profile (if any) once, up front, so every agent in
+    // this batch gets the same policy forwarded to /spawn and attached on
+    // insert. Not scoped through resolveScope (it's an internalQuery keyed
+    // only by id), so verify it actually belongs to this Space here.
+    let containerPolicy: ContainerPolicy | undefined;
+    if (args.securityProfileId) {
+      const profile = await ctx.runQuery(internal.securityProfiles.byIdInternal, {
+        profileId: args.securityProfileId,
+      });
+      if (!profile || profile.spaceId !== args.spaceId) {
+        throw new Error("Security profile not found in this Space");
+      }
+      containerPolicy = {
+        egressAllowlist: profile.egressAllowlist,
+        fsQuotaMb: profile.fsQuotaMb,
+        secretScopes: profile.secretScopes,
+        toolAllowlist: profile.toolAllowlist,
+        extra: profile.containerPolicy,
+      };
+    }
+
     const configured = cloudflareConfigured();
     const prefix = (args.namePrefix ?? "Agent").trim() || "Agent";
     const deployed: { agentId: string; name: string; token: string }[] = [];
@@ -273,6 +300,7 @@ export const deploy = action({
             harness: args.harness,
             imageRef: args.imageRef,
             agentCommand,
+            containerPolicy,
           });
           vmId = res.vmId;
           resolvedHarness = res.harness;
@@ -297,6 +325,7 @@ export const deploy = action({
         harness: resolvedHarness,
         harnessVersion,
         imageRef: args.imageRef,
+        securityProfileId: args.securityProfileId,
       });
       deployed.push({ agentId, name, token });
     }

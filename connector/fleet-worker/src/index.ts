@@ -12,7 +12,8 @@
  *
  *   GET  /health     (no auth)                                        -> { ok }
  *   POST /spawn      { token, controlPlaneUrl, region?, model?, modelApiKey?,
- *                       name, harness?, imageRef?, agentCommand? }      -> { id, harness, harnessVersion }
+ *                       name, harness?, imageRef?, agentCommand?,
+ *                       containerPolicy? }                              -> { id, harness, harnessVersion }
  *   POST /terminate  { id }                                            -> { ok }
  *   POST /status     { id }                                            -> { status }
  *   POST /restart    { id }                                            -> { ok, status } (rolling restart, feature 5)
@@ -77,6 +78,23 @@ interface SpawnConfig {
  * before ever calling here (see the validation there); this worker still
  * honors it as a straight passthrough for any harness that accepts it.
  */
+/**
+ * Security-profile policy (convex/securityProfiles.ts, forwarded verbatim by
+ * convex/lib/cloudflare.ts's spawnAgent()). Convex has no network boundary to
+ * enforce egress/fs/secret scoping from, so the worker's job is limited to
+ * turning this into env vars the container's connector MAY read — see
+ * docs/HARNESS_SPEC.md "Container policy" for exactly what's enforced today
+ * (tool allowlist only, server-side in Convex) vs. advisory (everything
+ * here).
+ */
+interface ContainerPolicy {
+  egressAllowlist?: string[];
+  fsQuotaMb?: number;
+  secretScopes?: string[];
+  toolAllowlist?: string[];
+  extra?: unknown;
+}
+
 interface SpawnBody {
   token?: string;
   controlPlaneUrl?: string;
@@ -87,6 +105,33 @@ interface SpawnBody {
   harness?: string;
   imageRef?: string;
   agentCommand?: string;
+  containerPolicy?: ContainerPolicy;
+}
+
+/** Turn a containerPolicy into the env vars the container boundary layers in at boot. */
+function containerPolicyEnv(policy: ContainerPolicy | undefined): Record<string, string> {
+  if (!policy) return {};
+  const env: Record<string, string> = {};
+  if (policy.egressAllowlist && policy.egressAllowlist.length > 0) {
+    env.HERMES_EGRESS_ALLOWLIST = policy.egressAllowlist.join(",");
+  }
+  if (policy.fsQuotaMb !== undefined) {
+    env.HERMES_FS_QUOTA_MB = String(policy.fsQuotaMb);
+  }
+  if (policy.secretScopes && policy.secretScopes.length > 0) {
+    env.HERMES_SECRET_SCOPES = policy.secretScopes.join(",");
+  }
+  if (policy.toolAllowlist && policy.toolAllowlist.length > 0) {
+    env.HERMES_TOOL_ALLOWLIST = policy.toolAllowlist.join(",");
+  }
+  if (policy.extra !== undefined) {
+    try {
+      env.HERMES_CONTAINER_POLICY_JSON = JSON.stringify(policy.extra);
+    } catch {
+      // opaque/non-serializable extra policy — skip rather than crash the spawn.
+    }
+  }
+  return env;
 }
 
 /** Registry entry for one spawned agent, keyed by DO id string. */
@@ -97,6 +142,8 @@ interface RegistryEntry {
   harnessVersion?: string;
   imageRef?: string;
   spawnedAt: number;
+  /** True when a security profile's policy was forwarded on spawn (observability only). */
+  hasContainerPolicy?: boolean;
 }
 
 /** Maps a harness id (or "custom") to its Env binding key. */
@@ -332,6 +379,7 @@ export default {
             harnessVersion: meta.harnessVersion,
             imageRef: meta.imageRef,
             spawnedAt: meta.spawnedAt,
+            hasContainerPolicy: !!meta.hasContainerPolicy,
             status,
           };
         }),
@@ -382,6 +430,11 @@ export default {
       // harness). Applied after the manifest's fixed env so a caller-supplied
       // command always wins over any manifest default.
       if (agentCommand) extraEnv = { ...extraEnv, HERMES_AGENT_COMMAND: agentCommand };
+      // Container policy (security profile, feature 17) applied last so it
+      // always wins over the harness manifest's fixed env / the
+      // caller-supplied agentCommand for the same key (none currently
+      // overlap, but this keeps the precedence explicit).
+      extraEnv = { ...extraEnv, ...containerPolicyEnv(spawnBody.containerPolicy) };
 
       const ns = bindingFor(env, harness);
       // A fresh unique id == a brand new agent/container. We hand the caller
@@ -406,6 +459,7 @@ export default {
         harnessVersion,
         imageRef,
         spawnedAt: Date.now(),
+        hasContainerPolicy: !!spawnBody.containerPolicy,
       });
       return json({ id: id.toString(), harness, harnessVersion: harnessVersion ?? null });
     }

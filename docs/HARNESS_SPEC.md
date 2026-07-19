@@ -175,6 +175,53 @@ default command already, per `FRAMEWORK_COMMANDS` in `frameworks.py`).
 `agentCommand` is spawn-time-only, like the BYOK `modelApiKey` — it is not
 persisted on the `agents` row.
 
+## Container policy (security profiles, feature 17)
+
+`fleet.ts deploy()` accepts an optional `securityProfileId`
+(`securityProfiles` table, owned/CRUD'd by `convex/securityProfiles.ts`).
+When set, `deploy()` resolves the profile (verifying it belongs to the same
+Space), builds a `ContainerPolicy` object from its `egressAllowlist` /
+`fsQuotaMb` / `secretScopes` / `toolAllowlist` / opaque `containerPolicy`
+fields, forwards it through `lib/cloudflare.ts spawnAgent({ containerPolicy })`
+to the fleet worker's `/spawn` body, and stores `securityProfileId` on the
+resulting `agents` row (`securityProfiles.assign` can also change it later,
+independent of a redeploy).
+
+The worker turns `containerPolicy` into container env vars, layered on top of
+everything else (manifest-fixed env, `agentCommand`) so a security profile
+always wins on key overlap:
+
+| Policy field       | Container env                  |
+|---------------------|---------------------------------|
+| `egressAllowlist`   | `HERMES_EGRESS_ALLOWLIST` (comma-joined) |
+| `fsQuotaMb`          | `HERMES_FS_QUOTA_MB`           |
+| `secretScopes`       | `HERMES_SECRET_SCOPES` (comma-joined) |
+| `toolAllowlist`      | `HERMES_TOOL_ALLOWLIST` (comma-joined) |
+| opaque `containerPolicy` | `HERMES_CONTAINER_POLICY_JSON` (JSON) |
+
+**What's actually enforced today:** only `toolAllowlist`, and only
+server-side in Convex (`securityProfiles.assertToolAllowed`, called from the
+router/connector dispatch paths before a tool call is allowed through) — that
+enforcement doesn't depend on this container-env plumbing at all. Convex has
+no network boundary of its own, so `egressAllowlist` / `fsQuotaMb` /
+`secretScopes` are **advisory at the container boundary**: the env vars are
+set, but no built-in harness's connector currently reads and enforces them
+(that's a `connector/control_plane` change, outside this team's file
+ownership — see cross-team note below). The plumbing is complete end-to-end
+so a harness's adapter can opt into reading these vars without any change to
+`fleet.ts`, `lib/cloudflare.ts`, or the worker.
+
+`hasContainerPolicy: boolean` is recorded on the worker's registry entry
+(surfaced in `/list`) purely for operator observability — it does not gate
+anything.
+
+**Cross-team note (connector/control_plane, not owned by this team):** to
+actually enforce `HERMES_EGRESS_ALLOWLIST` / `HERMES_FS_QUOTA_MB` /
+`HERMES_SECRET_SCOPES` at runtime, the connector/harness process would need
+to read them at boot and apply an egress proxy / fs quota / secret filter
+before starting the agent loop — this manifest+env contract is the seam for
+that; no further Convex/fleet-worker change should be required.
+
 ## Version tracking (feature 5)
 
 Each manifest pins a `version` (the harness framework's version, not the

@@ -306,6 +306,28 @@ Each Space member configures their own approval delivery channels from
   }
   ```
 
+  **Rotating your signing secret.** There is exactly one active secret per
+  member per Space (`notificationPrefs.webhookSecretRef`, resolved from the
+  Space secrets vault at delivery time) — setting a new one from **Dashboard →
+  Approvals → Notifications** overwrites the old value in place, so the very
+  next delivery signs with the new secret only. There is no dual-secret /
+  grace-period signing (Cadre never sends two signature headers for one
+  delivery), so treat rotation as a hard cutover and sequence it like this to
+  avoid a window where deliveries fail verification on your end:
+
+  1. Update your receiving endpoint to accept **both** the old and new secret
+     (try `verifyCadreWebhookSignature(rawBody, header, oldSecret)`, then the
+     new one, before rejecting).
+  2. Once that's deployed, update the secret in Cadre's Notifications panel.
+  3. Use **Send test** to confirm a delivery verifies against the new secret,
+     then remove the old secret from your endpoint's fallback list.
+
+  If you skip step 1, any approval that fires between rotating in Cadre and
+  redeploying your receiver will 401 at your endpoint — the approval itself is
+  unaffected (delivery is best-effort and failures are audit-logged; you can
+  always fall back to the in-app inbox or `GET /api/v1/approvals`), but you'll
+  miss the one-click link for that delivery.
+
 ## Connector log ingestion
 
 `POST /connector/logs` (agent-token authenticated, not API-key) accepts batches

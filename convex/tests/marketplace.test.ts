@@ -278,6 +278,45 @@ describe("marketplace.install — hosted deploy handoff", () => {
     expect(agent?.templateId).toBe(reviewer._id);
     expect(agent?.harness).toBe(reviewer.harness);
   });
+
+  test("deployHosted forwards the resolved security profile into fleet.deploy (not just attached post-hoc)", async () => {
+    const { t, owner, spaceId } = await setup();
+
+    const profileId = await owner.mutation(api.securityProfiles.create, {
+      spaceId,
+      name: "hosted-default",
+      toolAllowlist: ["email"],
+      egressAllowlist: ["api.example.com"],
+    });
+
+    const templateId: Id<"agentTemplates"> = await t.run(async (ctx) => {
+      const now = Date.now();
+      return await ctx.db.insert("agentTemplates", {
+        slug: "hosted-sec-profile-test",
+        name: "Hosted security-linked template",
+        visibility: "public",
+        harness: "hermes",
+        securityProfileName: "hosted-default",
+        installCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const res = await owner.action(api.marketplace.install, {
+      spaceId,
+      templateId,
+      deployHosted: true,
+    });
+
+    expect(res.hosted).toBe(true);
+    const agent = await owner.query(api.agents.get, { spaceId, agentId: res.agentId });
+    // The profile must land on the agent row created by fleet.deploy itself
+    // (via its own securityProfileId arg, which also forwards containerPolicy
+    // to /spawn) — not merely patched on afterward by attachTemplateMeta,
+    // which happens too late for the container boundary to see it.
+    expect(agent?.securityProfileId).toBe(profileId);
+  });
 });
 
 describe("securityProfiles integration with template install", () => {

@@ -62,6 +62,14 @@ export const list = query({
   },
 });
 
+// Defensive bound on the aggregation scans below — `evals` rows accumulate
+// indefinitely (every human + auto eval, forever), unlike `agents` which
+// stays roughly proportional to fleet size. Rolling up over the most recent
+// slice keeps `scorecards`/`benchmarkTrend` from ever `.collect()`-ing an
+// unbounded table.
+const EVALS_ROLLUP_CAP = 2000;
+const RUNS_ROLLUP_CAP = 1000;
+
 export const scorecards = query({
   args: { spaceId: v.id("spaces") },
   handler: async (ctx, { spaceId }) => {
@@ -74,7 +82,8 @@ export const scorecards = query({
       ctx.db
         .query("evals")
         .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
-        .collect(),
+        .order("desc")
+        .take(EVALS_ROLLUP_CAP),
     ]);
 
     return agents
@@ -412,7 +421,8 @@ export const benchmarkTrend = query({
     const runs = await ctx.db
       .query("evalRuns")
       .withIndex("by_benchmark", (q) => q.eq("benchmarkId", benchmarkId))
-      .collect();
+      .order("desc")
+      .take(RUNS_ROLLUP_CAP);
 
     const groups = new Map<string, Doc<"evalRuns">[]>();
     for (const r of runs) {
@@ -440,6 +450,8 @@ export const benchmarkTrend = query({
           startedAt: Math.min(...rows.map((r) => r.startedAt)),
         };
       })
+      // Most-recent-first take() above means older history beyond the cap is
+      // dropped entirely rather than sampled — trend still reads oldest->newest.
       .sort((a, b) => a.startedAt - b.startedAt);
   },
 });

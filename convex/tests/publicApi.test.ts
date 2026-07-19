@@ -552,4 +552,185 @@ describe("public API v1", () => {
     expect(badRun.status).toBe(400); // bad_request (invalid workflowId), not 404 unknown route
     expect((await badRun.json()).error.code).toBe("bad_request");
   });
+
+  test("notification prefs: setPrefs/getPrefs round-trip and mask the webhook secret", async () => {
+    const { t, owner, spaceId } = await boot("org_prefs1");
+
+    const before = await owner.query(api.notifications.getPrefs, { spaceId });
+    expect(before).toBeNull();
+
+    await owner.mutation(api.notifications.setPrefs, {
+      spaceId,
+      emailEnabled: true,
+      emailAddress: "ops@example.com",
+      webhookEnabled: true,
+      webhookUrl: "https://example.com/hooks/cadre",
+      webhookSecret: "top-secret",
+      categories: ["approval"],
+    });
+
+    const after = await owner.query(api.notifications.getPrefs, { spaceId });
+    expect(after?.emailEnabled).toBe(true);
+    expect(after?.emailAddress).toBe("ops@example.com");
+    expect(after?.webhookEnabled).toBe(true);
+    expect(after?.webhookUrl).toBe("https://example.com/hooks/cadre");
+    // The raw secret is never exposed back to the client — only a boolean.
+    expect(after?.hasWebhookSecret).toBe(true);
+    expect((after as unknown as { webhookSecret?: string }).webhookSecret).toBeUndefined();
+
+    // A non-https webhook URL is rejected outright.
+    await expect(
+      owner.mutation(api.notifications.setPrefs, {
+        spaceId,
+        webhookEnabled: true,
+        webhookUrl: "http://insecure.example.com",
+      }),
+    ).rejects.toThrow(/Invalid webhook URL/i);
+  });
+
+  test("deliverApproval: fans out a signed webhook whose signature verifies with the SDK helper", async () => {
+    vi.useFakeTimers();
+    const previousSiteUrl = process.env.CONVEX_SITE_URL;
+    process.env.CONVEX_SITE_URL = "https://example.convex.site";
+    const { t, owner, spaceId } = await boot("org_deliver1");
+    await owner.mutation(api.notifications.setPrefs, {
+      spaceId,
+      webhookEnabled: true,
+      webhookUrl: "https://receiver.example.com/hooks/cadre",
+      webhookSecret: "hmac-secret",
+    });
+
+    let capturedBody: string | null = null;
+    let capturedSignature: string | null = null;
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      capturedBody = String(init?.body ?? "");
+      capturedSignature = (init?.headers as Record<string, string> | undefined)?.[
+        "X-Cadre-Signature"
+      ] ?? null;
+      return new Response("ok", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      await owner.mutation(api.approvals.request, {
+        spaceId,
+        kind: "spend",
+        title: "Approve $500 ad spend",
+        riskLevel: "high",
+      });
+      await drainScheduler(t);
+    } finally {
+      global.fetch = originalFetch;
+      if (previousSiteUrl === undefined) delete process.env.CONVEX_SITE_URL;
+      else process.env.CONVEX_SITE_URL = previousSiteUrl;
+    }
+
+    expect(capturedBody).not.toBeNull();
+    expect(capturedSignature).toMatch(/^sha256=[0-9a-f]{64}$/);
+
+    const { verifyCadreWebhookSignature } = await import("../../sdk/src/webhooks");
+    const ok = await verifyCadreWebhookSignature(capturedBody!, capturedSignature, "hmac-secret");
+    expect(ok).toBe(true);
+
+    const wrongSecret = await verifyCadreWebhookSignature(
+      capturedBody!,
+      capturedSignature,
+      "wrong-secret",
+    );
+    expect(wrongSecret).toBe(false);
+
+    const payload = JSON.parse(capturedBody!);
+    expect(payload.type).toBe("approval.requested");
+    expect(payload.riskLevel).toBe("high");
+    expect(payload.approveUrl).toContain("/api/v1/approvals/token/");
+    expect(payload.denyUrl).toContain("/api/v1/approvals/token/");
+  });
+
+  test("one-click token: full redemption via the HTTP route approves the gate exactly once", async () => {
+    vi.useFakeTimers();
+    const previousSiteUrl = process.env.CONVEX_SITE_URL;
+    process.env.CONVEX_SITE_URL = "https://example.convex.site";
+    const { t, owner, spaceId } = await boot("org_token_e2e");
+    await owner.mutation(api.notifications.setPrefs, {
+      spaceId,
+      webhookEnabled: true,
+      webhookUrl: "https://receiver.example.com/hooks/cadre",
+    });
+
+    let approveUrl: string | undefined;
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body ?? "{}"));
+      approveUrl = payload.approveUrl;
+      return new Response("ok", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    let approvalId: Id<"approvals">;
+    try {
+      approvalId = await owner.mutation(api.approvals.request, {
+        spaceId,
+        kind: "action",
+        title: "Deploy to prod",
+      });
+      await drainScheduler(t);
+    } finally {
+      global.fetch = originalFetch;
+      if (previousSiteUrl === undefined) delete process.env.CONVEX_SITE_URL;
+      else process.env.CONVEX_SITE_URL = previousSiteUrl;
+    }
+
+    expect(approveUrl).toBeDefined();
+    const token = approveUrl!.split("/api/v1/approvals/token/")[1];
+    expect(token).toMatch(/^apt_/);
+
+    const res = await t.fetch(`/api/v1/approvals/token/${token}?format=json`, { method: "GET" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.decision).toBe("approve");
+    expect(body.data.approvalId).toBe(approvalId);
+
+    const approval = await t.run(async (ctx) => ctx.db.get(approvalId));
+    expect(approval?.status).toBe("approved");
+
+    // Single-use: redeeming the same link again fails cleanly.
+    const replay = await t.fetch(`/api/v1/approvals/token/${token}?format=json`, { method: "GET" });
+    expect(replay.status).toBe(400);
+    expect((await replay.json()).error.message).toMatch(/already used/);
+  });
+
+  test("one-click token: HTML confirmation page renders by default (no ?format=json)", async () => {
+    vi.useFakeTimers();
+    const previousSiteUrl = process.env.CONVEX_SITE_URL;
+    process.env.CONVEX_SITE_URL = "https://example.convex.site";
+    const { t, owner, spaceId } = await boot("org_token_html");
+    await owner.mutation(api.notifications.setPrefs, {
+      spaceId,
+      webhookEnabled: true,
+      webhookUrl: "https://receiver.example.com/hooks/cadre",
+    });
+
+    let approveUrl: string | undefined;
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body ?? "{}"));
+      approveUrl = payload.approveUrl;
+      return new Response("ok", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      await owner.mutation(api.approvals.request, { spaceId, kind: "action", title: "Ship it" });
+      await drainScheduler(t);
+    } finally {
+      global.fetch = originalFetch;
+      if (previousSiteUrl === undefined) delete process.env.CONVEX_SITE_URL;
+      else process.env.CONVEX_SITE_URL = previousSiteUrl;
+    }
+
+    const token = approveUrl!.split("/api/v1/approvals/token/")[1];
+    const res = await t.fetch(`/api/v1/approvals/token/${token}`, { method: "GET" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain("Approved");
+  });
 });

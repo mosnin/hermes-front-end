@@ -365,6 +365,13 @@ export const install = action({
         squadId,
         model: template.suggestedModel,
         harness: template.harness,
+        // Pass the resolved security profile straight into fleet.deploy so
+        // its containerPolicy (egress allowlist / fs quota / secret scopes)
+        // reaches the actual /spawn call. Previously this was only attached
+        // post-hoc via attachTemplateMeta below, which patches the agent row
+        // but does nothing for a container that already booted without the
+        // policy — a real gap for hosted template installs specifically.
+        securityProfileId,
       });
       const deployed = res.deployed[0];
       if (!deployed) throw new Error("Hosted deploy failed to provision an agent");

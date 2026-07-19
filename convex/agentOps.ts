@@ -236,7 +236,7 @@ export const listTemplates = query({
     const own = await ctx.db
       .query("agentTemplates")
       .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
-      .collect();
+      .take(200);
     const publicTemplates = await ctx.db
       .query("agentTemplates")
       .withIndex("by_visibility", (q) => q.eq("visibility", "public"))
