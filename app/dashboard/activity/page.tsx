@@ -1,23 +1,22 @@
 "use client";
 
-import { Card } from "@/components/ui";
 import { ActivityFeed } from "@/components/activity-feed";
-import { Reveal } from "@/components/site/motion";
+import { PageHead, Panel } from "@/components/dash/kit";
 
 export default function ActivityPage() {
   return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6">
-        <h1 className="text-2xl font-semibold">Activity</h1>
-        <p className="text-sm text-muted">
-          A live, real-time feed of everything your agents do.
-        </p>
-      </Reveal>
-      <Reveal delay={0.08}>
-        <Card>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="activity · this space"
+          title="Activity"
+          sub="A live, real-time feed of everything your agents do."
+        />
+
+        <Panel>
           <ActivityFeed limit={200} />
-        </Card>
-      </Reveal>
+        </Panel>
+      </div>
     </div>
   );
 }

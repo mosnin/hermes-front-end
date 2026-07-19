@@ -5,17 +5,25 @@ import { useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, Input, StatusDot, Textarea } from "@/components/ui";
+import { Input, Textarea } from "@/components/ui";
 import { ActivityFeed } from "@/components/activity-feed";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { ArrowLeft, Cpu, Trash2 } from "@/components/icons";
+import { ArrowLeft, Cpu } from "@/components/icons";
 import { LogPane } from "@/components/fleet/LogPane";
 import { ConfigPushPanel } from "@/components/fleet/ConfigPushPanel";
 import { SnapshotPanel } from "@/components/fleet/SnapshotPanel";
 import { WatchdogPanel } from "@/components/fleet/WatchdogPanel";
-import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import { PageHead, PillButton, Panel, Dot, SectionLabel } from "@/components/dash/kit";
+
+/** Map an agent status string to a kit Dot tone. */
+function toneFor(status?: string): "online" | "paused" | "idle" | "error" {
+  if (status === "online") return "online";
+  if (status === "paused") return "paused";
+  if (status === "error" || status === "degraded") return "error";
+  return "idle";
+}
 
 export default function AgentDetailPage({
   params,
@@ -35,112 +43,101 @@ export default function AgentDetailPage({
   const remove = useMutation(api.agents.remove);
 
   if (agent === undefined) {
-    return <div className="p-8 text-sm text-muted">Loading…</div>;
+    return (
+      <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+        <div className="mx-auto max-w-[1120px] text-[14px] text-[var(--muted)]">Loading…</div>
+      </div>
+    );
   }
   if (agent === null) {
-    return <div className="p-8 text-sm text-muted">Agent not found.</div>;
+    return (
+      <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+        <div className="mx-auto max-w-[1120px] text-[14px] text-[var(--muted)]">Agent not found.</div>
+      </div>
+    );
   }
 
   return (
-    <div className="p-8">
-      <button
-        onClick={() => router.push("/dashboard/agents")}
-        className="mb-4 flex items-center gap-1 text-sm text-muted hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> Agents
-      </button>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <button
+          onClick={() => router.push("/dashboard/agents")}
+          className="flex items-center gap-1.5 text-[13px] text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" /> Agents
+        </button>
 
-      <Reveal className="mb-6 flex items-start justify-between" y={12}>
-        <div>
-          <div className="flex items-center gap-2">
-            <StatusDot status={agent.status} />
-            <h1 className="text-2xl font-semibold">{agent.name}</h1>
-            <Badge>{agent.platform ?? agent.kind ?? "—"}</Badge>
-          </div>
-          {agent.description && (
-            <p className="mt-1 text-sm text-muted">{agent.description}</p>
-          )}
-        </div>
-        {canEdit && (
-          <Button
-            variant="danger"
-            onClick={async () => {
-              if (!spaceId) return;
-              await remove({ spaceId, agentId: id });
-              router.push("/dashboard/agents");
-            }}
-          >
-            <Trash2 className="h-4 w-4" /> Remove
-          </Button>
-        )}
-      </Reveal>
-
-      <Stagger className="mb-6 grid gap-4 sm:grid-cols-3">
-        <StaggerItem>
-          <Card>
-            <p className="text-sm text-muted">Status</p>
-            <p className="mt-1 text-lg font-medium capitalize">{agent.status}</p>
-          </Card>
-        </StaggerItem>
-        <StaggerItem>
-          <Card>
-            <p className="text-sm text-muted">Last heartbeat</p>
-            <p className="mt-1 text-lg font-medium">
-              {timeAgo(agent.lastHeartbeat)}
-            </p>
-          </Card>
-        </StaggerItem>
-        <StaggerItem>
-          <Card>
-            <p className="text-sm text-muted">Connector</p>
-            <p className="mt-1 text-lg font-medium">
-              {agent.connectorVersion ?? "—"}
-            </p>
-          </Card>
-        </StaggerItem>
-      </Stagger>
-
-      <Reveal className="mb-6">
-        <PersonaCard
-          agentId={id}
-          agent={agent}
-          agents={agents ?? []}
+        <PageHead
+          eyebrow="agents"
+          title={
+            <span className="inline-flex items-center gap-3">
+              <Dot tone={toneFor(agent.status)} />
+              {agent.name}
+              <span className="text-[16px] font-normal text-[var(--muted)]">{agent.platform ?? agent.kind ?? "—"}</span>
+            </span>
+          }
+          sub={agent.description}
+          actions={
+            canEdit && (
+              <PillButton
+                variant="outline"
+                onClick={async () => {
+                  if (!spaceId) return;
+                  await remove({ spaceId, agentId: id });
+                  router.push("/dashboard/agents");
+                }}
+              >
+                Remove agent
+              </PillButton>
+            )
+          }
         />
-      </Reveal>
 
-      {agent.kind !== "a2a-external" && spaceId && (
-        <Reveal className="mb-6 grid gap-4 lg:grid-cols-2">
-          <ConfigPushPanel spaceId={spaceId} agentId={id} />
-          <SnapshotPanel spaceId={spaceId} agentId={id} agentName={agent.name} />
-        </Reveal>
-      )}
+        <Panel>
+          <div className="grid gap-6 sm:grid-cols-3">
+            <div>
+              <p className="text-[12.5px] text-[var(--muted)]">Status</p>
+              <p className="mt-1 text-[20px] font-medium capitalize text-[var(--foreground)]">{agent.status}</p>
+            </div>
+            <div>
+              <p className="text-[12.5px] text-[var(--muted)]">Last heartbeat</p>
+              <p className="mt-1 text-[20px] font-medium text-[var(--foreground)]">{timeAgo(agent.lastHeartbeat)}</p>
+            </div>
+            <div>
+              <p className="text-[12.5px] text-[var(--muted)]">Connector</p>
+              <p className="mt-1 text-[20px] font-medium text-[var(--foreground)]">{agent.connectorVersion ?? "—"}</p>
+            </div>
+          </div>
+        </Panel>
 
-      {agent.kind !== "a2a-external" && spaceId && agent.vmProvider && (
-        <Reveal className="mb-6">
+        <PersonaCard agentId={id} agent={agent} agents={agents ?? []} />
+
+        {agent.kind !== "a2a-external" && spaceId && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ConfigPushPanel spaceId={spaceId} agentId={id} />
+            <SnapshotPanel spaceId={spaceId} agentId={id} agentName={agent.name} />
+          </div>
+        )}
+
+        {agent.kind !== "a2a-external" && spaceId && agent.vmProvider && (
           <WatchdogPanel spaceId={spaceId} agentId={id} agent={agent} />
-        </Reveal>
-      )}
+        )}
 
-      {agent.kind !== "a2a-external" && spaceId && (
-        <Reveal className="mb-6">
-          <LogPane spaceId={spaceId} agentId={id} />
-        </Reveal>
-      )}
+        {agent.kind !== "a2a-external" && spaceId && <LogPane spaceId={spaceId} agentId={id} />}
 
-      <Reveal className="mb-6">
         {agent.kind === "a2a-external" ? (
           <ExternalA2APanel agentId={id} name={agent.name} />
         ) : (
           <InboundA2APanel agentId={id} />
         )}
-      </Reveal>
 
-      <Reveal>
-        <Card>
-          <h2 className="mb-3 font-semibold">Activity</h2>
-          <ActivityFeed agentId={id} limit={50} />
-        </Card>
-      </Reveal>
+        <div>
+          <SectionLabel>activity</SectionLabel>
+          <Panel>
+            <ActivityFeed agentId={id} limit={50} />
+          </Panel>
+        </div>
+      </div>
     </div>
   );
 }
@@ -209,15 +206,18 @@ function PersonaCard({
   }
 
   return (
-    <Card>
-      <h2 className="flex items-center gap-2 font-semibold">
-        <Cpu className="h-4 w-4" /> Persona &amp; config
-      </h2>
-      <p className="mt-1 text-sm text-muted">
+    <Panel
+      title={
+        <span className="flex items-center gap-2">
+          <Cpu className="h-4 w-4" /> Persona &amp; config
+        </span>
+      }
+    >
+      <p className="-mt-3 mb-4 text-[13.5px] text-[var(--muted)]">
         The system prompt, model, toolsets, and org hierarchy for this agent.
       </p>
 
-      <div className="mt-4 space-y-4">
+      <div className="space-y-4">
         <div>
           <label className="text-xs text-muted">System prompt</label>
           <Textarea
@@ -283,13 +283,13 @@ function PersonaCard({
 
         {canEdit && (
           <div className="flex justify-end">
-            <Button onClick={save} disabled={saving}>
+            <PillButton onClick={save} className={saving ? "pointer-events-none opacity-60" : undefined}>
               {saving ? "Saving…" : "Save"}
-            </Button>
+            </PillButton>
           </div>
         )}
       </div>
-    </Card>
+    </Panel>
   );
 }
 
@@ -304,13 +304,12 @@ function InboundA2APanel({ agentId }: { agentId: Id<"agents"> }) {
   const cardUrl = `${site}/a2a/card/${agentId}`;
 
   return (
-    <Card>
-      <h2 className="font-semibold">Expose over A2A</h2>
-      <p className="mt-1 text-sm text-muted">
+    <Panel title="Expose over A2A">
+      <p className="-mt-3 mb-4 text-[13.5px] text-[var(--muted)]">
         This agent is an A2A server. External A2A clients can discover it via its
         Agent Card and call it over JSON-RPC.
       </p>
-      <div className="mt-3">
+      <div>
         <label className="text-xs text-muted">Agent Card URL</label>
         <pre className="mt-1 overflow-x-auto rounded-lg border border-border bg-surface-2 p-2 text-xs">
           {cardUrl}
@@ -318,7 +317,7 @@ function InboundA2APanel({ agentId }: { agentId: Id<"agents"> }) {
       </div>
       {canAdmin && (
         <div className="mt-3">
-          <Button
+          <PillButton
             variant="outline"
             onClick={async () => {
               if (!spaceId) return;
@@ -327,7 +326,7 @@ function InboundA2APanel({ agentId }: { agentId: Id<"agents"> }) {
             }}
           >
             Generate inbound key
-          </Button>
+          </PillButton>
           {key && (
             <pre className="mt-2 overflow-x-auto rounded-lg border border-border bg-surface-2 p-2 text-xs">
               Authorization: Bearer {key}
@@ -335,7 +334,7 @@ function InboundA2APanel({ agentId }: { agentId: Id<"agents"> }) {
           )}
         </div>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -353,22 +352,20 @@ function ExternalA2APanel({
   const [busy, setBusy] = useState(false);
 
   return (
-    <Card>
-      <h2 className="font-semibold">Call {name} (external A2A)</h2>
-      <p className="mt-1 text-sm text-muted">
+    <Panel title={`Call ${name} (external A2A)`}>
+      <p className="-mt-3 mb-4 text-[13.5px] text-[var(--muted)]">
         Send a message to this external agent over the A2A protocol. The reply
         is recorded in a thread and the work history.
       </p>
-      <div className="mt-3 flex gap-2">
+      <div className="flex gap-2">
         <Input
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Message to send…"
         />
-        <Button
-          disabled={busy || !text.trim()}
+        <PillButton
           onClick={async () => {
-            if (!spaceId || !text.trim()) return;
+            if (busy || !spaceId || !text.trim()) return;
             setBusy(true);
             setReply(null);
             try {
@@ -381,15 +378,16 @@ function ExternalA2APanel({
               setBusy(false);
             }
           }}
+          className={busy || !text.trim() ? "pointer-events-none opacity-50" : undefined}
         >
           {busy ? "Sending…" : "Send"}
-        </Button>
+        </PillButton>
       </div>
       {reply && (
         <p className="mt-3 rounded-lg border border-border bg-surface-2 p-2 text-sm">
           {reply}
         </p>
       )}
-    </Card>
+    </Panel>
   );
 }

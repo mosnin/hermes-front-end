@@ -3,12 +3,16 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, Input } from "@/components/ui";
+import { Badge, Input } from "@/components/ui";
 import { ScheduleCard } from "@/components/schedule-card";
 import { useActiveSpace, useCan } from "@/components/active-space";
-import { Power, EyeOff } from "@/components/icons";
-import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import { Stagger, StaggerItem } from "@/components/site/motion";
+import {
+  PageHead,
+  PillButton,
+  Panel,
+  Dot,
+} from "@/components/dash/kit";
 
 type Guards = {
   maxStepsPerRun: number;
@@ -66,75 +70,81 @@ export default function SettingsPage() {
     }
   }, [space]);
 
-  if (!space) return <div className="p-8 text-sm text-muted">Loading…</div>;
+  if (!space) {
+    return (
+      <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+        <div className="mx-auto max-w-[1120px]">
+          <p className="text-[13.5px] text-[var(--muted)]">Loading…</p>
+        </div>
+      </div>
+    );
+  }
+
+  const canPause = canAdmin && !!spaceId;
+  const canAddMember = canAdmin && !!spaceId && !!newUserId.trim();
 
   return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6">
-        <h1 className="text-2xl font-semibold">Space settings</h1>
-        <p className="text-sm text-muted">
-          Autonomy guardrails, the kill switch, and access for {space.name}.
-        </p>
-      </Reveal>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="settings"
+          title="Space settings"
+          sub={`Autonomy guardrails, the kill switch, and access for ${space.name}.`}
+        />
 
-      {/* Kill switch */}
-      <Reveal delay={0.05}>
-        <Card className="mb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold">Kill switch</h2>
-              <p className="text-sm text-muted">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Kill switch */}
+          <Panel title="Kill switch">
+            <div className="flex items-center gap-2.5">
+              <Dot tone={space.autonomyPaused ? "paused" : "online"} />
+              <p className="text-[13.5px] text-[var(--muted)]">
                 {space.autonomyPaused
                   ? "Autonomy is paused, agents will not dispatch."
                   : "Autonomy is active. Agents and workflows run freely within guards."}
               </p>
             </div>
-            <Button
-              variant={space.autonomyPaused ? "primary" : "danger"}
-              disabled={!canAdmin || !spaceId}
-              onClick={() =>
-                spaceId && setPaused({ spaceId, paused: !space.autonomyPaused })
-              }
-            >
-              <Power className="h-4 w-4" />
-              {space.autonomyPaused ? "Resume autonomy" : "Pause all autonomy"}
-            </Button>
-          </div>
-        </Card>
-      </Reveal>
+            <div className="mt-4">
+              <PillButton
+                variant={space.autonomyPaused ? "solid" : "outline"}
+                className={cnDisabled(!canPause)}
+                onClick={() => {
+                  if (!canPause) return;
+                  setPaused({ spaceId: spaceId!, paused: !space.autonomyPaused });
+                }}
+              >
+                {space.autonomyPaused ? "Resume autonomy" : "Pause all autonomy"}
+              </PillButton>
+            </div>
+          </Panel>
 
-      {/* Shadow mode */}
-      <Reveal delay={0.1}>
-        <Card className="mb-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold">Shadow mode</h2>
-              <p className="text-sm text-muted">
+          {/* Shadow mode */}
+          <Panel title="Shadow mode">
+            <div className="flex items-center gap-2.5">
+              <Dot tone={space.shadowMode ? "idle" : "online"} />
+              <p className="text-[13.5px] text-[var(--muted)]">
                 {space.shadowMode
                   ? "Shadow mode is on, agents propose actions to the ledger instead of executing them."
                   : "Shadow mode is off, agents execute actions directly. When on, agents propose actions to the ledger instead of executing them."}
               </p>
             </div>
-            <Button
-              variant={space.shadowMode ? "primary" : "outline"}
-              disabled={!canAdmin || !spaceId}
-              onClick={() =>
-                spaceId &&
-                setShadowMode({ spaceId, shadow: !space.shadowMode })
-              }
-            >
-              <EyeOff className="h-4 w-4" />
-              {space.shadowMode ? "Disable shadow mode" : "Enable shadow mode"}
-            </Button>
-          </div>
-        </Card>
-      </Reveal>
+            <div className="mt-4">
+              <PillButton
+                variant={space.shadowMode ? "solid" : "outline"}
+                className={cnDisabled(!canPause)}
+                onClick={() => {
+                  if (!canPause) return;
+                  setShadowMode({ spaceId: spaceId!, shadow: !space.shadowMode });
+                }}
+              >
+                {space.shadowMode ? "Disable shadow mode" : "Enable shadow mode"}
+              </PillButton>
+            </div>
+          </Panel>
+        </div>
 
-      {/* Guardrails */}
-      <Reveal delay={0.15}>
-        <Card className="mb-4">
-          <h2 className="mb-1 font-semibold">Autonomy guardrails</h2>
-          <p className="mb-4 text-sm text-muted">
+        {/* Guardrails */}
+        <Panel title="Autonomy guardrails">
+          <p className="mb-5 max-w-2xl text-[13.5px] text-[var(--muted)]">
             Safe-by-default limits that keep autonomous agents from running away,
             no human approval required.
           </p>
@@ -142,7 +152,7 @@ export default function SettingsPage() {
             <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" gap={0.05}>
               {GUARD_FIELDS.map((f) => (
                 <StaggerItem key={f.key} y={10}>
-                  <label className="mb-1 block text-xs text-muted">{f.label}</label>
+                  <label className="mb-1 block text-[11.5px] text-[var(--muted)]">{f.label}</label>
                   <Input
                     type="number"
                     value={guards[f.key]}
@@ -151,108 +161,127 @@ export default function SettingsPage() {
                       setGuards({ ...guards, [f.key]: Number(e.target.value) })
                     }
                   />
-                  <p className="mt-1 text-[11px] text-muted">{f.hint}</p>
+                  <p className="mt-1 text-[11px] text-[var(--muted)]">{f.hint}</p>
                 </StaggerItem>
               ))}
             </Stagger>
           )}
           {canAdmin && guards && (
-            <div className="mt-4 flex justify-end">
-              <Button
-                onClick={() => spaceId && setGuardConfig({ spaceId, guardConfig: guards })}
-              >
+            <div className="mt-5 flex justify-end">
+              <PillButton onClick={() => spaceId && setGuardConfig({ spaceId, guardConfig: guards })}>
                 Save guardrails
-              </Button>
+              </PillButton>
             </div>
           )}
-        </Card>
-      </Reveal>
+        </Panel>
 
-      {/* Members */}
-      <Reveal delay={0.2}>
-        <Card>
-        <h2 className="mb-1 font-semibold">Members & roles</h2>
-        <p className="mb-4 text-sm text-muted">
-          Roles: viewer · operator · admin · owner. Per-Space isolation means
-          members only see this Space&apos;s data.
-        </p>
-        <ul className="mb-4 divide-y divide-border">
-          {(members ?? []).map((m) => (
-            <li key={m._id} className="flex items-center gap-3 py-2">
-              <span className="flex-1 truncate text-sm">{m.userId}</span>
-              {canAdmin ? (
-                <select
-                  value={m.role}
-                  onChange={(e) =>
-                    spaceId &&
-                    setRole({
-                      spaceId,
-                      memberId: m._id,
-                      role: e.target.value as never,
-                    })
-                  }
-                  className="rounded-md border border-border bg-surface-2 px-2 py-1 text-xs"
-                >
-                  <option value="viewer">viewer</option>
-                  <option value="operator">operator</option>
-                  <option value="admin">admin</option>
-                  <option value="owner">owner</option>
-                </select>
-              ) : (
-                <Badge>{m.role}</Badge>
-              )}
-              {canAdmin && (
-                <button
-                  onClick={() =>
-                    spaceId && removeMember({ spaceId, memberId: m._id })
-                  }
-                  className="text-xs text-muted hover:text-red-500"
-                >
-                  Remove
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-        {canAdmin && (
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <label className="mb-1 block text-xs text-muted">
-                Add member (Clerk user id)
-              </label>
-              <Input
-                value={newUserId}
-                onChange={(e) => setNewUserId(e.target.value)}
-                placeholder="user_xxx"
+        {/* Members */}
+        <Panel title="Members & roles">
+          <p className="mb-4 text-[13.5px] text-[var(--muted)]">
+            Roles: viewer · operator · admin · owner. Per-Space isolation means
+            members only see this Space&apos;s data.
+          </p>
+          <div>
+            {(members ?? []).map((m) => (
+              <ListRowMember
+                key={m._id}
+                userId={m.userId}
+                role={m.role}
+                canAdmin={canAdmin}
+                onRoleChange={(role) =>
+                  spaceId && setRole({ spaceId, memberId: m._id, role: role as never })
+                }
+                onRemove={() => spaceId && removeMember({ spaceId, memberId: m._id })}
               />
-            </div>
-            <select
-              value={newRole}
-              onChange={(e) => setNewRole(e.target.value as never)}
-              className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
-            >
-              <option value="viewer">viewer</option>
-              <option value="operator">operator</option>
-              <option value="admin">admin</option>
-              <option value="owner">owner</option>
-            </select>
-            <Button
-              onClick={async () => {
-                if (!spaceId || !newUserId.trim()) return;
-                await addMember({ spaceId, userId: newUserId.trim(), role: newRole });
-                setNewUserId("");
-              }}
-            >
-              Add
-            </Button>
+            ))}
           </div>
-        )}
-        </Card>
-      </Reveal>
+          {canAdmin && (
+            <div className="mt-4 flex flex-wrap items-end gap-2">
+              <div className="min-w-[220px] flex-1">
+                <label className="mb-1 block text-[11.5px] text-[var(--muted)]">
+                  Add member (Clerk user id)
+                </label>
+                <Input
+                  value={newUserId}
+                  onChange={(e) => setNewUserId(e.target.value)}
+                  placeholder="user_xxx"
+                />
+              </div>
+              <select
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value as never)}
+                className="rounded-full border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[13.5px] text-[var(--foreground)]"
+              >
+                <option value="viewer">viewer</option>
+                <option value="operator">operator</option>
+                <option value="admin">admin</option>
+                <option value="owner">owner</option>
+              </select>
+              <PillButton
+                className={cnDisabled(!canAddMember)}
+                onClick={async () => {
+                  if (!canAddMember || !spaceId) return;
+                  await addMember({ spaceId, userId: newUserId.trim(), role: newRole });
+                  setNewUserId("");
+                }}
+              >
+                Add
+              </PillButton>
+            </div>
+          )}
+        </Panel>
 
-      <Reveal delay={0.25} className="mt-6">
         <ScheduleCard />
-      </Reveal>
+      </div>
+    </div>
+  );
+}
+
+/** Small helper: a consistent visual-disabled treatment for PillButton, which
+ *  has no native `disabled` prop. Pair with an onClick guard so the handler
+ *  itself is a no-op while the condition holds. */
+function cnDisabled(disabled: boolean): string | undefined {
+  return disabled ? "pointer-events-none opacity-45" : undefined;
+}
+
+function ListRowMember({
+  userId,
+  role,
+  canAdmin,
+  onRoleChange,
+  onRemove,
+}: {
+  userId: string;
+  role: string;
+  canAdmin: boolean;
+  onRoleChange: (role: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3.5 border-b border-[var(--border)] px-1 py-3.5 last:border-0">
+      <p className="min-w-0 flex-1 truncate text-[14.5px] text-[var(--foreground)]">{userId}</p>
+      {canAdmin ? (
+        <select
+          value={role}
+          onChange={(e) => onRoleChange(e.target.value)}
+          className="rounded-full border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-[12.5px] text-[var(--foreground)]"
+        >
+          <option value="viewer">viewer</option>
+          <option value="operator">operator</option>
+          <option value="admin">admin</option>
+          <option value="owner">owner</option>
+        </select>
+      ) : (
+        <Badge>{role}</Badge>
+      )}
+      {canAdmin && (
+        <button
+          onClick={onRemove}
+          className="text-[12.5px] text-[var(--muted)] hover:text-red-500"
+        >
+          Remove
+        </button>
+      )}
     </div>
   );
 }

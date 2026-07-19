@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { useQuery } from "convex/react";
 import { Download, Search, ShieldAlert } from "@/components/icons";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Card, EmptyState, Input } from "@/components/ui";
+import { Badge, EmptyState, Input, SkeletonRows } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
-import { Reveal } from "@/components/site/motion";
+import { PageHead, PillButton, Panel, ListRow } from "@/components/dash/kit";
 
 const CATEGORIES = [
   "all",
@@ -31,7 +31,7 @@ const tone: Record<string, "default" | "green" | "yellow" | "red" | "blue"> = {
 };
 
 export default function AuditPage() {
-  const { spaceId } = useActiveSpace();
+  const { spaceId, active } = useActiveSpace();
   const isAdmin = useCan("admin");
   const [category, setCategory] = useState("all");
   const [search, setSearch] = useState("");
@@ -70,96 +70,86 @@ export default function AuditPage() {
   );
 
   return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Audit log</h1>
-          <p className="text-sm text-muted">
-            Immutable record of every action, for compliance. Admin only.
-          </p>
-        </div>
-        {isAdmin && (
-          <Button
-            variant="outline"
-            onClick={() => setExporting(true)}
-            disabled={exporting}
-          >
-            <Download className="h-4 w-4" />
-            {exporting ? "Exporting…" : "Export JSON"}
-          </Button>
-        )}
-      </Reveal>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow={`${active?.name ?? "Workspace"} · audit`}
+          title="Audit log"
+          sub="Immutable record of every action, for compliance. Admin only."
+          actions={
+            isAdmin && (
+              <PillButton variant="outline" onClick={() => setExporting(true)} className={exporting ? "pointer-events-none opacity-60" : undefined}>
+                <Download className="h-4 w-4" />
+                {exporting ? "Exporting…" : "Export JSON"}
+              </PillButton>
+            )
+          }
+        />
 
-      {!isAdmin ? (
-        <Reveal delay={0.06}>
-          <Card>
-            <div className="flex items-center gap-3 text-sm text-muted">
+        {!isAdmin ? (
+          <Panel>
+            <div className="flex items-center gap-3 text-[13.5px] text-[var(--muted)]">
               <ShieldAlert className="h-4 w-4 text-amber-600" />
               Admins only, you don&apos;t have access to the audit log.
             </div>
-          </Card>
-        </Reveal>
-      ) : (
-        <>
-          <Reveal delay={0.06} className="mb-4 flex flex-wrap gap-2">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c}
-                onClick={() => setCategory(c)}
-                className={`rounded-full px-3 py-1 text-xs transition-colors ${
-                  category === c
-                    ? "bg-accent text-white"
-                    : "border border-border text-muted hover:text-foreground"
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </Reveal>
+          </Panel>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {CATEGORIES.map((c) => (
+                <PillButton
+                  key={c}
+                  variant={category === c ? "solid" : "outline"}
+                  onClick={() => setCategory(c)}
+                >
+                  {c}
+                </PillButton>
+              ))}
+            </div>
 
-          <Reveal delay={0.1} className="mb-4 flex items-center gap-2">
-            <Search className="h-4 w-4 text-muted" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search summaries…"
-            />
-          </Reveal>
+            <div className="relative max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search summaries…"
+                className="pl-9"
+              />
+            </div>
 
-          <Reveal delay={0.14}>
-            <Card>
-              {events === undefined ? (
-                <p className="text-sm text-muted">Loading…</p>
-              ) : filtered.length === 0 ? (
+            {events === undefined ? (
+              <Panel>
+                <SkeletonRows rows={6} />
+              </Panel>
+            ) : filtered.length === 0 ? (
+              <Panel>
                 <EmptyState
                   title="No matching events"
                   body="Every agent, task, and governance action is appended here permanently."
                 />
-              ) : (
-                <ul className="divide-y divide-border">
+              </Panel>
+            ) : (
+              <Panel>
+                <div>
                   {filtered.map((e) => (
-                    <li key={e._id} className="flex items-start gap-3 py-3">
-                      <Badge tone={tone[e.category] ?? "default"}>
-                        {e.category}
-                      </Badge>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm">{e.summary}</p>
-                        <p className="text-xs text-muted">
-                          {e.actorType}
-                          {e.action ? ` · ${e.action}` : ""}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-xs text-muted">
-                        {timeAgo(e.createdAt)}
-                      </span>
-                    </li>
+                    <ListRow
+                      key={e._id}
+                      title={
+                        <span className="flex flex-wrap items-center gap-2">
+                          <Badge tone={tone[e.category] ?? "default"}>{e.category}</Badge>
+                          <span>{e.summary}</span>
+                        </span>
+                      }
+                      meta={`${e.actorType}${e.action ? ` · ${e.action}` : ""}`}
+                      trailing={timeAgo(e.createdAt)}
+                    />
                   ))}
-                </ul>
-              )}
-            </Card>
-          </Reveal>
-        </>
-      )}
+                </div>
+              </Panel>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

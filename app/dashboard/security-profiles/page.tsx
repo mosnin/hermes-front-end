@@ -4,10 +4,14 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, EmptyState, Input, Modal, Textarea, Toggle } from "@/components/ui";
+import { Badge, EmptyState, Input, Modal, Textarea, Toggle } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Lock, Plus, ShieldAlert, ShieldCheck, Trash2, Users, X } from "@/components/icons";
-import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import { Lock, ShieldAlert, ShieldCheck, Trash2, Users, X } from "@/components/icons";
+import {
+  PageHead,
+  PillButton,
+  Panel,
+} from "@/components/dash/kit";
 
 type Profile = {
   _id: Id<"securityProfiles">;
@@ -35,6 +39,9 @@ function parseCsv(s: string): string[] | undefined {
     .map((x) => x.trim())
     .filter(Boolean);
   return list.length ? list : undefined;
+}
+function cnDisabled(disabled: boolean): string | undefined {
+  return disabled ? "pointer-events-none opacity-45" : undefined;
 }
 
 export default function SecurityProfilesPage() {
@@ -125,102 +132,95 @@ export default function SecurityProfilesPage() {
     }
   }
 
-  return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Security profiles</h1>
-          <p className="text-sm text-muted">
-            Named policies attachable to agents: egress allowlist, filesystem quota, secret
-            scopes, and tool allowlist. Tool allowlist is enforced server-side; the rest is
-            forwarded to the fleet worker as container policy for hosted agents.
-          </p>
-        </div>
-        {canManage && (
-          <Button onClick={openNew}>
-            <Plus className="h-4 w-4" /> New profile
-          </Button>
-        )}
-      </Reveal>
+  const submitDisabled = busy || !name.trim();
 
-      {profiles === undefined ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : profiles.length === 0 ? (
-        <Reveal delay={0.05}>
+  return (
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="security"
+          title="Security profiles"
+          sub="Named policies attachable to agents: egress allowlist, filesystem quota, secret scopes, and tool allowlist. Tool allowlist is enforced server-side; the rest is forwarded to the fleet worker as container policy for hosted agents."
+          actions={
+            canManage ? <PillButton onClick={openNew}>New profile</PillButton> : undefined
+          }
+        />
+
+        {profiles === undefined ? (
+          <p className="text-[13.5px] text-[var(--muted)]">Loading…</p>
+        ) : profiles.length === 0 ? (
           <EmptyState
             title="No security profiles yet"
             body="Create a profile to restrict which tools, hosts, and secrets an agent can reach."
-            action={
-              canManage ? (
-                <Button onClick={openNew}>
-                  <Plus className="h-4 w-4" /> New profile
-                </Button>
-              ) : undefined
-            }
-            graphic={<ShieldCheck className="h-full w-full text-muted" />}
+            action={canManage ? <PillButton onClick={openNew}>New profile</PillButton> : undefined}
+            graphic={<ShieldCheck className="h-full w-full text-[var(--muted)]" />}
           />
-        </Reveal>
-      ) : (
-        <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {profiles.map((p) => (
-            <StaggerItem key={p._id}>
-              <Card>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-muted" />
-                    <p className="font-medium">{p.name}</p>
-                  </div>
-                  {p.isDefault && <Badge tone="green">Default</Badge>}
-                </div>
-                {p.description && <p className="mt-1 text-sm text-muted">{p.description}</p>}
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {profiles.map((p) => (
+              <Panel
+                key={p._id}
+                title={
+                  <span className="flex items-center gap-2">
+                    <Lock className="h-4 w-4 text-[var(--muted)]" />
+                    {p.name}
+                  </span>
+                }
+                action={p.isDefault ? <Badge tone="green">Default</Badge> : undefined}
+              >
+                {p.description && (
+                  <p className="text-[13.5px] text-[var(--muted)]">{p.description}</p>
+                )}
 
-                <div className="mt-3 space-y-1.5 text-xs text-muted">
+                <div className="mt-4 space-y-1.5 text-[12.5px] text-[var(--muted)]">
                   <div className="flex items-center justify-between">
                     <span>Tool allowlist</span>
-                    <span className="text-foreground">
+                    <span className="text-[var(--foreground)]">
                       {p.toolAllowlist?.length ? `${p.toolAllowlist.length} tools` : "unrestricted"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Egress allowlist</span>
-                    <span className="text-foreground">
+                    <span className="text-[var(--foreground)]">
                       {p.egressAllowlist?.length ? `${p.egressAllowlist.length} hosts` : "unrestricted"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>FS quota</span>
-                    <span className="text-foreground">{p.fsQuotaMb ? `${p.fsQuotaMb} MB` : "unset"}</span>
+                    <span className="text-[var(--foreground)]">
+                      {p.fsQuotaMb ? `${p.fsQuotaMb} MB` : "unset"}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Secret scopes</span>
-                    <span className="text-foreground">{p.secretScopes?.length ?? 0}</span>
+                    <span className="text-[var(--foreground)]">{p.secretScopes?.length ?? 0}</span>
                   </div>
                 </div>
 
                 {canManage && (
-                  <div className="mt-4 flex justify-end gap-2">
-                    <Button variant="outline" onClick={() => setAssigning(p)}>
-                      <Users className="h-4 w-4" /> Agents
-                    </Button>
-                    <Button variant="outline" onClick={() => openEdit(p)}>
+                  <div className="mt-5 flex flex-wrap justify-end gap-2">
+                    <PillButton variant="outline" onClick={() => setAssigning(p)}>
+                      <Users className="h-3.5 w-3.5" /> Agents
+                    </PillButton>
+                    <PillButton variant="outline" onClick={() => openEdit(p)}>
                       Edit
-                    </Button>
+                    </PillButton>
                     {canDelete && (
-                      <button
+                      <PillButton
+                        variant="outline"
+                        className="text-red-600 hover:border-red-300"
                         onClick={() => onDelete(p)}
-                        className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-red-500"
-                        title="Delete"
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </PillButton>
                     )}
                   </div>
                 )}
-              </Card>
-            </StaggerItem>
-          ))}
-        </Stagger>
-      )}
+              </Panel>
+            ))}
+          </div>
+        )}
+      </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit profile" : "New security profile"}>
         <div className="space-y-3">
@@ -232,16 +232,20 @@ export default function SecurityProfilesPage() {
             rows={2}
           />
           <div>
-            <label className="mb-1 block text-xs text-muted">Tool allowlist (comma separated; empty = unrestricted)</label>
+            <label className="mb-1 block text-[11.5px] text-[var(--muted)]">
+              Tool allowlist (comma separated; empty = unrestricted)
+            </label>
             <Input value={toolAllowlist} onChange={(e) => setToolAllowlist(e.target.value)} placeholder="email, crm, web-search" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted">Egress allowlist: hostnames/CIDRs (comma separated)</label>
+            <label className="mb-1 block text-[11.5px] text-[var(--muted)]">
+              Egress allowlist: hostnames/CIDRs (comma separated)
+            </label>
             <Input value={egress} onChange={(e) => setEgress(e.target.value)} placeholder="api.stripe.com, 10.0.0.0/8" />
           </div>
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="mb-1 block text-xs text-muted">FS quota (MB)</label>
+              <label className="mb-1 block text-[11.5px] text-[var(--muted)]">FS quota (MB)</label>
               <Input
                 type="number"
                 value={fsQuota}
@@ -251,12 +255,14 @@ export default function SecurityProfilesPage() {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted">Secret scopes (comma-separated secret names)</label>
+            <label className="mb-1 block text-[11.5px] text-[var(--muted)]">
+              Secret scopes (comma-separated secret names)
+            </label>
             <Input value={secretScopes} onChange={(e) => setSecretScopes(e.target.value)} placeholder="stripe_key, sendgrid_key" />
           </div>
           <Toggle checked={isDefault} onChange={setIsDefault} label="Default profile for new agents" />
 
-          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-800">
             <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               Egress/FS/secret-scope fields are forwarded to the fleet worker as container policy
@@ -264,14 +270,20 @@ export default function SecurityProfilesPage() {
             </span>
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-[13px] text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <PillButton variant="outline" onClick={() => setOpen(false)}>
               Cancel
-            </Button>
-            <Button onClick={submit} disabled={busy || !name.trim()}>
+            </PillButton>
+            <PillButton
+              className={cnDisabled(submitDisabled)}
+              onClick={() => {
+                if (submitDisabled) return;
+                submit();
+              }}
+            >
               {busy ? "Saving…" : editing ? "Save changes" : "Create profile"}
-            </Button>
+            </PillButton>
           </div>
         </div>
       </Modal>
@@ -348,7 +360,7 @@ function AssignmentsModal({
             <select
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
-              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
+              className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[13.5px] text-[var(--foreground)] outline-none focus:border-[var(--foreground)]"
             >
               <option value="">
                 {allAgents === undefined
@@ -363,24 +375,30 @@ function AssignmentsModal({
                 </option>
               ))}
             </select>
-            <Button onClick={addAgent} disabled={!selected || busyId === selected}>
+            <PillButton
+              className={cnDisabled(!selected || busyId === selected)}
+              onClick={() => {
+                if (!selected || busyId === selected) return;
+                addAgent();
+              }}
+            >
               Attach
-            </Button>
+            </PillButton>
           </div>
         )}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-[13px] text-red-600">{error}</p>}
 
         {assignedAgents === undefined ? (
-          <p className="text-sm text-muted">Loading…</p>
+          <p className="text-[13.5px] text-[var(--muted)]">Loading…</p>
         ) : assignedAgents.length === 0 ? (
-          <p className="text-sm text-muted">No agents are attached to this profile yet.</p>
+          <p className="text-[13.5px] text-[var(--muted)]">No agents are attached to this profile yet.</p>
         ) : (
           <ul className="space-y-1.5">
             {assignedAgents.map((a) => (
               <li
                 key={a._id}
-                className="flex items-center justify-between rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
+                className="flex items-center justify-between rounded-xl bg-[var(--surface)] px-3 py-2 text-[13.5px]"
               >
                 <div className="flex items-center gap-2">
                   <span>{a.name}</span>
@@ -390,7 +408,7 @@ function AssignmentsModal({
                   <button
                     onClick={() => removeAgent(a._id)}
                     disabled={busyId === a._id}
-                    className="rounded-lg p-1.5 text-muted hover:bg-surface-3 hover:text-red-500"
+                    className="rounded-full p-1.5 text-[var(--muted)] hover:bg-[var(--background)] hover:text-red-500"
                     title="Detach"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -402,9 +420,9 @@ function AssignmentsModal({
         )}
 
         <div className="flex justify-end">
-          <Button variant="ghost" onClick={onClose}>
+          <PillButton variant="outline" onClick={onClose}>
             Close
-          </Button>
+          </PillButton>
         </div>
       </div>
     </Modal>

@@ -4,20 +4,13 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  Input,
-  Modal,
-  Textarea,
-} from "@/components/ui";
+import { Badge, Button, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { Megaphone, Pause, Play, Plus, Trash2 } from "@/components/icons";
-import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import { Megaphone, Pause, Play, Trash2 } from "@/components/icons";
+import { Stagger, StaggerItem } from "@/components/site/motion";
+import { PageHead, PillButton, Panel, StatTile, StatRow } from "@/components/dash/kit";
 
 const statusTone = {
   active: "green",
@@ -26,7 +19,7 @@ const statusTone = {
 } as const;
 
 export default function CampaignsPage() {
-  const { spaceId } = useActiveSpace();
+  const { spaceId, active } = useActiveSpace();
   const canOperate = useCan("operator");
   const toast = useToast();
 
@@ -94,118 +87,127 @@ export default function CampaignsPage() {
     }
   }
 
-  return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Campaigns</h1>
-          <p className="max-w-2xl text-sm text-muted">
-            Ongoing jobs your agents pursue continuously, e.g. outreach: find
-            contacts, send, follow up, book demos. Not one-off tasks.
-          </p>
-        </div>
-        {canOperate && (
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> New campaign
-          </Button>
-        )}
-      </Reveal>
+  const list = campaigns ?? [];
+  const activeCount = list.filter((c) => c.status === "active").length;
+  const pausedCount = list.filter((c) => c.status === "paused").length;
+  const completedCount = list.filter((c) => c.status === "completed").length;
 
-      {campaigns && campaigns.length === 0 ? (
-        <EmptyState
-          title="No campaigns yet"
-          body="Launch a standing objective, like ongoing outreach, and assign an agent to pursue it on a cadence."
-          action={
-            canOperate ? (
-              <Button onClick={() => setOpen(true)}>Create a campaign</Button>
-            ) : undefined
+  return (
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow={`${active?.name ?? "Workspace"} · campaigns`}
+          title="Campaigns"
+          sub="Ongoing jobs your agents pursue continuously, e.g. outreach: find contacts, send, follow up, book demos. Not one-off tasks."
+          actions={
+            canOperate && (
+              <PillButton onClick={() => setOpen(true)}>New campaign</PillButton>
+            )
           }
         />
-      ) : (
-        <Stagger className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" gap={0.06}>
-          {(campaigns ?? []).map((c) => {
-            const m = c.metrics ?? {};
-            return (
-              <StaggerItem key={c._id}>
-              <Card>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Megaphone className="h-4 w-4 text-accent" />
-                    <span className="font-medium">{c.name}</span>
-                  </div>
-                  <Badge tone={statusTone[c.status]}>{c.status}</Badge>
-                </div>
 
-                <p className="mt-2 line-clamp-3 text-sm text-muted">
-                  {c.objective}
-                </p>
+        <StatRow>
+          <StatTile value={list.length} label="Campaigns" hint="total" tone="ink" />
+          <StatTile value={activeCount} label="Active" hint="running now" />
+          <StatTile value={pausedCount} label="Paused" hint="on hold" />
+          <StatTile value={completedCount} label="Completed" hint="wrapped up" />
+        </StatRow>
 
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                  <span>
-                    Agent:{" "}
-                    <span className="text-accent-2">
-                      {c.agentId ? (agentName(c.agentId) ?? "agent") : "unassigned"}
-                    </span>
-                  </span>
-                  {c.cadence && <span>Cadence: {c.cadence}</span>}
-                  {c.status === "active" && c.nextRunAt && (
-                    <span>Next run: {timeAgo(c.nextRunAt)}</span>
-                  )}
-                </div>
+        {campaigns && campaigns.length === 0 ? (
+          <Panel>
+            <EmptyState
+              title="No campaigns yet"
+              body="Launch a standing objective, like ongoing outreach, and assign an agent to pursue it on a cadence."
+              action={
+                canOperate ? (
+                  <Button onClick={() => setOpen(true)}>Create a campaign</Button>
+                ) : undefined
+              }
+            />
+          </Panel>
+        ) : (
+          <Stagger className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" gap={0.06}>
+            {list.map((c) => {
+              const m = c.metrics ?? {};
+              return (
+                <StaggerItem key={c._id}>
+                  <Panel
+                    title={
+                      <span className="flex items-center gap-2">
+                        <Megaphone className="h-4 w-4 text-[var(--muted-strong)]" />
+                        {c.name}
+                      </span>
+                    }
+                    action={<Badge tone={statusTone[c.status]}>{c.status}</Badge>}
+                  >
+                    <p className="line-clamp-3 text-[13.5px] text-[var(--muted)]">
+                      {c.objective}
+                    </p>
 
-                <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-border bg-surface-2 p-2 text-center">
-                  <div>
-                    <div className="text-base font-semibold">{m.contacted ?? 0}</div>
-                    <div className="text-[10px] uppercase tracking-wide text-muted">
-                      Contacted
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-[var(--muted)]">
+                      <span>
+                        Agent:{" "}
+                        <span className="text-[var(--muted-strong)]">
+                          {c.agentId ? (agentName(c.agentId) ?? "agent") : "unassigned"}
+                        </span>
+                      </span>
+                      {c.cadence && <span>Cadence: {c.cadence}</span>}
+                      {c.status === "active" && c.nextRunAt && (
+                        <span>Next run: {timeAgo(c.nextRunAt)}</span>
+                      )}
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-base font-semibold">{m.replied ?? 0}</div>
-                    <div className="text-[10px] uppercase tracking-wide text-muted">
-                      Replied
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-base font-semibold">{m.booked ?? 0}</div>
-                    <div className="text-[10px] uppercase tracking-wide text-muted">
-                      Booked
-                    </div>
-                  </div>
-                </div>
 
-                {canOperate && (
-                  <div className="mt-3 flex items-center gap-2">
-                    {c.status !== "completed" && (
-                      <Button
-                        variant="outline"
-                        onClick={() => toggle(c._id, c.status)}
-                      >
-                        {c.status === "active" ? (
-                          <>
-                            <Pause className="h-4 w-4" /> Pause
-                          </>
-                        ) : (
-                          <>
-                            <Play className="h-4 w-4" /> Resume
-                          </>
+                    <div className="mt-4 grid grid-cols-3 gap-2 rounded-[14px] bg-[var(--surface)] p-3 text-center">
+                      <div>
+                        <div className="text-[17px] font-medium text-[var(--foreground)]">{m.contacted ?? 0}</div>
+                        <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                          Contacted
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[17px] font-medium text-[var(--foreground)]">{m.replied ?? 0}</div>
+                        <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                          Replied
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[17px] font-medium text-[var(--foreground)]">{m.booked ?? 0}</div>
+                        <div className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                          Booked
+                        </div>
+                      </div>
+                    </div>
+
+                    {canOperate && (
+                      <div className="mt-4 flex items-center gap-2">
+                        {c.status !== "completed" && (
+                          <PillButton variant="outline" onClick={() => toggle(c._id, c.status)}>
+                            {c.status === "active" ? (
+                              <>
+                                <Pause className="h-3.5 w-3.5" /> Pause
+                              </>
+                            ) : (
+                              <>
+                                <Play className="h-3.5 w-3.5" /> Resume
+                              </>
+                            )}
+                          </PillButton>
                         )}
-                      </Button>
+                        <button
+                          onClick={() => del(c._id, c.name)}
+                          className="ml-auto inline-flex items-center gap-1 text-[12.5px] text-[var(--muted)] transition-colors hover:text-red-500"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Remove
+                        </button>
+                      </div>
                     )}
-                    <button
-                      onClick={() => del(c._id, c.name)}
-                      className="ml-auto inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-red-500"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> Remove
-                    </button>
-                  </div>
-                )}
-              </Card>
-              </StaggerItem>
-            );
-          })}
-        </Stagger>
-      )}
+                  </Panel>
+                </StaggerItem>
+              );
+            })}
+          </Stagger>
+        )}
+      </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title="New campaign">
         <div className="space-y-4">

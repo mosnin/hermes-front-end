@@ -4,12 +4,18 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
+import { Badge, Button, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { AutoPlanDialog } from "@/components/auto-plan-dialog";
-import { Plus, Sparkles, Target } from "@/components/icons";
-import { EASE, Reveal, Stagger, StaggerItem, CountUp } from "@/components/site/motion";
+import { Target } from "@/components/icons";
+import { EASE, CountUp } from "@/components/site/motion";
 import { motion, useReducedMotion } from "motion/react";
+import {
+  PageHead,
+  PillButton,
+  Panel,
+  SectionLabel,
+} from "@/components/dash/kit";
 
 const goalTone = { active: "green", at_risk: "yellow", done: "blue", archived: "default" } as const;
 
@@ -17,9 +23,9 @@ function Bar({ progress }: { progress: number }) {
   const reduce = useReducedMotion();
   const pct = Math.round(progress * 100);
   return (
-    <div className="mt-2 h-2 w-full rounded-full bg-surface-2">
+    <div className="mt-2 h-1.5 w-full rounded-full bg-[var(--surface)]">
       <motion.div
-        className="h-2 rounded-full bg-accent-2"
+        className="h-1.5 rounded-full bg-[var(--foreground)]"
         initial={{ width: reduce ? `${pct}%` : 0 }}
         animate={{ width: `${pct}%` }}
         transition={{ duration: reduce ? 0 : 0.8, ease: EASE }}
@@ -29,7 +35,7 @@ function Bar({ progress }: { progress: number }) {
 }
 
 export default function GoalsPage() {
-  const { spaceId } = useActiveSpace();
+  const { spaceId, active } = useActiveSpace();
   const board = useQuery(api.goals.board, spaceId ? { spaceId } : "skip");
   const createGoal = useMutation(api.goals.createGoal);
   const updateGoal = useMutation(api.goals.updateGoal);
@@ -45,94 +51,109 @@ export default function GoalsPage() {
 
   const [planOpen, setPlanOpen] = useState(false);
 
-  return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Goals & projects</h1>
-          <p className="text-sm text-muted">
-            Outcomes the Space is driving toward, with progress rolled up from
-            tasks.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setPlanOpen(true)}>
-            <Sparkles className="h-4 w-4" /> Auto-plan with AI
-          </Button>
-          <Button variant="outline" onClick={() => setPOpen(true)}>
-            <Plus className="h-4 w-4" /> New project
-          </Button>
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> New goal
-          </Button>
-        </div>
-      </Reveal>
+  const goals = board?.goals ?? [];
+  const projects = board?.projects ?? [];
+  const isEmpty = board && goals.length === 0 && projects.length === 0;
 
-      {board && board.goals.length === 0 && board.projects.length === 0 ? (
-        <EmptyState
-          title="No goals yet"
-          body="Set a goal, break it into projects and tasks, and watch progress roll up automatically."
-          action={<Button onClick={() => setOpen(true)}>Create a goal</Button>}
+  return (
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow={`${active?.name ?? "Workspace"} · goals`}
+          title="Goals & projects"
+          sub="Outcomes the Space is driving toward, with progress rolled up from tasks."
+          actions={
+            <>
+              <PillButton variant="outline" onClick={() => setPlanOpen(true)}>
+                Auto-plan with AI
+              </PillButton>
+              <PillButton variant="outline" onClick={() => setPOpen(true)}>
+                New project
+              </PillButton>
+              <PillButton onClick={() => setOpen(true)}>New goal</PillButton>
+            </>
+          }
         />
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Reveal as="div" x={-16} className="space-y-3">
-            <h2 className="text-sm font-medium text-muted">Goals</h2>
-            <Stagger className="space-y-3" gap={0.06}>
-              {(board?.goals ?? []).map((g) => (
-                <StaggerItem key={g._id}>
-                  <Card>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Target className="h-4 w-4 text-accent" />
-                        <span className="font-medium">{g.title}</span>
+
+        {isEmpty ? (
+          <Panel>
+            <EmptyState
+              title="No goals yet"
+              body="Set a goal, break it into projects and tasks, and watch progress roll up automatically."
+              action={<Button onClick={() => setOpen(true)}>Create a goal</Button>}
+            />
+          </Panel>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <SectionLabel>goals</SectionLabel>
+              <Panel>
+                {goals.length === 0 ? (
+                  <p className="py-6 text-center text-[13.5px] text-[var(--muted)]">No goals yet.</p>
+                ) : (
+                  <div>
+                    {goals.map((g) => (
+                      <div key={g._id} className="border-b border-[var(--border)] py-4 first:pt-0 last:border-0 last:pb-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Target className="h-4 w-4 text-[var(--muted-strong)]" />
+                            <span className="text-[14.5px] font-medium text-[var(--foreground)]">{g.title}</span>
+                          </div>
+                          <select
+                            value={g.status}
+                            onChange={(e) =>
+                              spaceId &&
+                              updateGoal({ spaceId, goalId: g._id, status: e.target.value as never })
+                            }
+                            className="rounded-full border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-[12px] text-[var(--muted-strong)]"
+                          >
+                            <option value="active">active</option>
+                            <option value="at_risk">at risk</option>
+                            <option value="done">done</option>
+                            <option value="archived">archived</option>
+                          </select>
+                        </div>
+                        {g.description && (
+                          <p className="mt-1 text-[13px] text-[var(--muted)]">{g.description}</p>
+                        )}
+                        <Bar progress={g.progress} />
+                        <p className="mt-1.5 text-[12px] text-[var(--muted)]">
+                          {g.done}/{g.total} tasks ·{" "}
+                          <CountUp value={Math.round(g.progress * 100)} suffix="%" duration={0.8} pop={false} />
+                        </p>
                       </div>
-                      <select
-                        value={g.status}
-                        onChange={(e) =>
-                          spaceId &&
-                          updateGoal({ spaceId, goalId: g._id, status: e.target.value as never })
-                        }
-                        className="rounded-md border border-border bg-surface-2 px-2 py-1 text-xs"
-                      >
-                        <option value="active">active</option>
-                        <option value="at_risk">at risk</option>
-                        <option value="done">done</option>
-                        <option value="archived">archived</option>
-                      </select>
-                    </div>
-                    {g.description && <p className="mt-1 text-sm text-muted">{g.description}</p>}
-                    <Bar progress={g.progress} />
-                    <p className="mt-1 text-xs text-muted">
-                      {g.done}/{g.total} tasks ·{" "}
-                      <CountUp value={Math.round(g.progress * 100)} suffix="%" duration={0.8} pop={false} />
-                    </p>
-                  </Card>
-                </StaggerItem>
-              ))}
-            </Stagger>
-          </Reveal>
-          <Reveal as="div" x={16} className="space-y-3">
-            <h2 className="text-sm font-medium text-muted">Projects</h2>
-            <Stagger className="space-y-3" gap={0.06}>
-              {(board?.projects ?? []).map((p) => (
-                <StaggerItem key={p._id}>
-                  <Card>
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">{p.name}</span>
-                      <Badge tone={p.status === "done" ? "blue" : "green"}>{p.status}</Badge>
-                    </div>
-                    <Bar progress={p.progress} />
-                    <p className="mt-1 text-xs text-muted">
-                      {p.done}/{p.total} tasks
-                    </p>
-                  </Card>
-                </StaggerItem>
-              ))}
-            </Stagger>
-          </Reveal>
-        </div>
-      )}
+                    ))}
+                  </div>
+                )}
+              </Panel>
+            </div>
+
+            <div>
+              <SectionLabel>projects</SectionLabel>
+              <Panel tone="band">
+                {projects.length === 0 ? (
+                  <p className="py-6 text-center text-[13.5px] text-[var(--muted)]">No projects yet.</p>
+                ) : (
+                  <div>
+                    {projects.map((p) => (
+                      <div key={p._id} className="border-b border-[var(--border)] py-4 first:pt-0 last:border-0 last:pb-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[14.5px] font-medium text-[var(--foreground)]">{p.name}</span>
+                          <Badge tone={p.status === "done" ? "blue" : "green"}>{p.status}</Badge>
+                        </div>
+                        <Bar progress={p.progress} />
+                        <p className="mt-1.5 text-[12px] text-[var(--muted)]">
+                          {p.done}/{p.total} tasks
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+            </div>
+          </div>
+        )}
+      </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title="New goal">
         <div className="space-y-4">
@@ -167,7 +188,7 @@ export default function GoalsPage() {
               className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
             >
               <option value="">No goal</option>
-              {(board?.goals ?? []).map((g) => (
+              {goals.map((g) => (
                 <option key={g._id} value={g._id}>{g.title}</option>
               ))}
             </select>

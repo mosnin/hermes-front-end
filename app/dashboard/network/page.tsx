@@ -2,32 +2,22 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { motion, useReducedMotion, type Variants } from "motion/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot, Toggle } from "@/components/ui";
+import { Badge, EmptyState, Input, Modal, Toggle } from "@/components/ui";
 import { MeshGraphic } from "@/components/marketing/graphics";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
 import { ArrowRight, Globe, Plus, Send, Target, Trash2, Wrench } from "@/components/icons";
-import { EASE, Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import { PageHead, PillButton, Panel, ListRow, Dot, SectionLabel } from "@/components/dash/kit";
 
-// `Stagger`/`StaggerItem` (Lane A, components/site/motion.tsx) only support
-// block-level tags (div/span/h1-4/p/li), not `ul`/`ol` containers. For the
-// two `<ul>` list containers on this page we cascade children with raw
-// `motion/react` using the same easing/variant shape instead.
-function listContainerVariants(reduce: boolean | null): Variants {
-  return {
-    hidden: {},
-    show: { transition: { staggerChildren: reduce ? 0 : 0.05 } },
-  };
-}
-function listItemVariants(reduce: boolean | null): Variants {
-  return {
-    hidden: { opacity: 0, y: reduce ? 0 : 10 },
-    show: { opacity: 1, y: 0, transition: { duration: reduce ? 0.2 : 0.5, ease: EASE } },
-  };
+/** Map an agent/card status string to a kit Dot tone. */
+function toneFor(status?: string): "online" | "paused" | "idle" | "error" {
+  if (status === "online") return "online";
+  if (status === "paused") return "paused";
+  if (status === "error" || status === "degraded") return "error";
+  return "idle";
 }
 
 export default function NetworkPage() {
@@ -62,157 +52,127 @@ export default function NetworkPage() {
   }
 
   const agents = directory ?? [];
-  const reduce = useReducedMotion();
-  const containerV = listContainerVariants(reduce);
-  const itemV = listItemVariants(reduce);
 
   return (
-    <div className="p-8">
-      <Reveal className="mb-6" y={12}>
-        <h1 className="text-2xl font-semibold">Agent network</h1>
-        <p className="text-sm text-muted">
-          Agents coordinate in real time through the A2A broker, guarded by
-          loop detection, budgets, and the Space kill switch.
-        </p>
-      </Reveal>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="network"
+          title="Agent network"
+          sub="Agents coordinate in real time through the A2A broker, guarded by loop detection, budgets, and the Space kill switch."
+        />
 
-      {agents.length < 2 ? (
-        <Reveal>
+        {agents.length < 2 ? (
           <EmptyState
             graphic={<MeshGraphic />}
             title="Connect at least two agents"
             body="A2A needs two or more agents to coordinate. Connect another agent (or load demo data), then route messages between them here."
           />
-        </Reveal>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
-          <div className="space-y-4">
-            <Reveal x={-16} y={0}>
-              <Card>
-                <h2 className="mb-3 font-semibold">Directory (Agent Cards)</h2>
-                <motion.ul
-                  className="space-y-2"
-                  initial="hidden"
-                  whileInView="show"
-                  viewport={{ once: true, margin: "-60px", amount: 0.2 }}
-                  variants={containerV}
-                >
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+            <div className="space-y-4">
+              <Panel title="Directory (Agent Cards)">
+                <div>
                   {agents.map((c) => (
-                    <motion.li key={c.id} variants={itemV}>
-                      <div className="rounded-lg border border-border px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <StatusDot status={c.status} />
-                          <span className="text-sm font-medium">{c.name}</span>
-                          <Badge>{c.kind}</Badge>
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {c.skills.map((s) => (
-                            <Badge key={s.id} tone="blue">
-                              {s.name}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    </motion.li>
+                    <ListRow
+                      key={c.id}
+                      leading={<Dot tone={toneFor(c.status)} />}
+                      title={
+                        <>
+                          <span className="font-medium">{c.name}</span>{" "}
+                          <span className="text-[12.5px] text-[var(--muted)]">{c.kind}</span>
+                        </>
+                      }
+                      meta={c.skills.map((s) => s.name).join(", ") || undefined}
+                    />
                   ))}
-                </motion.ul>
-              </Card>
-            </Reveal>
+                </div>
+              </Panel>
 
-            <Reveal x={-16} y={0} delay={0.06}>
-            <Card>
-              <h2 className="mb-3 font-semibold">Route a message</h2>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <select
-                    value={from}
-                    onChange={(e) => setFrom(e.target.value)}
-                    className="flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
-                  >
-                    <option value="">From…</option>
-                    {agents.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-muted" />
-                  <select
-                    value={to}
-                    onChange={(e) => setTo(e.target.value)}
-                    className="flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
-                  >
-                    <option value="">To…</option>
-                    {agents
-                      .filter((c) => c.id !== from)
-                      .map((c) => (
+              <Panel title="Route a message">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={from}
+                      onChange={(e) => setFrom(e.target.value)}
+                      className="flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
+                    >
+                      <option value="">From…</option>
+                      {agents.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}
                         </option>
                       ))}
-                  </select>
+                    </select>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted" />
+                    <select
+                      value={to}
+                      onChange={(e) => setTo(e.target.value)}
+                      className="flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm"
+                    >
+                      <option value="">To…</option>
+                      {agents
+                        .filter((c) => c.id !== from)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && submit()}
+                      placeholder="Message to relay between agents…"
+                    />
+                    <PillButton
+                      onClick={submit}
+                      className={busy || !from || !to || from === to || !content.trim() ? "pointer-events-none opacity-50" : undefined}
+                    >
+                      <Send className="h-4 w-4" />
+                    </PillButton>
+                  </div>
+                  {error && <p className="text-xs text-red-500">{error}</p>}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && submit()}
-                    placeholder="Message to relay between agents…"
-                  />
-                  <Button
-                    onClick={submit}
-                    disabled={busy || !from || !to || from === to || !content.trim()}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
+              </Panel>
+            </div>
+
+            <Panel title="Live inter-agent messages" tone="band">
+              {messages === undefined ? (
+                <p className="text-[13.5px] text-[var(--muted)]">Loading…</p>
+              ) : messages.length === 0 ? (
+                <p className="text-[13.5px] text-[var(--muted)]">
+                  No agent-to-agent messages yet. Route one, or run the A2A demo.
+                </p>
+              ) : (
+                <div>
+                  {messages.map((m) => (
+                    <ListRow
+                      key={m._id}
+                      title={
+                        <>
+                          <span className="font-medium">{m.fromName}</span>
+                          {" → "}
+                          <span className="font-medium">{m.toName}</span>{" "}
+                          <span className="text-[12.5px] text-[var(--muted)]">{m.kind}</span>
+                        </>
+                      }
+                      meta={m.content}
+                      trailing={timeAgo(m.createdAt)}
+                    />
+                  ))}
                 </div>
-                {error && <p className="text-xs text-red-500">{error}</p>}
-              </div>
-            </Card>
-            </Reveal>
+              )}
+            </Panel>
           </div>
+        )}
 
-          <Reveal x={16} y={0} delay={0.1}>
-          <Card>
-            <h2 className="mb-3 font-semibold">Live inter-agent messages</h2>
-            {messages === undefined ? (
-              <p className="text-sm text-muted">Loading…</p>
-            ) : messages.length === 0 ? (
-              <p className="text-sm text-muted">
-                No agent-to-agent messages yet. Route one, or run the A2A demo.
-              </p>
-            ) : (
-              <motion.ul
-                className="divide-y divide-border"
-                initial="hidden"
-                whileInView="show"
-                viewport={{ once: true, margin: "-60px", amount: 0.2 }}
-                variants={containerV}
-              >
-                {messages.map((m) => (
-                  <motion.li key={m._id} variants={itemV} className="py-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">{m.fromName}</span>
-                      <ArrowRight className="h-3 w-3 text-muted" />
-                      <span className="font-medium">{m.toName}</span>
-                      <Badge tone="green">{m.kind}</Badge>
-                      <span className="ml-auto text-xs text-muted">
-                        {timeAgo(m.createdAt)}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm text-muted">{m.content}</p>
-                  </motion.li>
-                ))}
-              </motion.ul>
-            )}
-          </Card>
-          </Reveal>
-        </div>
-      )}
-
-      <CapabilityGrantsSection />
-      <RoutingPreviewSection />
-      <DirectorySection />
+        <CapabilityGrantsSection />
+        <RoutingPreviewSection />
+        <DirectorySection />
+      </div>
     </div>
   );
 }
@@ -330,33 +290,35 @@ function CapabilityGrantsSection() {
   }
 
   return (
-    <Reveal className="mt-8">
-      <Card>
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold">Tool capability grants</h2>
-            <p className="text-sm text-muted">
-              Map harness-neutral capability tags (e.g. <code>browser</code>, <code>crm</code>) to
-              concrete Composio/MCP/builtin tool names. The router and connectors resolve these
-              per Space, optionally restricted to specific agents.
-            </p>
-          </div>
-          {canAdmin && (
-            <Button variant="ghost" onClick={openNew}>
+    <div>
+      <SectionLabel>tool capability grants</SectionLabel>
+      <Panel
+        action={
+          canAdmin && (
+            <PillButton variant="outline" onClick={openNew}>
               <Plus className="h-4 w-4" /> New grant
-            </Button>
-          )}
-        </div>
+            </PillButton>
+          )
+        }
+      >
+        <p className="-mt-2 mb-4 text-[13.5px] text-[var(--muted)]">
+          Map harness-neutral capability tags (e.g. <code>browser</code>, <code>crm</code>) to concrete
+          Composio/MCP/builtin tool names. The router and connectors resolve these per Space, optionally
+          restricted to specific agents.
+        </p>
 
         {grants && grants.length === 0 ? (
-          <p className="text-sm text-muted">
+          <p className="text-[13.5px] text-[var(--muted)]">
             No capability grants yet. Agents that declare required capabilities will resolve to
             zero tools until grants exist here.
           </p>
         ) : (
-          <ul className="divide-y divide-border">
+          <div>
             {(grants ?? []).map((g) => (
-              <li key={g._id} className="flex items-center justify-between gap-3 py-3">
+              <div
+                key={g._id}
+                className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-1 py-3.5 last:border-0"
+              >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone="blue">{g.capability}</Badge>
@@ -365,7 +327,7 @@ function CapabilityGrantsSection() {
                       <Badge>{g.agentIds.length} agent(s) only</Badge>
                     )}
                   </div>
-                  <p className="mt-1 truncate text-xs text-muted">{g.toolNames.join(", ")}</p>
+                  <p className="mt-1 truncate text-[12.5px] text-[var(--muted)]">{g.toolNames.join(", ")}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Toggle
@@ -374,20 +336,20 @@ function CapabilityGrantsSection() {
                   />
                   {canAdmin && (
                     <>
-                      <Button variant="ghost" onClick={() => openEdit(g)}>
+                      <button onClick={() => openEdit(g)} className="text-[var(--muted)] hover:text-[var(--foreground)]">
                         <Wrench className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" onClick={() => del(g)}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
+                      </button>
+                      <button onClick={() => del(g)} className="text-[var(--muted)] hover:text-red-500">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </>
                   )}
                 </div>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
-      </Card>
+      </Panel>
 
       <Modal open={open} onClose={() => !saving && setOpen(false)} title={editingId ? "Edit grant" : "New capability grant"}>
         <div className="space-y-4">
@@ -453,16 +415,19 @@ function CapabilityGrantsSection() {
           </div>
           <Toggle checked={enabled} onChange={setEnabled} label="Enabled" />
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>
+            <PillButton variant="outline" onClick={() => setOpen(false)} className={saving ? "pointer-events-none opacity-50" : undefined}>
               Cancel
-            </Button>
-            <Button onClick={save} disabled={!capability.trim() || !toolNamesText.trim() || saving}>
+            </PillButton>
+            <PillButton
+              onClick={save}
+              className={!capability.trim() || !toolNamesText.trim() || saving ? "pointer-events-none opacity-50" : undefined}
+            >
               {saving ? "Saving…" : editingId ? "Save" : "Create"}
-            </Button>
+            </PillButton>
           </div>
         </div>
       </Modal>
-    </Reveal>
+    </div>
   );
 }
 
@@ -500,13 +465,16 @@ function RoutingPreviewSection() {
   }
 
   return (
-    <Reveal className="mt-8">
-      <Card>
-        <div className="mb-3 flex items-center gap-2">
-          <Target className="h-4 w-4 text-muted" />
-          <h2 className="font-semibold">Capability routing preview</h2>
-        </div>
-        <p className="mb-3 text-sm text-muted">
+    <div>
+      <SectionLabel>capability routing preview</SectionLabel>
+      <Panel
+        title={
+          <span className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-[var(--muted)]" /> Routing preview
+          </span>
+        }
+      >
+        <p className="-mt-2 mb-4 text-[13.5px] text-[var(--muted)]">
           Pick required capabilities to see how the router would score and rank this Space&apos;s
           agents, the same scorer (capability match + health + recent cost + harness) used to
           auto-assign tasks and workflow steps.
@@ -518,8 +486,8 @@ function RoutingPreviewSection() {
               onClick={() => toggle(c)}
               className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                 selected.has(c)
-                  ? "border-accent bg-accent/10 text-accent"
-                  : "border-border text-muted hover:bg-surface-2"
+                  ? "border-[var(--foreground)] bg-[var(--foreground)]/10 text-[var(--foreground)]"
+                  : "border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface)]"
               }`}
             >
               {c}
@@ -537,16 +505,16 @@ function RoutingPreviewSection() {
         </div>
 
         {selected.size === 0 ? (
-          <p className="text-sm text-muted">Select at least one capability to preview routing.</p>
+          <p className="text-[13.5px] text-[var(--muted)]">Select at least one capability to preview routing.</p>
         ) : ranked === undefined ? (
-          <p className="text-sm text-muted">Scoring…</p>
+          <p className="text-[13.5px] text-[var(--muted)]">Scoring…</p>
         ) : ranked.length === 0 ? (
-          <p className="text-sm text-muted">No agents in this Space yet.</p>
+          <p className="text-[13.5px] text-[var(--muted)]">No agents in this Space yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead>
-                <tr className="text-left text-xs text-muted">
+                <tr className="text-left text-xs text-[var(--muted)]">
                   <th className="py-2 pr-3 font-medium">Agent</th>
                   <th className="py-2 pr-3 font-medium">Score</th>
                   <th className="py-2 pr-3 font-medium">Matched</th>
@@ -556,9 +524,9 @@ function RoutingPreviewSection() {
                   <th className="py-2 pr-3 font-medium">Recent cost</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-[var(--border)]">
                 {ranked.map((r, i) => (
-                  <tr key={r.agentId} className={i === 0 ? "bg-accent/5" : undefined}>
+                  <tr key={r.agentId} className={i === 0 ? "bg-[var(--surface)]/60" : undefined}>
                     <td className="py-2 pr-3 font-medium">
                       {r.name} {i === 0 && <Badge tone="green">best</Badge>}
                     </td>
@@ -583,7 +551,7 @@ function RoutingPreviewSection() {
                     </td>
                     <td className="py-2 pr-3">
                       {r.ungrantedCapabilities.length === 0 ? (
-                        <span className="text-muted">—</span>
+                        <span className="text-[var(--muted)]">—</span>
                       ) : (
                         <div className="flex flex-wrap gap-1" title="Declared by the agent but no capabilityGrants row wired up yet in this Space">
                           {r.ungrantedCapabilities.map((c: string) => (
@@ -594,16 +562,16 @@ function RoutingPreviewSection() {
                         </div>
                       )}
                     </td>
-                    <td className="py-2 pr-3 text-muted">{r.status}</td>
-                    <td className="py-2 pr-3 text-muted">${r.recentCostUsd.toFixed(4)}</td>
+                    <td className="py-2 pr-3 text-[var(--muted)]">{r.status}</td>
+                    <td className="py-2 pr-3 text-[var(--muted)]">${r.recentCostUsd.toFixed(4)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-      </Card>
-    </Reveal>
+      </Panel>
+    </div>
   );
 }
 
@@ -666,92 +634,85 @@ function DirectorySection() {
   }
 
   return (
-    <Stagger className="mt-8 grid gap-4 lg:grid-cols-2" gap={0.1}>
-      <StaggerItem>
-      <Card>
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold">Public agent directory</h2>
-            <p className="text-sm text-muted">
-              Publish selected agent cards so other Spaces can discover and call them via A2A.
+    <div>
+      <SectionLabel>public directory</SectionLabel>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel
+          title="Public agent directory"
+          action={<Toggle checked={publishable?.directoryEnabled ?? false} onChange={toggleDirectory} label="Enabled" />}
+        >
+          <p className="-mt-2 mb-4 text-[13.5px] text-[var(--muted)]">
+            Publish selected agent cards so other Spaces can discover and call them via A2A.
+          </p>
+          {!publishable?.agents.length ? (
+            <p className="text-[13.5px] text-[var(--muted)]">No agents in this Space yet.</p>
+          ) : (
+            <div>
+              {publishable.agents.map((a: PublishableAgent) => (
+                <div key={a.agentId} className="flex items-center justify-between gap-2 border-b border-[var(--border)] px-1 py-2.5 last:border-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Dot tone={toneFor(a.status)} />
+                    <span className="truncate text-[14px] font-medium text-[var(--foreground)]">{a.name}</span>
+                    {a.capabilities.slice(0, 2).map((c: string) => (
+                      <Badge key={c} tone="blue">
+                        {c}
+                      </Badge>
+                    ))}
+                  </div>
+                  <Toggle
+                    checked={a.published}
+                    onChange={(v) => togglePublish(a.agentId, v)}
+                    label={a.published ? "Published" : "Private"}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          {publishable && !publishable.directoryEnabled && (
+            <p className="mt-3 text-[12.5px] text-[var(--muted)]">
+              Enable the directory for this Space for published agents to actually appear publicly.
             </p>
-          </div>
-          <Toggle
-            checked={publishable?.directoryEnabled ?? false}
-            onChange={toggleDirectory}
-            label="Enabled"
-          />
-        </div>
-        {!publishable?.agents.length ? (
-          <p className="text-sm text-muted">No agents in this Space yet.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {publishable.agents.map((a: PublishableAgent) => (
-              <li key={a.agentId} className="flex items-center justify-between gap-2 py-2.5">
-                <div className="flex min-w-0 items-center gap-2">
-                  <StatusDot status={a.status} />
-                  <span className="truncate text-sm font-medium">{a.name}</span>
-                  {a.capabilities.slice(0, 2).map((c: string) => (
-                    <Badge key={c} tone="blue">
-                      {c}
-                    </Badge>
-                  ))}
-                </div>
-                <Toggle
-                  checked={a.published}
-                  onChange={(v) => togglePublish(a.agentId, v)}
-                  label={a.published ? "Published" : "Private"}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-        {publishable && !publishable.directoryEnabled && (
-          <p className="mt-3 text-xs text-muted">
-            Enable the directory for this Space for published agents to actually appear publicly.
-          </p>
-        )}
-      </Card>
-      </StaggerItem>
+          )}
+        </Panel>
 
-      <StaggerItem>
-      <Card>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">Browse the directory</h2>
-          <Button variant="ghost" onClick={() => setBrowseOpen((v) => !v)}>
-            <Globe className="h-4 w-4" /> {browseOpen ? "Hide" : "Browse"}
-          </Button>
-        </div>
-        {!browseOpen ? (
-          <p className="text-sm text-muted">
-            Browse agent cards other Spaces (and organizations) have published to the public directory.
-          </p>
-        ) : publicDirectory === undefined ? (
-          <p className="text-sm text-muted">Loading…</p>
-        ) : publicDirectory.page.length === 0 ? (
-          <p className="text-sm text-muted">No agents published yet.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {publicDirectory.page.map((a: PublicDirectoryAgent) => (
-              <li key={a.agentId} className="py-2.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{a.name}</span>
-                  {a.harness && <Badge>{a.harness}</Badge>}
+        <Panel
+          title="Browse the directory"
+          action={
+            <PillButton variant="outline" onClick={() => setBrowseOpen((v) => !v)}>
+              <Globe className="h-4 w-4" /> {browseOpen ? "Hide" : "Browse"}
+            </PillButton>
+          }
+        >
+          {!browseOpen ? (
+            <p className="text-[13.5px] text-[var(--muted)]">
+              Browse agent cards other Spaces (and organizations) have published to the public directory.
+            </p>
+          ) : publicDirectory === undefined ? (
+            <p className="text-[13.5px] text-[var(--muted)]">Loading…</p>
+          ) : publicDirectory.page.length === 0 ? (
+            <p className="text-[13.5px] text-[var(--muted)]">No agents published yet.</p>
+          ) : (
+            <div>
+              {publicDirectory.page.map((a: PublicDirectoryAgent) => (
+                <div key={a.agentId} className="border-b border-[var(--border)] py-2.5 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-medium text-[var(--foreground)]">{a.name}</span>
+                    {a.harness && <Badge>{a.harness}</Badge>}
+                  </div>
+                  {a.description && <p className="mt-0.5 text-[12.5px] text-[var(--muted)]">{a.description}</p>}
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {a.capabilities.map((c: string) => (
+                      <Badge key={c} tone="blue">
+                        {c}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
-                {a.description && <p className="mt-0.5 text-xs text-muted">{a.description}</p>}
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {a.capabilities.map((c: string) => (
-                    <Badge key={c} tone="blue">
-                      {c}
-                    </Badge>
-                  ))}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-      </StaggerItem>
-    </Stagger>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+    </div>
   );
 }

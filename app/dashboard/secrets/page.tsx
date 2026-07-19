@@ -4,12 +4,21 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Button, Card, EmptyState, Input, Modal } from "@/components/ui";
+import { EmptyState, Input, Modal } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { Copy, Eye, EyeOff, KeyRound, Plus, Trash2 } from "@/components/icons";
-import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import { Copy, KeyRound } from "@/components/icons";
+import {
+  PageHead,
+  PillButton,
+  Panel,
+  ListRow,
+} from "@/components/dash/kit";
+
+function cnDisabled(disabled: boolean): string | undefined {
+  return disabled ? "pointer-events-none opacity-45" : undefined;
+}
 
 function RevealValue({
   spaceId,
@@ -20,7 +29,7 @@ function RevealValue({
 }) {
   const toast = useToast();
   // Reveal is a mutation (not a query) so every exposure lands in the audit
-  // trail — fire it once on mount and hold the value locally.
+  // trail; fire it once on mount and hold the value locally.
   const reveal = useMutation(api.secrets.reveal);
   const [value, setValue] = useState<string | null>(null);
   useEffect(() => {
@@ -39,11 +48,11 @@ function RevealValue({
   }, [spaceId, secretId]);
 
   if (value === null) {
-    return <span className="text-xs text-muted">Revealing…</span>;
+    return <span className="text-[12px] text-[var(--muted)]">Revealing…</span>;
   }
   return (
     <div className="flex items-center gap-2">
-      <code className="break-all rounded bg-surface-2 px-2 py-1 text-xs">
+      <code className="break-all rounded bg-[var(--surface)] px-2 py-1 text-[11.5px] text-[var(--foreground)]">
         {value}
       </code>
       <button
@@ -52,7 +61,7 @@ function RevealValue({
           navigator.clipboard.writeText(value);
           toast("Copied secret value", "success");
         }}
-        className="text-muted hover:text-foreground"
+        className="text-[var(--muted)] hover:text-[var(--foreground)]"
       >
         <Copy className="h-4 w-4" />
       </button>
@@ -105,112 +114,109 @@ export default function SecretsPage() {
     }
   }
 
-  return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Secrets vault</h1>
-          <p className="text-sm text-muted">
-            Credentials your agents and integrations use. Values are masked; only
-            admins can manage them.
-          </p>
-        </div>
-        {canAdmin && (
-          <Button disabled={!spaceId} onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Add secret
-          </Button>
-        )}
-      </Reveal>
+  const addDisabled = !spaceId;
+  const saveDisabled = !name.trim() || !value || saving || !spaceId;
 
-      {!canAdmin ? (
-        <Reveal delay={0.06}>
-          <Card>
+  return (
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="secrets"
+          title="Secrets vault"
+          sub="Credentials your agents and integrations use. Values are masked; only admins can manage them."
+          actions={
+            canAdmin ? (
+              <PillButton
+                className={cnDisabled(addDisabled)}
+                onClick={() => {
+                  if (addDisabled) return;
+                  setOpen(true);
+                }}
+              >
+                Add secret
+              </PillButton>
+            ) : undefined
+          }
+        />
+
+        {!canAdmin ? (
+          <Panel tone="band">
             <div className="flex items-center gap-3">
-              <KeyRound className="h-5 w-5 text-muted" />
+              <KeyRound className="h-5 w-5 text-[var(--muted)]" />
               <div>
-                <p className="font-medium">Admins only</p>
-                <p className="text-sm text-muted">
-                  You need the admin role to view and manage this Space&apos;s
-                  secrets.
+                <p className="text-[14.5px] font-medium text-[var(--foreground)]">Admins only</p>
+                <p className="text-[13px] text-[var(--muted)]">
+                  You need the admin role to view and manage this Space&apos;s secrets.
                 </p>
               </div>
             </div>
-          </Card>
-        </Reveal>
-      ) : (secrets ?? []).length === 0 ? (
-        <EmptyState
-          title="No secrets yet"
-          body="Add API keys, tokens, and other credentials here. Values are masked and only admins can reveal them."
-          action={
-            <Button disabled={!spaceId} onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add secret
-            </Button>
-          }
-        />
-      ) : (
-        <Stagger className="space-y-3" gap={0.06}>
-          {(secrets ?? []).map((s) => {
-            const isRevealed = revealId === s._id;
-            return (
-              <StaggerItem key={s._id}>
-              <Card>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium">{s.name}</p>
-                    <p className="text-xs text-muted">
-                      Updated {timeAgo(s.updatedAt)} · {s.createdBy}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {isRevealed && spaceId ? (
-                      <RevealValue spaceId={spaceId} secretId={s._id} />
-                    ) : (
-                      <code className="rounded bg-surface-2 px-2 py-1 text-xs text-muted">
-                        {s.preview}
-                      </code>
-                    )}
-                    <Button
-                      variant="outline"
-                      onClick={() => setRevealId(isRevealed ? null : s._id)}
-                    >
-                      {isRevealed ? (
-                        <>
-                          <EyeOff className="h-4 w-4" />
-                          Hide
-                        </>
-                      ) : (
-                        <>
-                          <Eye className="h-4 w-4" />
-                          Reveal
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => remove(s._id, s.name)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Remove
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-              </StaggerItem>
-            );
-          })}
-        </Stagger>
-      )}
+          </Panel>
+        ) : (secrets ?? []).length === 0 ? (
+          <EmptyState
+            title="No secrets yet"
+            body="Add API keys, tokens, and other credentials here. Values are masked and only admins can reveal them."
+            action={
+              <PillButton
+                className={cnDisabled(addDisabled)}
+                onClick={() => {
+                  if (addDisabled) return;
+                  setOpen(true);
+                }}
+              >
+                Add secret
+              </PillButton>
+            }
+          />
+        ) : (
+          <Panel title="Secrets">
+            <div>
+              {(secrets ?? []).map((s) => {
+                const isRevealed = revealId === s._id;
+                return (
+                  <ListRow
+                    key={s._id}
+                    title={s.name}
+                    meta={`Updated ${timeAgo(s.updatedAt)} · ${s.createdBy}`}
+                    trailing={
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {isRevealed && spaceId ? (
+                          <RevealValue spaceId={spaceId} secretId={s._id} />
+                        ) : (
+                          <code className="rounded bg-[var(--surface)] px-2 py-1 text-[11.5px] text-[var(--muted)]">
+                            {s.preview}
+                          </code>
+                        )}
+                        <PillButton
+                          variant="outline"
+                          onClick={() => setRevealId(isRevealed ? null : s._id)}
+                        >
+                          {isRevealed ? "Hide" : "Reveal"}
+                        </PillButton>
+                        <PillButton
+                          variant="outline"
+                          className="text-red-600 hover:border-red-300"
+                          onClick={() => remove(s._id, s.name)}
+                        >
+                          Remove
+                        </PillButton>
+                      </div>
+                    }
+                  />
+                );
+              })}
+            </div>
+          </Panel>
+        )}
+      </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Add secret">
         <div className="space-y-4">
-          <p className="text-sm text-muted">
+          <p className="text-[13.5px] text-[var(--muted)]">
             Stored encrypted at rest in your Space. The value is masked
             everywhere except an explicit admin reveal.
           </p>
           <div>
-            <label className="mb-1 block text-xs text-muted">Name</label>
+            <label className="mb-1 block text-[11.5px] text-[var(--muted)]">Name</label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -218,7 +224,7 @@ export default function SecretsPage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-muted">Value</label>
+            <label className="mb-1 block text-[11.5px] text-[var(--muted)]">Value</label>
             <Input
               type="password"
               value={value}
@@ -227,15 +233,18 @@ export default function SecretsPage() {
             />
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <PillButton variant="outline" onClick={() => setOpen(false)}>
               Cancel
-            </Button>
-            <Button
-              disabled={!name.trim() || !value || saving || !spaceId}
-              onClick={save}
+            </PillButton>
+            <PillButton
+              className={cnDisabled(saveDisabled)}
+              onClick={() => {
+                if (saveDisabled) return;
+                save();
+              }}
             >
               {saving ? "Saving…" : "Save secret"}
-            </Button>
+            </PillButton>
           </div>
         </div>
       </Modal>

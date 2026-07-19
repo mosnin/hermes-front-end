@@ -2,11 +2,17 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Card, EmptyState } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import {
+  PageHead,
+  PillButton,
+  Panel,
+  ListRow,
+  Dot,
+} from "@/components/dash/kit";
 
 export default function NotificationsPage() {
   const { spaceId } = useActiveSpace();
@@ -29,48 +35,45 @@ export default function NotificationsPage() {
   }
 
   return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Notifications</h1>
-          <p className="text-sm text-muted">
-            Everything happening in this Space that needs your attention.
-          </p>
-        </div>
-        <Button variant="outline" onClick={onMarkAll}>
-          Mark all read
-        </Button>
-      </Reveal>
-
-      {notifications === undefined ? (
-        <p className="text-sm text-muted">Loading…</p>
-      ) : notifications.length === 0 ? (
-        <EmptyState
-          title="No notifications"
-          body="Updates from agents, workflows, and your team will show up here."
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="notifications"
+          title="Notifications"
+          sub="Everything happening in this Space that needs your attention."
+          actions={<PillButton variant="outline" onClick={onMarkAll}>Mark all read</PillButton>}
         />
-      ) : (
-        <Stagger className="space-y-3" gap={0.05}>
-          {notifications.map((n) => (
-            <StaggerItem key={n._id}>
-              <Card className={n.read ? "opacity-70" : undefined}>
-                <div className="flex items-start gap-3">
-                  <Badge tone={n.read ? "default" : "blue"}>{n.type}</Badge>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{n.title}</p>
-                    {n.body && (
-                      <p className="mt-0.5 text-sm text-muted">{n.body}</p>
-                    )}
-                  </div>
-                  <span className="shrink-0 text-xs text-muted">
-                    {timeAgo(n.createdAt)}
-                  </span>
-                </div>
-              </Card>
-            </StaggerItem>
-          ))}
-        </Stagger>
-      )}
+
+        {notifications === undefined ? (
+          <p className="text-[13.5px] text-[var(--muted)]">Loading…</p>
+        ) : notifications.length === 0 ? (
+          <EmptyState
+            title="No notifications"
+            body="Updates from agents, workflows, and your team will show up here."
+          />
+        ) : (
+          <Panel title="Activity">
+            <div>
+              {notifications.map((n) => (
+                <ListRow
+                  key={n._id}
+                  leading={<span className="text-[11px] uppercase">{n.type.slice(0, 2)}</span>}
+                  title={
+                    <span className={n.read ? "text-[var(--muted)]" : "font-medium"}>{n.title}</span>
+                  }
+                  meta={n.body}
+                  trailing={
+                    <div className="flex items-center gap-2">
+                      <Dot tone={n.read ? "idle" : "online"} />
+                      {timeAgo(n.createdAt)}
+                    </div>
+                  }
+                />
+              ))}
+            </div>
+          </Panel>
+        )}
+      </div>
     </div>
   );
 }

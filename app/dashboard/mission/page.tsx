@@ -2,18 +2,31 @@
 
 import { useMemo } from "react";
 import { useQuery } from "convex/react";
-import { useReducedMotion } from "motion/react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Card, EmptyState, StatusDot } from "@/components/ui";
+import { Badge, EmptyState } from "@/components/ui";
 import { ActivityFeed } from "@/components/activity-feed";
 import { useActiveSpace } from "@/components/active-space";
-import { timeAgo, cn } from "@/lib/utils";
+import { timeAgo } from "@/lib/utils";
 import { MissionGraph, GraphEdge } from "@/components/mission-graph";
-import { Activity, Network, Radio, Users } from "@/components/icons";
-import { CountUp, Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import {
+  PageHead,
+  Panel,
+  StatTile,
+  StatRow,
+  ListRow,
+  Dot,
+  SectionLabel,
+} from "@/components/dash/kit";
+
+function toneFor(status?: string): "online" | "paused" | "idle" | "error" {
+  if (status === "online") return "online";
+  if (status === "degraded") return "error";
+  if (status === "paused") return "paused";
+  return "idle";
+}
 
 export default function MissionPage() {
-  const { spaceId } = useActiveSpace();
+  const { spaceId, active } = useActiveSpace();
   const directory = useQuery(api.a2a.directory, spaceId ? { spaceId } : "skip");
   const recent = useQuery(api.a2a.recent, spaceId ? { spaceId, limit: 100 } : "skip");
   const threads = useQuery(api.threads.list, spaceId ? { spaceId } : "skip");
@@ -49,199 +62,115 @@ export default function MissionPage() {
   const messagesToday = messages.filter((m) => m.createdAt >= startOfDay).length;
 
   return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6 flex items-center gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-xl border border-border bg-surface-2 text-accent">
-          <Radio className="h-5 w-5" />
-        </span>
-        <div>
-          <h1 className="text-2xl font-semibold">Mission control</h1>
-          <p className="text-sm text-muted">
-            A live command center for every agent and the A2A coordination
-            flowing between them, in real time.
-          </p>
-        </div>
-      </Reveal>
-
-      {/* Top stat row. */}
-      <Stagger className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" gap={0.07}>
-        <StaggerItem>
-          <Stat
-            icon={<Users className="h-4 w-4" />}
-            label="Agents online"
-            countValue={onlineCount}
-            countSuffix={` / ${agents.length}`}
-            loading={loading}
-            accent={onlineCount > 0}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <Stat
-            icon={<Network className="h-4 w-4" />}
-            label="Active threads"
-            countValue={activeThreads}
-            loading={loading}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <Stat
-            icon={<Activity className="h-4 w-4" />}
-            label="A2A messages today"
-            countValue={messagesToday}
-            loading={loading}
-          />
-        </StaggerItem>
-        <StaggerItem>
-          <Stat
-            icon={<Radio className="h-4 w-4" />}
-            label="Live connections"
-            countValue={edges.length}
-            loading={loading}
-          />
-        </StaggerItem>
-      </Stagger>
-
-      {loading ? (
-        <div className="grid h-64 place-items-center rounded-2xl border border-border bg-surface">
-          <p className="text-sm text-muted">Establishing uplink…</p>
-        </div>
-      ) : agents.length === 0 ? (
-        <EmptyState
-          title="No agents in this Space yet"
-          body="Connect an agent (or load demo data) to bring the mission control topology online."
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow={`${active?.name ?? "Workspace"} · mission control`}
+          title="Mission control"
+          sub="A live command center for every agent and the A2A coordination flowing between them, in real time."
         />
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-          {/* Topology. */}
-          <Reveal as="div" x={-16}>
-            <Card className="overflow-hidden">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="font-semibold">Coordination topology</h2>
-                <Badge tone={edges.length > 0 ? "green" : "default"}>
-                  {edges.length > 0 ? "live" : "idle"}
-                </Badge>
-              </div>
+
+        <StatRow>
+          <StatTile
+            value={onlineCount}
+            label="Agents online"
+            hint={`of ${agents.length} in this space`}
+            tone="ink"
+          />
+          <StatTile value={activeThreads} label="Active threads" hint="in flight" />
+          <StatTile value={messagesToday} label="A2A messages" hint="today" />
+          <StatTile value={edges.length} label="Live connections" hint="agent to agent" />
+        </StatRow>
+
+        {loading ? (
+          <Panel>
+            <p className="py-10 text-center text-[13.5px] text-[var(--muted)]">Establishing uplink…</p>
+          </Panel>
+        ) : agents.length === 0 ? (
+          <Panel>
+            <EmptyState
+              title="No agents in this Space yet"
+              body="Connect an agent (or load demo data) to bring the mission control topology online."
+            />
+          </Panel>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+            <Panel
+              title="Coordination topology"
+              action={<Badge tone={edges.length > 0 ? "green" : "default"}>{edges.length > 0 ? "live" : "idle"}</Badge>}
+            >
               <div className="mx-auto max-w-xl">
                 <MissionGraph agents={agents} edges={edges} />
               </div>
               {edges.length === 0 && (
-                <p className="mt-2 text-center text-xs text-muted">
+                <p className="mt-2 text-center text-[12.5px] text-[var(--muted)]">
                   No agent-to-agent traffic yet. Connections appear here as agents
                   start coordinating.
                 </p>
               )}
-            </Card>
-          </Reveal>
+            </Panel>
 
-          {/* Right column: roster + live feed. */}
-          <Reveal as="div" x={16} delay={0.06} className="space-y-4">
-            <Card>
-              <h2 className="mb-3 font-semibold">Agent roster</h2>
-              <ul className="space-y-2">
-                {agents.map((a) => (
-                  <li
-                    key={a.id}
-                    className="flex items-center gap-2 rounded-lg border border-border px-3 py-2"
-                  >
-                    <StatusDot status={a.status} />
-                    <span className="flex-1 truncate text-sm font-medium">
-                      {a.name}
-                    </span>
-                    {a.platform && (
-                      <span className="text-xs text-muted">{a.platform}</span>
-                    )}
-                    <Badge
-                      tone={
-                        a.status === "online"
-                          ? "green"
-                          : a.status === "degraded"
-                            ? "yellow"
-                            : "default"
+            <div className="space-y-4">
+              <Panel title="Agent roster" tone="band">
+                <div>
+                  {agents.map((a) => (
+                    <ListRow
+                      key={a.id}
+                      leading={<Dot tone={toneFor(a.status)} />}
+                      title={a.name}
+                      meta={a.platform ?? undefined}
+                      trailing={
+                        <Badge
+                          tone={
+                            a.status === "online"
+                              ? "green"
+                              : a.status === "degraded"
+                                ? "yellow"
+                                : "default"
+                          }
+                        >
+                          {a.status}
+                        </Badge>
                       }
-                    >
-                      {a.status}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            </Card>
+                    />
+                  ))}
+                </div>
+              </Panel>
 
-            <Card>
-              <h2 className="mb-3 font-semibold">Live activity</h2>
-              <div className="max-h-[26rem] overflow-y-auto pr-1">
-                <ActivityFeed limit={30} />
-              </div>
-            </Card>
-          </Reveal>
-        </div>
-      )}
-
-      {/* Recent A2A exchanges strip. */}
-      {!loading && agents.length > 0 && messages.length > 0 && (
-        <Reveal delay={0.1}>
-          <Card className="mt-4">
-            <h2 className="mb-3 font-semibold">Recent inter-agent exchanges</h2>
-            <ul className="divide-y divide-border">
-              {messages.slice(0, 6).map((m) => (
-                <li key={m._id} className="flex items-center gap-2 py-2 text-sm">
-                  <span className="font-medium">{m.fromName}</span>
-                  <span className="text-muted">→</span>
-                  <span className="font-medium">{m.toName}</span>
-                  <Badge tone="green">{m.kind}</Badge>
-                  <span className="truncate text-muted">{m.content}</span>
-                  <span className="ml-auto shrink-0 text-xs text-muted">
-                    {timeAgo(m.createdAt)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        </Reveal>
-      )}
-    </div>
-  );
-}
-
-function Stat({
-  icon,
-  label,
-  loading,
-  accent,
-  countValue,
-  countSuffix,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  loading: boolean;
-  accent?: boolean;
-  /** Numeric value to count up to once loaded; renders "—" while `loading`. */
-  countValue: number;
-  /** Plain (non-animated) text appended after the counted number, e.g. " / 8". */
-  countSuffix?: string;
-}) {
-  const reduce = useReducedMotion();
-  return (
-    <Card className="relative overflow-hidden">
-      {accent && (
-        <span className="absolute right-3 top-3 flex h-2 w-2">
-          {!reduce && (
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
-          )}
-          <span className="inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-        </span>
-      )}
-      <div className="flex items-center gap-2 text-muted">
-        {icon}
-        <span className="text-xs uppercase tracking-wide">{label}</span>
-      </div>
-      <p
-        className={cn(
-          "mt-2 text-3xl font-semibold tabular-nums",
-          accent && "text-foreground",
+              <Panel title="Live activity">
+                <div className="max-h-[26rem] overflow-y-auto pr-1">
+                  <ActivityFeed limit={30} />
+                </div>
+              </Panel>
+            </div>
+          </div>
         )}
-      >
-        {loading ? "—" : <CountUp value={countValue} suffix={countSuffix} duration={1} pop={false} />}
-      </p>
-    </Card>
+
+        {!loading && agents.length > 0 && messages.length > 0 && (
+          <div>
+            <SectionLabel>recent inter-agent exchanges</SectionLabel>
+            <Panel>
+              <div>
+                {messages.slice(0, 6).map((m) => (
+                  <ListRow
+                    key={m._id}
+                    title={
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-medium">{m.fromName}</span>
+                        <span className="text-[var(--muted)]">&rarr;</span>
+                        <span className="font-medium">{m.toName}</span>
+                        <Badge tone="green">{m.kind}</Badge>
+                      </span>
+                    }
+                    meta={m.content}
+                    trailing={timeAgo(m.createdAt)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

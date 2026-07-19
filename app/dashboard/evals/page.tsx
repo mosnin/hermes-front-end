@@ -4,13 +4,20 @@ import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
+import { Badge, Button, EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { BarChart3, FlaskConical, Loader2, Plus, Sparkles, Star, Trash2 } from "@/components/icons";
-import { EASE, Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import { BarChart3, FlaskConical, Loader2, Sparkles, Star, Trash2 } from "@/components/icons";
+import { EASE, Stagger, StaggerItem } from "@/components/site/motion";
 import { motion, useReducedMotion } from "motion/react";
+import {
+  PageHead,
+  PillButton,
+  Panel,
+  ListRow,
+  SectionLabel,
+} from "@/components/dash/kit";
 
 function Stars({ value }: { value: number }) {
   const rounded = Math.round(value);
@@ -19,8 +26,8 @@ function Stars({ value }: { value: number }) {
       {[1, 2, 3, 4, 5].map((n) => (
         <Star
           key={n}
-          className={`h-4 w-4 ${
-            n <= rounded ? "fill-yellow-400 text-yellow-400" : "text-muted"
+          className={`h-3.5 w-3.5 ${
+            n <= rounded ? "fill-yellow-400 text-yellow-400" : "text-[var(--muted)]"
           }`}
         />
       ))}
@@ -29,7 +36,7 @@ function Stars({ value }: { value: number }) {
 }
 
 export default function EvalsPage() {
-  const { spaceId } = useActiveSpace();
+  const { spaceId, active } = useActiveSpace();
   const scorecards = useQuery(api.evals.scorecards, spaceId ? { spaceId } : "skip");
   const evals = useQuery(api.evals.list, spaceId ? { spaceId } : "skip");
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
@@ -95,88 +102,84 @@ export default function EvalsPage() {
   }
 
   return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Agent evals</h1>
-          <p className="text-sm text-muted">
-            Score agent performance and track quality, speed, and cost over time.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={() => setAutoOpen(true)}>
-            <Sparkles className="h-4 w-4" /> Auto-evaluate
-          </Button>
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> Log evaluation
-          </Button>
-        </div>
-      </Reveal>
-
-      <Stagger className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" gap={0.06}>
-        {(scorecards ?? []).map((s) => (
-          <StaggerItem key={s.agentId}>
-            <Card>
-              <div className="flex items-start justify-between gap-2">
-                <p className="font-medium">{s.name}</p>
-                <Badge>{s.count} evals</Badge>
-              </div>
-              <div className="mt-3 flex items-center gap-2">
-                <Stars value={s.avg} />
-                <span className="text-sm text-muted">
-                  {s.count ? `${s.avg.toFixed(1)}/5` : "N/5"}
-                </span>
-              </div>
-              <div className="mt-3 h-2 rounded-full bg-surface-2">
-                <motion.div
-                  className="h-2 rounded-full bg-accent"
-                  initial={{ width: reduce ? `${(s.count / maxCount) * 100}%` : 0 }}
-                  animate={{ width: `${(s.count / maxCount) * 100}%` }}
-                  transition={{ duration: reduce ? 0 : 0.8, ease: EASE }}
-                  style={{ minWidth: s.count ? 2 : 0 }}
-                />
-              </div>
-            </Card>
-          </StaggerItem>
-        ))}
-      </Stagger>
-
-      <h2 className="mb-3 font-semibold">Recent evaluations</h2>
-      {evals && evals.length === 0 ? (
-        <EmptyState
-          title="No evaluations yet"
-          body="Log your first evaluation to start building agent scorecards."
-          action={
-            <Button onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" /> Log evaluation
-            </Button>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow={`${active?.name ?? "Workspace"} · evals`}
+          title="Agent evals"
+          sub="Score agent performance and track quality, speed, and cost over time."
+          actions={
+            <>
+              <PillButton variant="outline" onClick={() => setAutoOpen(true)}>
+                Auto-evaluate
+              </PillButton>
+              <PillButton onClick={() => setOpen(true)}>Log evaluation</PillButton>
+            </>
           }
         />
-      ) : (
-        <Reveal delay={0.06}>
-          <Card>
-            <ul className="divide-y divide-border">
-              {(evals ?? []).map((e) => (
-                <li key={e._id} className="flex items-start gap-3 py-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {agentName(e.agentId) ?? "Agent"}
-                      </span>
-                      <Stars value={e.rating} />
-                      {e.dimension && <Badge tone="blue">{e.dimension}</Badge>}
-                    </div>
-                    {e.comment && (
-                      <p className="mt-1 text-sm text-muted">{e.comment}</p>
-                    )}
+
+        <div>
+          <SectionLabel>scorecards</SectionLabel>
+          <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" gap={0.06}>
+            {(scorecards ?? []).map((s) => (
+              <StaggerItem key={s.agentId}>
+                <Panel
+                  title={s.name}
+                  action={<Badge>{s.count} evals</Badge>}
+                >
+                  <div className="flex items-center gap-2">
+                    <Stars value={s.avg} />
+                    <span className="text-[13px] text-[var(--muted)]">
+                      {s.count ? `${s.avg.toFixed(1)}/5` : "N/5"}
+                    </span>
                   </div>
-                  <span className="shrink-0 text-xs text-muted">{timeAgo(e.createdAt)}</span>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        </Reveal>
-      )}
+                  <div className="mt-3 h-1.5 rounded-full bg-[var(--surface)]">
+                    <motion.div
+                      className="h-1.5 rounded-full bg-[var(--foreground)]"
+                      initial={{ width: reduce ? `${(s.count / maxCount) * 100}%` : 0 }}
+                      animate={{ width: `${(s.count / maxCount) * 100}%` }}
+                      transition={{ duration: reduce ? 0 : 0.8, ease: EASE }}
+                      style={{ minWidth: s.count ? 2 : 0 }}
+                    />
+                  </div>
+                </Panel>
+              </StaggerItem>
+            ))}
+          </Stagger>
+        </div>
+
+        <div>
+          <SectionLabel>recent evaluations</SectionLabel>
+          {evals && evals.length === 0 ? (
+            <Panel>
+              <EmptyState
+                title="No evaluations yet"
+                body="Log your first evaluation to start building agent scorecards."
+                action={<Button onClick={() => setOpen(true)}>Log evaluation</Button>}
+              />
+            </Panel>
+          ) : (
+            <Panel>
+              <div>
+                {(evals ?? []).map((e) => (
+                  <ListRow
+                    key={e._id}
+                    title={
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{agentName(e.agentId) ?? "Agent"}</span>
+                        <Stars value={e.rating} />
+                        {e.dimension && <Badge tone="blue">{e.dimension}</Badge>}
+                      </span>
+                    }
+                    meta={e.comment}
+                    trailing={timeAgo(e.createdAt)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          )}
+        </div>
+      </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Log evaluation">
         <div className="space-y-4">
@@ -394,143 +397,126 @@ function BenchmarkSection() {
   const trendMaxCost = Math.max(0.0001, ...(trend ?? []).map((t) => t.totalCostUsd));
 
   return (
-    <div className="mt-10">
-      <Reveal as="div" className="mb-3 flex items-center justify-between">
-        <div>
-          <h2 className="font-semibold">Cross-harness benchmarks</h2>
-          <p className="text-sm text-muted">
-            Run the same prompt across multiple agents (different harness/model) and compare cost vs quality.
-          </p>
-        </div>
-        <Button variant="ghost" onClick={() => setNewOpen(true)}>
-          <FlaskConical className="h-4 w-4" /> New benchmark
-        </Button>
-      </Reveal>
+    <div className="mx-auto mt-8 max-w-[1120px] space-y-8 border-t border-[var(--border)] pt-8">
+      <PageHead
+        eyebrow="cross-harness"
+        title="Benchmarks"
+        sub="Run the same prompt across multiple agents (different harness/model) and compare cost vs quality."
+        actions={
+          <PillButton variant="outline" onClick={() => setNewOpen(true)}>
+            New benchmark
+          </PillButton>
+        }
+      />
 
       {benchmarks && benchmarks.length === 0 ? (
-        <EmptyState
-          title="No benchmarks yet"
-          body="Create a benchmark prompt to compare agents side by side on cost and quality."
-          action={
-            <Button onClick={() => setNewOpen(true)}>
-              <FlaskConical className="h-4 w-4" /> New benchmark
-            </Button>
-          }
-        />
+        <Panel>
+          <EmptyState
+            title="No benchmarks yet"
+            body="Create a benchmark prompt to compare agents side by side on cost and quality."
+            action={<Button onClick={() => setNewOpen(true)}>New benchmark</Button>}
+          />
+        </Panel>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          <Reveal as="div" x={-16}>
-            <Card>
-              <h3 className="mb-3 text-sm font-semibold text-muted">Benchmarks</h3>
-              <ul className="divide-y divide-border">
-                {(benchmarks ?? []).map((b) => (
-                  <li key={b._id} className="flex items-center justify-between gap-2 py-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{b.name}</p>
-                      {b.description && (
-                        <p className="truncate text-xs text-muted">{b.description}</p>
-                      )}
-                    </div>
+          <Panel title="Benchmarks">
+            <div>
+              {(benchmarks ?? []).map((b) => (
+                <ListRow
+                  key={b._id}
+                  title={b.name}
+                  meta={b.description}
+                  trailing={
                     <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        variant="ghost"
+                      <button
                         onClick={() =>
                           setTrendBenchmarkId((cur) => (cur === b._id ? null : b._id))
                         }
                         title="View quality/cost trend across runs"
+                        className="grid h-8 w-8 place-items-center rounded-full text-[var(--muted)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
                       >
                         <BarChart3 className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
+                      </button>
+                      <button
                         onClick={() => {
                           setRunOpen(b._id);
                           setSelectedAgents(new Set());
                         }}
+                        className="rounded-full px-3 py-1.5 text-[12.5px] text-[var(--muted-strong)] transition-colors hover:bg-[var(--surface)]"
                       >
                         Run
-                      </Button>
+                      </button>
                       {canOperate && (
-                        <Button
-                          variant="ghost"
+                        <button
                           onClick={() => deleteBenchmark(b._id, b.name)}
                           title="Delete benchmark"
+                          className="grid h-8 w-8 place-items-center rounded-full text-red-500/80 transition-colors hover:bg-[var(--surface)] hover:text-red-500"
                         >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       )}
                     </div>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          </Reveal>
+                  }
+                />
+              ))}
+            </div>
+          </Panel>
 
-          <Reveal as="div" x={16} delay={0.06}>
-            <Card>
-              <h3 className="mb-3 text-sm font-semibold text-muted">Recent batches</h3>
-              {batches && batches.length === 0 ? (
-                <p className="text-sm text-muted">No runs yet.</p>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {(batches ?? []).map((b) => (
-                    <li key={b.batchId} className="py-3">
-                      <button
-                        onClick={() => setActiveBatch(b.batchId)}
-                        className="flex w-full items-center justify-between gap-2 text-left"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{b.benchmarkName}</p>
-                          <p className="text-xs text-muted">
-                            {b.runCount} run{b.runCount === 1 ? "" : "s"} · {timeAgo(b.startedAt)}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {b.avgQuality != null && (
-                            <Badge tone={qualityTone(b.avgQuality)}>
-                              {(b.avgQuality * 100).toFixed(0)}% quality
-                            </Badge>
-                          )}
-                          <Badge>${b.totalCostUsd.toFixed(4)}</Badge>
-                          {b.status === "running" && <Loader2 className="h-4 w-4 animate-spin" />}
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          </Reveal>
+          <Panel title="Recent batches" tone="band">
+            {batches && batches.length === 0 ? (
+              <p className="py-6 text-center text-[13.5px] text-[var(--muted)]">No runs yet.</p>
+            ) : (
+              <div>
+                {(batches ?? []).map((b) => (
+                  <ListRow
+                    key={b.batchId}
+                    onClick={() => setActiveBatch(b.batchId)}
+                    title={b.benchmarkName}
+                    meta={`${b.runCount} run${b.runCount === 1 ? "" : "s"} · ${timeAgo(b.startedAt)}`}
+                    trailing={
+                      <div className="flex shrink-0 items-center gap-2">
+                        {b.avgQuality != null && (
+                          <Badge tone={qualityTone(b.avgQuality)}>
+                            {(b.avgQuality * 100).toFixed(0)}% quality
+                          </Badge>
+                        )}
+                        <Badge>${b.totalCostUsd.toFixed(4)}</Badge>
+                        {b.status === "running" && <Loader2 className="h-4 w-4 animate-spin" />}
+                      </div>
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </Panel>
         </div>
       )}
 
       {trendBenchmarkId && (
-        <Reveal>
-        <Card className="mt-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-muted">
-              Trend across runs: {benchmarks?.find((b) => b._id === trendBenchmarkId)?.name ?? "Benchmark"}
-            </h3>
-            <Button variant="ghost" onClick={() => setTrendBenchmarkId(null)}>
+        <Panel
+          title={`Trend across runs: ${benchmarks?.find((b) => b._id === trendBenchmarkId)?.name ?? "Benchmark"}`}
+          action={
+            <PillButton variant="outline" onClick={() => setTrendBenchmarkId(null)}>
               Close
-            </Button>
-          </div>
+            </PillButton>
+          }
+        >
           {trend === undefined ? (
-            <p className="text-sm text-muted">Loading…</p>
+            <p className="text-[13.5px] text-[var(--muted)]">Loading…</p>
           ) : trend.length === 0 ? (
-            <p className="text-sm text-muted">No batches run for this benchmark yet.</p>
+            <p className="text-[13.5px] text-[var(--muted)]">No batches run for this benchmark yet.</p>
           ) : (
             <div className="flex items-end gap-3 overflow-x-auto pb-2">
               {trend.map((t) => (
                 <button
                   key={t.batchId}
                   onClick={() => setActiveBatch(t.batchId)}
-                  className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-lg px-1 py-1 transition-colors hover:bg-surface-2"
+                  className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-lg px-1 py-1 transition-colors hover:bg-[var(--surface)]"
                   title={`${t.runCount} run(s) · ${timeAgo(t.startedAt)}`}
                 >
                   <div className="flex h-24 w-full items-end justify-center gap-1">
                     <motion.div
-                      className="w-3 rounded-t bg-accent"
+                      className="w-3 rounded-t bg-[var(--foreground)]"
                       initial={{ height: reduce ? Math.max(4, (t.avgQuality ?? 0) * 96) : 0 }}
                       animate={{ height: Math.max(4, (t.avgQuality ?? 0) * 96) }}
                       transition={{ duration: reduce ? 0 : 0.6, ease: EASE }}
@@ -542,42 +528,41 @@ function BenchmarkSection() {
                       transition={{ duration: reduce ? 0 : 0.6, delay: reduce ? 0 : 0.08, ease: EASE }}
                     />
                   </div>
-                  <span className="text-[10px] text-muted">{timeAgo(t.startedAt)}</span>
+                  <span className="text-[10px] text-[var(--muted)]">{timeAgo(t.startedAt)}</span>
                 </button>
               ))}
             </div>
           )}
-          <div className="mt-2 flex items-center gap-4 text-xs text-muted">
+          <div className="mt-2 flex items-center gap-4 text-[12px] text-[var(--muted)]">
             <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-accent" /> avg quality
+              <span className="h-2 w-2 rounded-full bg-[var(--foreground)]" /> avg quality
             </span>
             <span className="flex items-center gap-1">
               <span className="h-2 w-2 rounded-full bg-sky-500" /> total cost (relative)
             </span>
             <span className="ml-auto">Click a bar to open that batch&apos;s comparison</span>
           </div>
-        </Card>
-        </Reveal>
+        </Panel>
       )}
 
       {activeBatch && (
-        <Reveal>
-        <Card className="mt-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-muted">Cost vs quality</h3>
-            <Button variant="ghost" onClick={() => setActiveBatch(null)}>
+        <Panel
+          title="Cost vs quality"
+          action={
+            <PillButton variant="outline" onClick={() => setActiveBatch(null)}>
               Close
-            </Button>
-          </div>
+            </PillButton>
+          }
+        >
           {comparison === undefined ? (
-            <p className="text-sm text-muted">Loading…</p>
+            <p className="text-[13.5px] text-[var(--muted)]">Loading…</p>
           ) : comparison.length === 0 ? (
-            <p className="text-sm text-muted">No runs found for this batch.</p>
+            <p className="text-[13.5px] text-[var(--muted)]">No runs found for this batch.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full min-w-[640px] text-[13.5px]">
                 <thead>
-                  <tr className="text-left text-xs text-muted">
+                  <tr className="text-left text-[11.5px] text-[var(--muted)]">
                     <th className="py-2 pr-3 font-medium">Agent</th>
                     <th className="py-2 pr-3 font-medium">Harness / model</th>
                     <th className="py-2 pr-3 font-medium">Status</th>
@@ -586,11 +571,11 @@ function BenchmarkSection() {
                     <th className="py-2 pr-3 font-medium">Latency</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-[var(--border)]">
                   {comparison.map((r) => (
                     <tr key={r.runId}>
-                      <td className="py-2 pr-3 font-medium">{r.agentName}</td>
-                      <td className="py-2 pr-3 text-muted">
+                      <td className="py-2 pr-3 font-medium text-[var(--foreground)]">{r.agentName}</td>
+                      <td className="py-2 pr-3 text-[var(--muted)]">
                         {r.harness} / {r.model}
                       </td>
                       <td className="py-2 pr-3">
@@ -601,9 +586,9 @@ function BenchmarkSection() {
                       <td className="py-2 pr-3">
                         {r.qualityScore != null ? (
                           <div className="flex items-center gap-2">
-                            <div className="h-1.5 w-16 rounded-full bg-surface-2">
+                            <div className="h-1.5 w-16 rounded-full bg-[var(--surface)]">
                               <motion.div
-                                className="h-1.5 rounded-full bg-accent"
+                                className="h-1.5 rounded-full bg-[var(--foreground)]"
                                 initial={{ width: reduce ? `${r.qualityScore * 100}%` : 0 }}
                                 animate={{ width: `${r.qualityScore * 100}%` }}
                                 transition={{ duration: reduce ? 0 : 0.7, ease: EASE }}
@@ -612,12 +597,12 @@ function BenchmarkSection() {
                             <span>{(r.qualityScore * 100).toFixed(0)}%</span>
                           </div>
                         ) : (
-                          <span className="text-muted">—</span>
+                          <span className="text-[var(--muted)]">—</span>
                         )}
                       </td>
                       <td className="py-2 pr-3">
                         <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-16 rounded-full bg-surface-2">
+                          <div className="h-1.5 w-16 rounded-full bg-[var(--surface)]">
                             <motion.div
                               className="h-1.5 rounded-full bg-sky-500"
                               initial={{ width: reduce ? `${((r.costUsd ?? 0) / maxCost) * 100}%` : 0 }}
@@ -628,7 +613,7 @@ function BenchmarkSection() {
                           <span>{r.costUsd != null ? `$${r.costUsd.toFixed(4)}` : "—"}</span>
                         </div>
                       </td>
-                      <td className="py-2 pr-3 text-muted">
+                      <td className="py-2 pr-3 text-[var(--muted)]">
                         {r.latencyMs != null ? `${(r.latencyMs / 1000).toFixed(1)}s` : "—"}
                       </td>
                     </tr>
@@ -637,8 +622,7 @@ function BenchmarkSection() {
               </table>
             </div>
           )}
-        </Card>
-        </Reveal>
+        </Panel>
       )}
 
       <Modal open={newOpen} onClose={() => setNewOpen(false)} title="New benchmark">

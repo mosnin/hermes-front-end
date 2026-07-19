@@ -7,7 +7,6 @@ import { Id } from "@/convex/_generated/dataModel";
 import {
   Badge,
   Button,
-  Card,
   EmptyState,
   Input,
   Modal,
@@ -17,8 +16,9 @@ import {
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { timeAgo } from "@/lib/utils";
-import { ShieldCheck, Settings, ChevronDown, ChevronRight, Check, X } from "@/components/icons";
-import { Reveal, Stagger, StaggerItem } from "@/components/site/motion";
+import { ChevronDown, ChevronRight } from "@/components/icons";
+import { Stagger, StaggerItem } from "@/components/site/motion";
+import { PageHead, PillButton, Panel } from "@/components/dash/kit";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -50,7 +50,7 @@ function PreviewDiff({ preview }: { preview: unknown }) {
     const { before, after } = preview as { before?: unknown; after?: unknown };
     return (
       <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-2">
+        <div className="rounded-[12px] border border-red-200 bg-red-50 p-2">
           <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-red-700">
             Before
           </p>
@@ -58,7 +58,7 @@ function PreviewDiff({ preview }: { preview: unknown }) {
             {typeof before === "string" ? before : JSON.stringify(before, null, 2) ?? "—"}
           </pre>
         </div>
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2">
+        <div className="rounded-[12px] border border-emerald-200 bg-emerald-50 p-2">
           <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-emerald-700">
             After
           </p>
@@ -70,7 +70,7 @@ function PreviewDiff({ preview }: { preview: unknown }) {
     );
   }
   return (
-    <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-surface-2 p-2 text-xs text-muted">
+    <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[12px] bg-[var(--surface)] p-2 text-xs text-[var(--muted)]">
       {typeof preview === "string" ? preview : JSON.stringify(preview, null, 2)}
     </pre>
   );
@@ -207,7 +207,7 @@ function NotificationPrefsPanel({ onClose }: { onClose: () => void }) {
 }
 
 export default function ApprovalsPage() {
-  const { spaceId } = useActiveSpace();
+  const { spaceId, active } = useActiveSpace();
   const canAdmin = useCan("admin");
   const canOperate = useCan("operator");
   const toast = useToast();
@@ -301,169 +301,157 @@ export default function ApprovalsPage() {
   }
 
   return (
-    <div className="p-8">
-      <Reveal as="div" className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Approvals</h1>
-          <p className="text-sm text-muted">
-            Human-in-the-loop gates. Off by default, used only for actions you
-            designate high-risk.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setPrefsOpen(true)}>
-            <Settings className="h-4 w-4" /> Notifications
-          </Button>
-          {canOperate && (
-            <Button onClick={() => setOpen(true)}>
-              <ShieldCheck className="h-4 w-4" /> Request approval
-            </Button>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow={`${active?.name ?? "Workspace"} · approvals`}
+          title="Approvals"
+          sub="Human-in-the-loop gates. Off by default, used only for actions you designate high-risk."
+          actions={
+            <>
+              <PillButton variant="outline" onClick={() => setPrefsOpen(true)}>
+                Notifications
+              </PillButton>
+              {canOperate && (
+                <PillButton onClick={() => setOpen(true)}>Request approval</PillButton>
+              )}
+            </>
+          }
+        />
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {FILTERS.map((f) => (
+              <PillButton
+                key={f.key}
+                variant={filter === f.key ? "solid" : "outline"}
+                onClick={() => setFilter(f.key)}
+              >
+                {f.label}
+              </PillButton>
+            ))}
+          </div>
+          {pendingIds.length > 0 && canAdmin && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleSelectAll}
+                className="text-[12.5px] text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+              >
+                {allPendingSelected ? "Deselect all" : `Select all pending (${pendingIds.length})`}
+              </button>
+              {selected.size > 0 && (
+                <>
+                  <Badge>{selected.size} selected</Badge>
+                  <PillButton onClick={() => onBulkDecide(true)}>Approve selected</PillButton>
+                  <PillButton variant="outline" onClick={() => onBulkDecide(false)}>
+                    Reject selected
+                  </PillButton>
+                </>
+              )}
+            </div>
           )}
         </div>
-      </Reveal>
 
-      <Reveal delay={0.06} className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`rounded-full px-3 py-1 text-xs transition-colors ${
-                filter === f.key
-                  ? "bg-accent text-white"
-                  : "border border-border text-muted hover:text-foreground"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        {pendingIds.length > 0 && canAdmin && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleSelectAll}
-              className="text-xs text-muted hover:text-foreground"
-            >
-              {allPendingSelected ? "Deselect all" : `Select all pending (${pendingIds.length})`}
-            </button>
-            {selected.size > 0 && (
-              <>
-                <Badge>{selected.size} selected</Badge>
-                <Button
-                  variant="primary"
-                  className="bg-emerald-500/90 hover:bg-emerald-500"
-                  onClick={() => onBulkDecide(true)}
-                >
-                  <Check className="h-4 w-4" /> Approve selected
-                </Button>
-                <Button variant="danger" onClick={() => onBulkDecide(false)}>
-                  <X className="h-4 w-4" /> Reject selected
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-      </Reveal>
-
-      {approvals === undefined ? (
-        <Card>
-          <p className="text-sm text-muted">Loading…</p>
-        </Card>
-      ) : approvals.length === 0 ? (
-        <EmptyState
-          title="No approvals here"
-          body="When an agent or workflow hits a gate you marked high-risk, it pauses here for a human decision."
-        />
-      ) : (
-        <Stagger className="space-y-3" gap={0.06}>
-          {approvals.map((a) => {
-            const isExpanded = !!expanded[a._id];
-            const hasPreview = a.preview !== undefined && a.preview !== null;
-            return (
-              <StaggerItem key={a._id}>
-              <Card>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    {a.status === "pending" && canAdmin && (
-                      <input
-                        type="checkbox"
-                        className="mt-1 h-4 w-4 shrink-0 accent-accent"
-                        checked={selected.has(a._id)}
-                        onChange={() => toggleSelect(a._id)}
-                      />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge>{a.kind}</Badge>
-                        <Badge tone={statusTone[a.status] ?? "default"}>{a.status}</Badge>
-                        {a.riskLevel && (
-                          <Badge tone={riskTone[a.riskLevel] ?? "default"}>
-                            {a.riskLevel} risk
-                          </Badge>
+        {approvals === undefined ? (
+          <Panel>
+            <p className="text-[13.5px] text-[var(--muted)]">Loading…</p>
+          </Panel>
+        ) : approvals.length === 0 ? (
+          <Panel>
+            <EmptyState
+              title="No approvals here"
+              body="When an agent or workflow hits a gate you marked high-risk, it pauses here for a human decision."
+            />
+          </Panel>
+        ) : (
+          <Stagger className="space-y-3" gap={0.06}>
+            {approvals.map((a) => {
+              const isExpanded = !!expanded[a._id];
+              const hasPreview = a.preview !== undefined && a.preview !== null;
+              return (
+                <StaggerItem key={a._id}>
+                  <Panel>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        {a.status === "pending" && canAdmin && (
+                          <input
+                            type="checkbox"
+                            className="mt-1 h-4 w-4 shrink-0 accent-[var(--foreground)]"
+                            checked={selected.has(a._id)}
+                            onChange={() => toggleSelect(a._id)}
+                          />
                         )}
-                        {a.deliveredChannels && a.deliveredChannels.length > 0 && (
-                          <Badge tone="blue">via {a.deliveredChannels.join(", ")}</Badge>
-                        )}
-                        <span className="text-sm font-medium">{a.title}</span>
-                      </div>
-                      {a.detail && <p className="mt-2 text-sm text-muted">{a.detail}</p>}
-                      {hasPreview && (
-                        <button
-                          onClick={() =>
-                            setExpanded((prev) => ({ ...prev, [a._id]: !prev[a._id] }))
-                          }
-                          className="mt-2 flex items-center gap-1 text-xs text-accent hover:underline"
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="h-3 w-3" />
-                          ) : (
-                            <ChevronRight className="h-3 w-3" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge>{a.kind}</Badge>
+                            <Badge tone={statusTone[a.status] ?? "default"}>{a.status}</Badge>
+                            {a.riskLevel && (
+                              <Badge tone={riskTone[a.riskLevel] ?? "default"}>
+                                {a.riskLevel} risk
+                              </Badge>
+                            )}
+                            {a.deliveredChannels && a.deliveredChannels.length > 0 && (
+                              <Badge tone="blue">via {a.deliveredChannels.join(", ")}</Badge>
+                            )}
+                            <span className="text-[14.5px] font-medium text-[var(--foreground)]">{a.title}</span>
+                          </div>
+                          {a.detail && <p className="mt-2 text-[13.5px] text-[var(--muted)]">{a.detail}</p>}
+                          {hasPreview && (
+                            <button
+                              onClick={() =>
+                                setExpanded((prev) => ({ ...prev, [a._id]: !prev[a._id] }))
+                              }
+                              className="mt-2 flex items-center gap-1 text-[12.5px] text-[var(--muted-strong)] hover:underline"
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-3 w-3" />
+                              ) : (
+                                <ChevronRight className="h-3 w-3" />
+                              )}
+                              {isExpanded ? "Hide" : "View"} preview
+                            </button>
                           )}
-                          {isExpanded ? "Hide" : "View"} preview
-                        </button>
-                      )}
-                      {isExpanded && hasPreview && <PreviewDiff preview={a.preview} />}
-                      <p className="mt-2 text-xs text-muted">
-                        {a.requestedBy ? `Requested by ${a.requestedBy}` : "Requested"}
-                        {" · "}
-                        {timeAgo(a.createdAt)}
-                        {a.status === "pending" && a.expiresAt && (
-                          <>
+                          {isExpanded && hasPreview && <PreviewDiff preview={a.preview} />}
+                          <p className="mt-2 text-[12px] text-[var(--muted)]">
+                            {a.requestedBy ? `Requested by ${a.requestedBy}` : "Requested"}
                             {" · "}
-                            {a.expiresAt < Date.now()
-                              ? "expired"
-                              : `expires ${timeAgo(a.expiresAt)}`}
-                          </>
-                        )}
-                      </p>
+                            {timeAgo(a.createdAt)}
+                            {a.status === "pending" && a.expiresAt && (
+                              <>
+                                {" · "}
+                                {a.expiresAt < Date.now()
+                                  ? "expired"
+                                  : `expires ${timeAgo(a.expiresAt)}`}
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      {a.status === "pending" && (
+                        <div className="flex shrink-0 gap-2">
+                          <PillButton
+                            className={!canAdmin ? "pointer-events-none opacity-50" : undefined}
+                            onClick={() => canAdmin && onDecide(a._id, true)}
+                          >
+                            Approve
+                          </PillButton>
+                          <PillButton
+                            variant="outline"
+                            className={!canAdmin ? "pointer-events-none opacity-50" : undefined}
+                            onClick={() => canAdmin && onDecide(a._id, false)}
+                          >
+                            Reject
+                          </PillButton>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  {a.status === "pending" && (
-                    <div className="flex shrink-0 gap-2">
-                      <Button
-                        variant="primary"
-                        className="bg-emerald-500/90 hover:bg-emerald-500"
-                        disabled={!canAdmin}
-                        onClick={() => onDecide(a._id, true)}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        variant="danger"
-                        disabled={!canAdmin}
-                        onClick={() => onDecide(a._id, false)}
-                      >
-                        Reject
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </Card>
-              </StaggerItem>
-            );
-          })}
-        </Stagger>
-      )}
+                  </Panel>
+                </StaggerItem>
+              );
+            })}
+          </Stagger>
+        )}
+      </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Request approval">
         <div className="space-y-4">
