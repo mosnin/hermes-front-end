@@ -8,9 +8,10 @@ import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot } from "@/comp
 import { PagePath } from "@/components/page-header";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { Cloud, KeyRound, Plus, RefreshCw, Rocket, Trash2 } from "@/components/icons";
+import { Boxes, Cloud, KeyRound, Plus, RefreshCw, Rocket, Trash2 } from "@/components/icons";
 import { TemplatesPanel } from "@/components/fleet/TemplatesPanel";
 import { AutoscalePanel } from "@/components/fleet/AutoscalePanel";
+import { RestartPanel } from "@/components/fleet/RestartPanel";
 
 const deployTone = {
   provisioning: "yellow",
@@ -26,6 +27,7 @@ export default function FleetPage() {
   const toast = useToast();
 
   const provider = useQuery(api.fleet.providerStatus, {});
+  const harnessCatalog = useQuery(api.fleet.harnessCatalog, {});
   const fleet = useQuery(api.fleet.list, spaceId ? { spaceId } : "skip");
   const org = useQuery(api.fleet.orgChart, spaceId ? { spaceId } : "skip");
   const squads = useQuery(api.squads.list, spaceId ? { spaceId } : "skip");
@@ -53,6 +55,8 @@ export default function FleetPage() {
   const [region, setRegion] = useState("");
   const [model, setModel] = useState("claude-opus-4-8");
   const [apiKey, setApiKey] = useState("");
+  const [harness, setHarness] = useState("hermes");
+  const [imageRef, setImageRef] = useState("");
   const [squad, setSquad] = useState("");
   const [manager, setManager] = useState("");
   const [busy, setBusy] = useState(false);
@@ -73,6 +77,8 @@ export default function FleetPage() {
         squadId: squad ? (squad as Id<"squads">) : undefined,
         reportsTo: manager ? (manager as Id<"agents">) : undefined,
         modelApiKey: apiKey.trim() || undefined,
+        harness: imageRef.trim() ? undefined : harness || undefined,
+        imageRef: imageRef.trim() || undefined,
       });
       if (res.cloudflare) {
         toast(`Deployed ${res.deployed.length} agent(s) on Cloudflare`, "success");
@@ -83,6 +89,7 @@ export default function FleetPage() {
         toast("Agents created, Cloudflare not configured, connect manually", "info");
       }
       setApiKey("");
+      setImageRef("");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Deploy failed", "error");
     } finally {
@@ -194,6 +201,9 @@ export default function FleetPage() {
                   <StatusDot status={a.status} />
                   <span className="flex-1 truncate text-sm">{a.name}</span>
                   <Badge>{a.region ?? a.vmProvider}</Badge>
+                  {a.harness && a.harness !== "hermes" && (
+                    <Badge tone="blue">{a.harness}</Badge>
+                  )}
                   <Badge tone={deployTone[a.deploymentStatus ?? "provisioning"]}>
                     {a.deploymentStatus ?? "provisioning"}
                   </Badge>
@@ -230,6 +240,7 @@ export default function FleetPage() {
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <AutoscalePanel spaceId={spaceId} />
           <TemplatesPanel spaceId={spaceId} />
+          <RestartPanel spaceId={spaceId} />
         </div>
       )}
 
@@ -257,6 +268,27 @@ export default function FleetPage() {
             <div>
               <label className="mb-1 block text-xs text-muted">Model</label>
               <Input value={model} onChange={(e) => setModel(e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted">Harness</label>
+              <select
+                value={harness}
+                onChange={(e) => setHarness(e.target.value)}
+                disabled={!!imageRef.trim()}
+                className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm disabled:opacity-50"
+              >
+                {(harnessCatalog ?? []).map((h) => (
+                  <option key={h.id} value={h.id}>{h.displayName ?? h.id}</option>
+                ))}
+                {(harnessCatalog ?? []).length === 0 && (
+                  <option value="hermes">hermes</option>
+                )}
+              </select>
+              {harnessCatalog?.find((h) => h.id === harness)?.description && (
+                <p className="mt-1 text-xs text-muted">
+                  {harnessCatalog.find((h) => h.id === harness)?.description}
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs text-muted">Squad (optional)</label>
@@ -300,6 +332,23 @@ export default function FleetPage() {
             <p className="mt-1 text-xs text-muted">
               BYOK: passed to the container as a runtime secret, never stored on
               the agent record. Leave blank to configure keys on the agent later.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 flex items-center gap-1.5 text-xs text-muted">
+              <Boxes className="h-3 w-3" /> Bring your own container image (optional)
+            </label>
+            <Input
+              value={imageRef}
+              onChange={(e) => setImageRef(e.target.value)}
+              placeholder="registry.example.com/my-agent:latest"
+              disabled={entitlements?.plan !== "enterprise"}
+            />
+            <p className="mt-1 text-xs text-muted">
+              {entitlements?.plan === "enterprise"
+                ? "Overrides the harness picker above and boots this image directly."
+                : "Enterprise plan only. Upgrade to deploy an arbitrary container image instead of a built-in harness."}
             </p>
           </div>
 

@@ -12,7 +12,7 @@
  *
  *   GET  /health     (no auth)                                        -> { ok }
  *   POST /spawn      { token, controlPlaneUrl, region?, model?, modelApiKey?,
- *                       name, harness?, imageRef? }                    -> { id, harness, harnessVersion }
+ *                       name, harness?, imageRef?, agentCommand? }      -> { id, harness, harnessVersion }
  *   POST /terminate  { id }                                            -> { ok }
  *   POST /status     { id }                                            -> { status }
  *   POST /restart    { id }                                            -> { ok, status } (rolling restart, feature 5)
@@ -66,6 +66,27 @@ interface SpawnConfig {
   name?: string;
   /** Extra fixed env from the harness manifest (e.g. HERMES_AGENT_FRAMEWORK). */
   extraEnv?: Record<string, string>;
+}
+
+/**
+ * Body accepted by `/spawn`. `agentCommand` is the customer-supplied argv
+ * template for `generic-cli` (and an override for any other CLI-shaped
+ * harness) — connector/control_plane/frameworks.py's `CliExecutor` fails fast
+ * at container boot if `HERMES_AGENT_COMMAND` is unset for `harness ===
+ * "generic-cli"`, so `fleet.ts deploy()` requires this field for that harness
+ * before ever calling here (see the validation there); this worker still
+ * honors it as a straight passthrough for any harness that accepts it.
+ */
+interface SpawnBody {
+  token?: string;
+  controlPlaneUrl?: string;
+  region?: string;
+  model?: string;
+  modelApiKey?: string;
+  name?: string;
+  harness?: string;
+  imageRef?: string;
+  agentCommand?: string;
 }
 
 /** Registry entry for one spawned agent, keyed by DO id string. */
@@ -324,8 +345,13 @@ export default {
 
     // --- POST /spawn: create a uniquely-named DO and boot its container. ---
     if (url.pathname === "/spawn") {
-      const requestedHarness = typeof body.harness === "string" && body.harness ? body.harness : "hermes";
-      const imageRef = typeof body.imageRef === "string" && body.imageRef ? body.imageRef : undefined;
+      const spawnBody = body as SpawnBody;
+      const requestedHarness = typeof spawnBody.harness === "string" && spawnBody.harness ? spawnBody.harness : "hermes";
+      const imageRef = typeof spawnBody.imageRef === "string" && spawnBody.imageRef ? spawnBody.imageRef : undefined;
+      const agentCommand =
+        typeof spawnBody.agentCommand === "string" && spawnBody.agentCommand.trim()
+          ? spawnBody.agentCommand.trim()
+          : undefined;
 
       // BYO image (enterprise, gated upstream by convex/fleet.ts) routes to the
       // reserved `custom` slot regardless of `harness`. Otherwise the harness
@@ -350,6 +376,12 @@ export default {
         // whatever AGENT_BYO's class is currently configured with).
         extraEnv = { HERMES_BYO_IMAGE_REF: imageRef };
       }
+      // agentCommand overrides/sets HERMES_AGENT_COMMAND for CLI-shaped
+      // harnesses (required for generic-cli — see fleet.ts deploy()'s
+      // validation, which never lets an unset one reach here for that
+      // harness). Applied after the manifest's fixed env so a caller-supplied
+      // command always wins over any manifest default.
+      if (agentCommand) extraEnv = { ...extraEnv, HERMES_AGENT_COMMAND: agentCommand };
 
       const ns = bindingFor(env, harness);
       // A fresh unique id == a brand new agent/container. We hand the caller
@@ -359,17 +391,17 @@ export default {
       const id = ns.newUniqueId();
       const container = ns.get(id);
       await container.startAgent({
-        token: body.token,
-        controlPlaneUrl: body.controlPlaneUrl,
-        region: body.region,
-        model: body.model,
-        modelApiKey: body.modelApiKey,
-        name: body.name,
+        token: spawnBody.token,
+        controlPlaneUrl: spawnBody.controlPlaneUrl,
+        region: spawnBody.region,
+        model: spawnBody.model,
+        modelApiKey: spawnBody.modelApiKey,
+        name: spawnBody.name,
         extraEnv,
       });
-      // Never log `body` here — it may carry `token`/`modelApiKey`.
+      // Never log `body`/`spawnBody` here — they may carry `token`/`modelApiKey`.
       await registryStub(env).add(id.toString(), {
-        name: body.name,
+        name: spawnBody.name,
         harness,
         harnessVersion,
         imageRef,

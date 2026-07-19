@@ -13,6 +13,18 @@ export type ApiAgent = {
   deploymentStatus?: string;
 };
 
+/** Returned by `GET /api/v1/agents/{id}` — a superset of the list shape
+ * (`ApiAgent`) with a few extra fields only worth paying for on a single
+ * fetch. */
+export type ApiAgentDetail = ApiAgent & {
+  harness?: string;
+  vmProvider?: string;
+  vmId?: string;
+  region?: string;
+  lastWorkAt?: number;
+  idleState?: "active" | "idle" | "hibernated";
+};
+
 export type ApiDeploy = {
   id: string;
   name: string;
@@ -39,6 +51,8 @@ export type ApiWorkflow = {
   updatedAt: number;
 };
 
+export type ApiTaskStatus = "todo" | "in_progress" | "blocked" | "done";
+
 export type ApiWorkflowRun = {
   id: string;
   workflowId: string;
@@ -54,6 +68,12 @@ export type ApiApproval = {
   detail?: string;
   status: "pending" | "approved" | "rejected";
   riskLevel?: "low" | "medium" | "high";
+  /** Structured diff/preview of the pending action, e.g. `{ before, after }`
+   * — shape is caller-defined at `approvals.request` time. */
+  preview?: unknown;
+  /** Channels this approval was successfully pushed to (e.g. `["email",
+   * "webhook"]`), populated after `notifications.deliverApproval` runs. */
+  deliveredChannels?: string[];
   createdAt: number;
   decidedAt?: number;
 };

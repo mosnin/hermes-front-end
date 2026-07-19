@@ -93,13 +93,13 @@ call never eats into your quota.
 
 | Scope | Routes |
 | --- | --- |
-| `agents:read` | `GET /api/v1/agents` |
+| `agents:read` | `GET /api/v1/agents`, `GET /api/v1/agents/{id}` |
 | `deploys:read` | `GET /api/v1/deploys` |
 | `tasks:read` | `GET /api/v1/tasks` |
-| `tasks:write` | `POST /api/v1/tasks` |
+| `tasks:write` | `POST /api/v1/tasks`, `PATCH /api/v1/tasks/{id}` |
 | `messages:write` | `POST /api/v1/messages` |
 | `workflows:read` | `GET /api/v1/workflows`, `GET /api/v1/workflows/runs` |
-| `workflows:write` | `POST /api/v1/workflows/run` |
+| `workflows:write` | `POST /api/v1/workflows/run`, `POST /api/v1/workflows/{id}/toggle` |
 | `approvals:read` | `GET /api/v1/approvals` |
 | `approvals:write` | `POST /api/v1/approvals/{id}/decide`, `POST /api/v1/approvals/bulk-decide` |
 | `usage:read` | `GET /api/v1/usage` |
@@ -129,6 +129,14 @@ List agents in the key's Space. **Scope** `agents:read`. Paginated.
 
 **Response** `data: { agents: Array<{ id, name, status, kind, framework?, capabilities, deploymentStatus? }>, cursor, hasMore }`
 
+### `GET /api/v1/agents/{id}`
+Single-agent detail — a superset of the list shape with a few extra fields
+only worth paying for on a targeted fetch. **Scope** `agents:read`.
+
+**Response** `data: { id, name, status, kind, framework?, harness?, capabilities, deploymentStatus?, vmProvider?, vmId?, region?, lastWorkAt?, idleState? }`,
+or `404` if the id doesn't exist or isn't in this key's Space (never leaks
+cross-tenant existence).
+
 ### `GET /api/v1/deploys`
 List fleet agents provisioned onto a VM (a subset of `agents` — those with a
 `vmId` or `deploymentStatus`). **Scope** `deploys:read`. Paginated.
@@ -145,6 +153,13 @@ Create a task. **Scope** `tasks:write`.
 
 **Body** `{ title: string, description?: string }`
 **Response** `data: { id }` — `201`
+
+### `PATCH /api/v1/tasks/{id}`
+Partial update — only the fields you pass are changed. **Scope** `tasks:write`.
+
+**Body** `{ title?: string, description?: string, status?: "todo" | "in_progress" | "blocked" | "done" }`
+**Response** `data: { id }`, or `404` if the id doesn't exist or isn't in this
+key's Space, `400` for an invalid `status`.
 
 ### `POST /api/v1/messages`
 Post a message, creating a new thread (or reusing context — see SDK notes).
@@ -163,6 +178,15 @@ Start a workflow run. **Scope** `workflows:write`.
 
 **Body** `{ workflowId: string }`
 **Response** `data: { runId }` — `201`
+
+### `POST /api/v1/workflows/{id}/toggle`
+Enable or disable a workflow. A disabled workflow never starts new runs from
+its triggers (existing in-flight runs are unaffected). **Scope**
+`workflows:write`.
+
+**Body** `{ enabled: boolean }`
+**Response** `data: { id, enabled }`, or `404` if the id doesn't exist or
+isn't in this key's Space.
 
 ### `GET /api/v1/workflows/runs?workflowId=...`
 List recent workflow runs, optionally scoped to one workflow via the
@@ -260,6 +284,25 @@ Each Space member configures their own approval delivery channels from
     "approveUrl": "https://.../api/v1/approvals/token/apt_...",
     "denyUrl": "https://.../api/v1/approvals/token/apt_...",
     "ts": 1737331200000
+  }
+  ```
+
+  Verify it on receipt with the SDK's `verifyCadreWebhookSignature` helper
+  (zero-dep, Web Crypto — works in Node 18+, browsers, and edge runtimes):
+
+  ```ts
+  import { verifyCadreWebhookSignature } from "@/sdk/src";
+
+  export async function POST(req: Request) {
+    const rawBody = await req.text(); // must be the raw, unparsed body
+    const ok = await verifyCadreWebhookSignature(
+      rawBody,
+      req.headers.get("x-cadre-signature"),
+      process.env.CADRE_WEBHOOK_SECRET!,
+    );
+    if (!ok) return new Response("invalid signature", { status: 401 });
+    const payload = JSON.parse(rawBody);
+    // ...
   }
   ```
 

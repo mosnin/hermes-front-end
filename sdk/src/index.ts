@@ -3,8 +3,10 @@ export type { CadreClientOptions } from "./client";
 export {
   CadreApiError,
   type ApiAgent,
+  type ApiAgentDetail,
   type ApiDeploy,
   type ApiTask,
+  type ApiTaskStatus,
   type ApiWorkflow,
   type ApiWorkflowRun,
   type ApiApproval,
@@ -14,3 +16,4 @@ export {
   type Page,
   type PageOptions,
 } from "./types";
+export { verifyCadreWebhookSignature } from "./webhooks";

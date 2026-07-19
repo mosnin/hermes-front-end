@@ -218,6 +218,63 @@ describe("fleet.deploy — harness-agnostic runtime", () => {
     expect(fleet[0].capabilities).toEqual(["chat", "workflow"]);
   });
 
+  test("generic-cli harness is rejected without agentCommand", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    await expect(
+      owner.action(api.fleet.deploy, { spaceId, count: 1, harness: "generic-cli" }),
+    ).rejects.toThrow(/agentCommand/);
+
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet).toHaveLength(0);
+  });
+
+  test("generic-cli harness is rejected with a blank/whitespace-only agentCommand", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    await expect(
+      owner.action(api.fleet.deploy, {
+        spaceId,
+        count: 1,
+        harness: "generic-cli",
+        agentCommand: "   ",
+      }),
+    ).rejects.toThrow(/agentCommand/);
+  });
+
+  test("generic-cli harness succeeds once agentCommand is supplied", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    const res = await owner.action(api.fleet.deploy, {
+      spaceId,
+      count: 1,
+      harness: "generic-cli",
+      agentCommand: "my-agent --task '{instruction}'",
+    });
+    expect(res.deployed).toHaveLength(1);
+
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet[0].harness).toBe("generic-cli");
+  });
+
+  test("BYO image deploys don't require agentCommand even without a harness match", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "enterprise");
+
+    // No harness specified (defaults to hermes internally pre-imageRef-check)
+    // and no agentCommand — imageRef deploys are exempt from the generic-cli
+    // agentCommand requirement since the image is opaque to us.
+    const res = await owner.action(api.fleet.deploy, {
+      spaceId,
+      count: 1,
+      imageRef: "ghcr.io/acme/custom-agent:latest",
+    });
+    expect(res.deployed).toHaveLength(1);
+  });
+
   test("BYO container image is allowed on the enterprise plan", async () => {
     const { t, owner, spaceId } = await setup();
     await setPlan(t, spaceId, "enterprise");

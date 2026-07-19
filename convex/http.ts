@@ -1152,6 +1152,28 @@ http.route({
   }),
 });
 
+// GET /api/v1/agents/{id} — single-agent detail. An exact `path` route always
+// wins over this `pathPrefix`, so "/api/v1/agents" (the list route above)
+// never falls into the id regex below (same registration-order guarantee
+// documented next to the approvals bulk-decide route).
+http.route({
+  pathPrefix: "/api/v1/agents/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const agentId = url.pathname.slice("/api/v1/agents/".length);
+    if (!agentId) return apiError("not_found", "unknown route", 404);
+    const auth = await gate(ctx, request, "GET /api/v1/agents/:id", "agents:read");
+    if (auth instanceof Response) return auth;
+    const agent = await ctx.runQuery(internal.publicApi.getAgentForApi, {
+      spaceId: auth.spaceId,
+      agentId: agentId as Id<"agents">,
+    }).catch(() => null);
+    if (!agent) return apiError("not_found", "agent not found", 404);
+    return apiOk(agent, 200, auth.rateLimitHeaders);
+  }),
+});
+
 http.route({
   path: "/api/v1/deploys",
   method: "GET",
@@ -1202,6 +1224,42 @@ http.route({
   }),
 });
 
+// PATCH /api/v1/tasks/{id} — body { title?, description?, status? }.
+http.route({
+  pathPrefix: "/api/v1/tasks/",
+  method: "PATCH",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const taskId = url.pathname.slice("/api/v1/tasks/".length);
+    if (!taskId) return apiError("not_found", "unknown route", 404);
+    const auth = await gate(ctx, request, "PATCH /api/v1/tasks/:id", "tasks:write");
+    if (auth instanceof Response) return auth;
+    const body = await request.json().catch(() => ({}));
+    const status =
+      body.status === "todo" ||
+      body.status === "in_progress" ||
+      body.status === "blocked" ||
+      body.status === "done"
+        ? body.status
+        : undefined;
+    if (body.status !== undefined && status === undefined) {
+      return apiError("bad_request", "status must be one of todo|in_progress|blocked|done", 400);
+    }
+    try {
+      const result = await ctx.runMutation(internal.publicApi.updateTaskForApi, {
+        spaceId: auth.spaceId,
+        taskId: taskId as Id<"tasks">,
+        title: typeof body.title === "string" ? body.title : undefined,
+        description: typeof body.description === "string" ? body.description : undefined,
+        status,
+      });
+      return apiOk(result, 200, auth.rateLimitHeaders);
+    } catch (e) {
+      return apiError("not_found", e instanceof Error ? e.message : String(e), 404);
+    }
+  }),
+});
+
 http.route({
   path: "/api/v1/messages",
   method: "POST",
@@ -1233,6 +1291,37 @@ http.route({
       limit,
     });
     return apiOk(result, 200, auth.rateLimitHeaders);
+  }),
+});
+
+// POST /api/v1/workflows/{id}/toggle — body { enabled: boolean }. Exact-path
+// routes ("/api/v1/workflows/run", "/api/v1/workflows/runs") registered
+// nearby always win over this pathPrefix, so neither collides with the
+// `:id/toggle` regex (same guarantee documented on the approvals routes).
+http.route({
+  pathPrefix: "/api/v1/workflows/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const rest = url.pathname.slice("/api/v1/workflows/".length);
+    const match = rest.match(/^([^/]+)\/toggle$/);
+    if (!match) return apiError("not_found", "unknown route", 404);
+    const auth = await gate(ctx, request, "POST /api/v1/workflows/:id/toggle", "workflows:write");
+    if (auth instanceof Response) return auth;
+    const body = await request.json().catch(() => ({}));
+    if (typeof body.enabled !== "boolean") {
+      return apiError("bad_request", "enabled (boolean) required", 400);
+    }
+    try {
+      const result = await ctx.runMutation(internal.publicApi.toggleWorkflowForApi, {
+        spaceId: auth.spaceId,
+        workflowId: match[1] as Id<"workflows">,
+        enabled: body.enabled,
+      });
+      return apiOk(result, 200, auth.rateLimitHeaders);
+    } catch (e) {
+      return apiError("not_found", e instanceof Error ? e.message : String(e), 404);
+    }
   }),
 });
 

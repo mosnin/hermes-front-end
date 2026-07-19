@@ -1,9 +1,11 @@
 import {
   ApiAgent,
+  ApiAgentDetail,
   ApiApproval,
   ApiBulkDecideResult,
   ApiDeploy,
   ApiTask,
+  ApiTaskStatus,
   ApiUsage,
   ApiWorkflow,
   ApiWorkflowRun,
@@ -45,7 +47,7 @@ export class CadreClient {
   }
 
   private async request<T>(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PATCH",
     path: string,
     body?: unknown,
   ): Promise<T> {
@@ -104,6 +106,10 @@ export class CadreClient {
         "GET",
         `/api/v1/agents${CadreClient.qs({ cursor: opts?.cursor ?? undefined, limit: opts?.limit?.toString() })}`,
       ),
+    /** Single-agent detail. Throws `CadreApiError("not_found", ..., 404)` if
+     * the id doesn't exist or isn't in this key's Space. */
+    get: (agentId: string): Promise<ApiAgentDetail> =>
+      this.request("GET", `/api/v1/agents/${encodeURIComponent(agentId)}`),
   };
 
   deploys = {
@@ -122,6 +128,12 @@ export class CadreClient {
       ),
     create: (input: { title: string; description?: string }): Promise<{ id: string }> =>
       this.request("POST", "/api/v1/tasks", input),
+    /** Partial update — only the fields you pass are changed. */
+    update: (
+      taskId: string,
+      input: { title?: string; description?: string; status?: ApiTaskStatus },
+    ): Promise<{ id: string }> =>
+      this.request("PATCH", `/api/v1/tasks/${encodeURIComponent(taskId)}`, input),
   };
 
   messages = {
@@ -139,6 +151,12 @@ export class CadreClient {
       ),
     run: (input: { workflowId: string }): Promise<{ runId: string }> =>
       this.request("POST", "/api/v1/workflows/run", input),
+    /** Enable or disable a workflow (paused workflows never start new runs
+     * from triggers). */
+    toggle: (workflowId: string, enabled: boolean): Promise<{ id: string; enabled: boolean }> =>
+      this.request("POST", `/api/v1/workflows/${encodeURIComponent(workflowId)}/toggle`, {
+        enabled,
+      }),
     runs: (
       workflowId?: string,
       opts?: PageOptions,

@@ -55,7 +55,7 @@ carry `Authorization: Bearer <FLEET_SECRET>`. These match
 | Method · Path | Auth | Body | Returns |
 | --- | --- | --- | --- |
 | `GET /health` | none | — | `{ ok: true }` |
-| `POST /spawn` | required | `{ token, controlPlaneUrl, region?, model?, modelApiKey?, name, harness?, imageRef? }` | `{ id, harness, harnessVersion }` |
+| `POST /spawn` | required | `{ token, controlPlaneUrl, region?, model?, modelApiKey?, name, harness?, imageRef?, agentCommand? }` | `{ id, harness, harnessVersion }` |
 | `POST /terminate` | required | `{ id }` | `{ ok: true }` |
 | `POST /status` | required | `{ id }` | `{ status }` |
 | `POST /restart` | required | `{ id }` | `{ ok: true, status }` |
@@ -78,6 +78,7 @@ On `/spawn` the worker injects these env vars into the container (consumed by
 | `HERMES_MODEL_API_KEY` | `modelApiKey` (BYOK passthrough, optional) |
 | `HERMES_AGENT_FRAMEWORK` (+ any other `env.fixed` keys) | the resolved harness manifest |
 | `HERMES_BYO_IMAGE_REF` | `imageRef`, BYO deploys only (audit/observability) |
+| `HERMES_AGENT_COMMAND` | `agentCommand` (required by `fleet.ts` for `harness: "generic-cli"`; optional override otherwise) |
 
 (`region` is accepted for forward-compat but Cloudflare schedules containers
 globally; it is currently unused.)

@@ -158,6 +158,23 @@ agent record) is in place end-to-end so that when Cloudflare ships per-spawn
 image selection, only the worker's binding-resolution step needs to change —
 callers, gating, and the agent record shape do not.
 
+## generic-cli requires `agentCommand`
+
+`generic-cli`'s adapter (`connector/control_plane/frameworks.py`'s
+`CliExecutor`) has no default command — it fails fast at container boot if
+`HERMES_AGENT_COMMAND` is unset. `fleet.ts deploy()` therefore **requires** an
+`agentCommand` argument whenever `harness === "generic-cli"` and no `imageRef`
+is set (BYO images are opaque to us, so this validation doesn't apply to
+them), and rejects the whole batch before spawning anything if it's missing —
+better than spawning N containers that immediately crash-loop. `agentCommand`
+flows `fleet.ts` → `lib/cloudflare.ts spawnAgent()` → the fleet worker's
+`/spawn` body → `HERMES_AGENT_COMMAND` container env (layered on top of any
+manifest-fixed env, so a caller-supplied command always wins). It's an
+optional override for any other harness too (each of those ships a working
+default command already, per `FRAMEWORK_COMMANDS` in `frameworks.py`).
+`agentCommand` is spawn-time-only, like the BYOK `modelApiKey` — it is not
+persisted on the `agents` row.
+
 ## Version tracking (feature 5)
 
 Each manifest pins a `version` (the harness framework's version, not the

@@ -38,7 +38,7 @@ async function drainScheduler(t: ReturnType<typeof convexTest>) {
 
 const call = (
   t: ReturnType<typeof convexTest>,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PATCH",
   path: string,
   key: string | null,
   body?: unknown,
@@ -460,5 +460,96 @@ describe("public API v1", () => {
     const remaining = await t.run(async (ctx) => ctx.db.query("apiUsage").collect());
     expect(remaining.length).toBe(1);
     expect(remaining[0].bucket.startsWith("day:")).toBe(true);
+  });
+
+  test("agents: GET /api/v1/agents/{id} returns detail; unknown or foreign ids 404", async () => {
+    const { t, owner, spaceId, key } = await boot("org_api_agent_detail");
+    const created = (await owner.action(api.agents.create, {
+      spaceId,
+      name: "Detail Agent",
+    })) as { agentId: Id<"agents"> };
+
+    const res = await call(t, "GET", `/api/v1/agents/${created.agentId}`, key);
+    expect(res.status).toBe(200);
+    const body = (await res.json()).data;
+    expect(body.id).toBe(created.agentId);
+    expect(body.name).toBe("Detail Agent");
+
+    const unknown = await call(t, "GET", "/api/v1/agents/not-a-real-id", key);
+    expect(unknown.status).toBe(404);
+    expect((await unknown.json()).error.code).toBe("not_found");
+
+    // An agent id that's real but belongs to a different Space (same
+    // backend) must also 404, not leak cross-tenant data.
+    const otherOwner = t.withIdentity({ subject: "u2", org_id: "org_api_agent_detail_other" });
+    const otherSpaceId = await otherOwner.mutation(api.spaces.create, { name: "other" });
+    const otherCreated = (await otherOwner.action(api.agents.create, {
+      spaceId: otherSpaceId,
+      name: "Other Space Agent",
+    })) as { agentId: Id<"agents"> };
+    const crossTenant = await call(t, "GET", `/api/v1/agents/${otherCreated.agentId}`, key);
+    expect(crossTenant.status).toBe(404);
+  });
+
+  test("tasks: PATCH updates status/title and 404s on an unknown or foreign id", async () => {
+    const { t, key } = await boot("org_api_task_patch");
+    const create = await call(t, "POST", "/api/v1/tasks", key, { title: "Original" });
+    const { id: taskId } = (await create.json()).data;
+
+    const patch = await call(t, "PATCH", `/api/v1/tasks/${taskId}`, key, {
+      title: "Renamed",
+      status: "in_progress",
+    });
+    expect(patch.status).toBe(200);
+    expect((await patch.json()).data.id).toBe(taskId);
+
+    const list = await call(t, "GET", "/api/v1/tasks", key);
+    const task = (await list.json()).data.tasks[0];
+    expect(task.title).toBe("Renamed");
+    expect(task.status).toBe("in_progress");
+
+    const badStatus = await call(t, "PATCH", `/api/v1/tasks/${taskId}`, key, {
+      status: "not-a-status",
+    });
+    expect(badStatus.status).toBe(400);
+
+    const unknown = await call(t, "PATCH", "/api/v1/tasks/not-a-real-id", key, {
+      title: "x",
+    });
+    expect(unknown.status).toBe(404);
+  });
+
+  test("workflows: POST /api/v1/workflows/{id}/toggle enables and disables", async () => {
+    const { t, owner, spaceId, key } = await boot("org_api_workflow_toggle");
+    const workflowId = await owner.mutation(api.workflows.create, {
+      spaceId,
+      name: "Toggle Me",
+      steps: [{ id: "s1", name: "Step 1", instruction: "do it" }],
+    });
+
+    const off = await call(t, "POST", `/api/v1/workflows/${workflowId}/toggle`, key, {
+      enabled: false,
+    });
+    expect(off.status).toBe(200);
+    expect((await off.json()).data.enabled).toBe(false);
+
+    const list = await call(t, "GET", "/api/v1/workflows", key);
+    expect((await list.json()).data.workflows[0].enabled).toBe(false);
+
+    const badBody = await call(t, "POST", `/api/v1/workflows/${workflowId}/toggle`, key, {});
+    expect(badBody.status).toBe(400);
+
+    const unknown = await call(t, "POST", "/api/v1/workflows/not-a-real-id/toggle", key, {
+      enabled: true,
+    });
+    expect(unknown.status).toBe(404);
+
+    // "/api/v1/workflows/run" must still route to the run handler, not the
+    // toggle regex, even though both share the pathPrefix.
+    const badRun = await call(t, "POST", "/api/v1/workflows/run", key, {
+      workflowId: "not-a-real-id",
+    });
+    expect(badRun.status).toBe(400); // bad_request (invalid workflowId), not 404 unknown route
+    expect((await badRun.json()).error.code).toBe("bad_request");
   });
 });

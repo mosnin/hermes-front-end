@@ -424,4 +424,243 @@ describe("router: capability-based routing (feature 11)", () => {
       agentId,
     );
   });
+
+  test("harness match and recent-cost both factor into the composite score", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "user_owner", org_id: "org_route4" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "Routing4" });
+
+    const cheapMatched = (
+      await owner.action(api.agents.create, { spaceId, name: "Cheap matched harness" })
+    ).agentId as Id<"agents">;
+    const pricyMatched = (
+      await owner.action(api.agents.create, { spaceId, name: "Pricy matched harness" })
+    ).agentId as Id<"agents">;
+    const cheapWrongHarness = (
+      await owner.action(api.agents.create, { spaceId, name: "Cheap wrong harness" })
+    ).agentId as Id<"agents">;
+
+    for (const [agentId, harness] of [
+      [cheapMatched, "hermes"],
+      [pricyMatched, "hermes"],
+      [cheapWrongHarness, "goose"],
+    ] as const) {
+      await t.mutation(internal.agents.recordHeartbeat, {
+        agentId,
+        status: "online",
+        capabilities: ["code-gen"],
+      });
+      await t.run(async (ctx) => {
+        await ctx.db.patch(agentId, { harness });
+      });
+    }
+
+    // pricyMatched racked up real spend in the last 24h; the other two have none.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("usage", {
+        companyId: "org_route4",
+        spaceId,
+        agentId: pricyMatched,
+        kind: "run",
+        costUsd: 5,
+        createdAt: Date.now(),
+      });
+    });
+
+    const ranked = await owner.query(api.router.route, {
+      spaceId,
+      requiredCapabilities: ["code-gen"],
+      harness: "hermes",
+    });
+    const byId = new Map(ranked.map((r: { agentId: string }) => [r.agentId, r]));
+
+    // Harness score: matches get 1, mismatches get the 0.3 penalty.
+    expect(byId.get(cheapMatched)!.harnessScore).toBe(1);
+    expect(byId.get(cheapWrongHarness)!.harnessScore).toBe(0.3);
+
+    // Cost score: the agent with zero recent spend scores a full 1; the one
+    // that spent the Space's max in-window cost scores 0.
+    expect(byId.get(cheapMatched)!.costScore).toBe(1);
+    expect(byId.get(pricyMatched)!.costScore).toBe(0);
+    expect(byId.get(pricyMatched)!.recentCostUsd).toBe(5);
+
+    // Same capability match for all three, but the cheap+matched-harness
+    // agent should outrank both the pricy one and the wrong-harness one.
+    expect(ranked[0].agentId).toBe(cheapMatched);
+  });
+
+  test("pickAgentForRequirements returns null when no agent in the Space qualifies", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "user_owner", org_id: "org_route5" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "Routing5" });
+    const best = await owner.query(api.router.routeBest, {
+      spaceId,
+      requiredCapabilities: ["code-gen"],
+    });
+    expect(best).toBeNull();
+  });
+});
+
+describe("capabilities: forConnector resolves an agent's effective tool set (feature 12)", () => {
+  test("uses the agent's own declared capabilities when none are passed explicitly", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "user_owner", org_id: "org_conn1" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "ConnTools" });
+    const agentId = (
+      await owner.action(api.agents.create, { spaceId, name: "Connector agent" })
+    ).agentId as Id<"agents">;
+    await t.mutation(internal.agents.recordHeartbeat, {
+      agentId,
+      status: "online",
+      capabilities: ["browser", "search"],
+    });
+    await owner.mutation(api.capabilities.upsertGrant, {
+      spaceId,
+      capability: "browser",
+      toolNames: ["composio_browser_navigate"],
+      enabled: true,
+    });
+
+    const resolved = await t.query(internal.capabilities.forConnector, { spaceId, agentId });
+    const byCap = new Map(resolved.map((r: { capability: string; toolNames: string[] }) => [r.capability, r.toolNames]));
+    expect(byCap.get("browser")).toEqual(["composio_browser_navigate"]);
+    expect(byCap.get("search")).toEqual([]); // declared, no grant wired up
+
+    // Empty for an agent outside the Space.
+    const otherSpaceId = await owner.mutation(api.spaces.create, { name: "OtherSpace" });
+    const empty = await t.query(internal.capabilities.forConnector, {
+      spaceId: otherSpaceId,
+      agentId,
+    });
+    expect(empty).toEqual([]);
+  });
+
+  test("explicit capabilities override the agent's declared set", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "user_owner", org_id: "org_conn2" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "ConnTools2" });
+    const agentId = (
+      await owner.action(api.agents.create, { spaceId, name: "Connector agent 2" })
+    ).agentId as Id<"agents">;
+    await t.mutation(internal.agents.recordHeartbeat, {
+      agentId,
+      status: "online",
+      capabilities: ["browser"],
+    });
+    await owner.mutation(api.capabilities.upsertGrant, {
+      spaceId,
+      capability: "email",
+      toolNames: ["composio_gmail_send"],
+      enabled: true,
+    });
+
+    const resolved = await t.query(internal.capabilities.forConnector, {
+      spaceId,
+      agentId,
+      capabilities: ["email"],
+    });
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].capability).toBe("email");
+    expect(resolved[0].toolNames).toEqual(["composio_gmail_send"]);
+  });
+});
+
+describe("evals: listBatches / compareBatch rollups (feature 13)", () => {
+  test("groups runs by batchId, rolls up avg quality + total cost, and derives batch status", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "user_owner", org_id: "org_batch1" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "BatchRollup" });
+    const agentA = (
+      await owner.action(api.agents.create, { spaceId, name: "Agent A" })
+    ).agentId as Id<"agents">;
+    const agentB = (
+      await owner.action(api.agents.create, { spaceId, name: "Agent B" })
+    ).agentId as Id<"agents">;
+    const benchmarkId = await owner.mutation(api.evals.createBenchmark, {
+      spaceId,
+      name: "Rollup bench",
+      prompt: "Summarize this",
+    });
+
+    const batchId = "batch-rollup-1";
+    await t.run(async (ctx) => {
+      await ctx.db.insert("evalRuns", {
+        companyId: "org_batch1",
+        spaceId,
+        benchmarkId,
+        batchId,
+        agentId: agentA,
+        harness: "hermes",
+        model: "claude-opus-4-8",
+        status: "completed",
+        qualityScore: 0.8,
+        costUsd: 0.02,
+        inputTokens: 100,
+        outputTokens: 50,
+        latencyMs: 900,
+        startedAt: 1000,
+        finishedAt: 1500,
+      });
+      await ctx.db.insert("evalRuns", {
+        companyId: "org_batch1",
+        spaceId,
+        benchmarkId,
+        batchId,
+        agentId: agentB,
+        harness: "goose",
+        model: "gpt-4o-mini",
+        status: "failed",
+        error: "timeout",
+        costUsd: 0.0,
+        startedAt: 1000,
+        finishedAt: 1300,
+      });
+    });
+
+    const batches = await owner.query(api.evals.listBatches, { spaceId });
+    expect(batches).toHaveLength(1);
+    expect(batches[0].batchId).toBe(batchId);
+    expect(batches[0].runCount).toBe(2);
+    // Only the completed run has a qualityScore, so avgQuality is just its own.
+    expect(batches[0].avgQuality).toBe(0.8);
+    expect(batches[0].totalCostUsd).toBeCloseTo(0.02);
+    // One failed run alongside a completed one -> "partial", not "completed".
+    expect(batches[0].status).toBe("partial");
+
+    const compared = await owner.query(api.evals.compareBatch, { spaceId, batchId });
+    expect(compared).toHaveLength(2);
+    const byAgent = new Map(compared.map((r: { agentId: string }) => [r.agentId, r]));
+    expect(byAgent.get(agentA)!.harness).toBe("hermes");
+    expect(byAgent.get(agentA)!.qualityScore).toBe(0.8);
+    expect(byAgent.get(agentB)!.status).toBe("failed");
+    expect(byAgent.get(agentB)!.error).toBe("timeout");
+  });
+
+  test("a batch with only pending/running runs reports status \"running\"", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "user_owner", org_id: "org_batch2" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "BatchRunning" });
+    const agentId = (
+      await owner.action(api.agents.create, { spaceId, name: "Agent" })
+    ).agentId as Id<"agents">;
+    const benchmarkId = await owner.mutation(api.evals.createBenchmark, {
+      spaceId,
+      name: "Running bench",
+      prompt: "Do the thing",
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("evalRuns", {
+        companyId: "org_batch2",
+        spaceId,
+        benchmarkId,
+        batchId: "batch-running-1",
+        agentId,
+        status: "pending",
+        startedAt: Date.now(),
+      });
+    });
+    const batches = await owner.query(api.evals.listBatches, { spaceId });
+    expect(batches[0].status).toBe("running");
+    expect(batches[0].avgQuality).toBeNull();
+  });
 });

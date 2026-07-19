@@ -115,6 +115,13 @@ export async function spawnAgent(args: {
    * reserved "custom" slot instead of `harness`. See docs/HARNESS_SPEC.md.
    */
   imageRef?: string;
+  /**
+   * argv template for CLI-shaped harnesses (HERMES_AGENT_COMMAND). Required
+   * by fleet.ts deploy() when `harness === "generic-cli"` — that harness's
+   * adapter (connector/control_plane/frameworks.py's CliExecutor) fails fast
+   * at container boot without it. Optional override for other harnesses.
+   */
+  agentCommand?: string;
 }): Promise<{ vmId: string; harness: string; harnessVersion: string | null }> {
   const data = await call("/spawn", {
     token: args.token,
@@ -125,6 +132,7 @@ export async function spawnAgent(args: {
     name: args.name,
     harness: args.harness,
     imageRef: args.imageRef,
+    agentCommand: args.agentCommand,
   });
   return {
     vmId: data.id ?? data.vmId ?? "",

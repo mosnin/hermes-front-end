@@ -281,6 +281,72 @@ export const createTask = internalMutation({
   },
 });
 
+const TASK_STATUS = v.union(
+  v.literal("todo"),
+  v.literal("in_progress"),
+  v.literal("done"),
+  v.literal("blocked"),
+);
+
+/** Update a task's title/description/status via the public API — trusts
+ * `spaceId` from the resolved API key, not the request body, so a key can
+ * only ever touch tasks in its own Space (mirrors `decideForApi`). */
+export const updateTaskForApi = internalMutation({
+  args: {
+    spaceId: v.id("spaces"),
+    taskId: v.id("tasks"),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
+    status: v.optional(TASK_STATUS),
+  },
+  handler: async (ctx, { spaceId, taskId, title, description, status }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task || task.spaceId !== spaceId) throw new Error("Not found");
+    const patch: Record<string, unknown> = { updatedAt: Date.now() };
+    if (title !== undefined) patch.title = title;
+    if (description !== undefined) patch.description = description;
+    if (status !== undefined) patch.status = status;
+    await ctx.db.patch(taskId, patch);
+    return { id: taskId };
+  },
+});
+
+/** Single-agent detail via the public API — same tenancy trust model as the
+ * other `*ForApi` internal queries. */
+export const getAgentForApi = internalQuery({
+  args: { spaceId: v.id("spaces"), agentId: v.id("agents") },
+  handler: async (ctx, { spaceId, agentId }) => {
+    const a = await ctx.db.get(agentId);
+    if (!a || a.spaceId !== spaceId) return null;
+    return {
+      id: a._id,
+      name: a.name,
+      status: a.status,
+      kind: a.kind ?? "hermes",
+      framework: a.framework,
+      harness: a.harness,
+      capabilities: a.capabilities ?? [],
+      deploymentStatus: a.deploymentStatus,
+      vmProvider: a.vmProvider,
+      vmId: a.vmId,
+      region: a.region,
+      lastWorkAt: a.lastWorkAt,
+      idleState: a.idleState,
+    };
+  },
+});
+
+/** Enable/disable a workflow via the public API. */
+export const toggleWorkflowForApi = internalMutation({
+  args: { spaceId: v.id("spaces"), workflowId: v.id("workflows"), enabled: v.boolean() },
+  handler: async (ctx, { spaceId, workflowId, enabled }) => {
+    const wf = await ctx.db.get(workflowId);
+    if (!wf || wf.spaceId !== spaceId) throw new Error("Not found");
+    await ctx.db.patch(workflowId, { enabled, updatedAt: Date.now() });
+    return { id: workflowId, enabled };
+  },
+});
+
 export const sendMessage = internalMutation({
   args: {
     spaceId: v.id("spaces"),

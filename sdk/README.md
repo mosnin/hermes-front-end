@@ -62,6 +62,7 @@ of this client.
 ```ts
 // Agents (paginated — see "Pagination" below)
 await cadre.agents.list();
+await cadre.agents.get("agentId"); // single-agent detail
 
 // Fleet deploys (agents provisioned onto a VM)
 await cadre.deploys.list();
@@ -69,6 +70,7 @@ await cadre.deploys.list();
 // Tasks
 await cadre.tasks.list();
 await cadre.tasks.create({ title: "Draft Q3 plan", description: "..." });
+await cadre.tasks.update("taskId", { status: "in_progress" }); // partial update
 
 // Messages (posts into a new or existing thread)
 await cadre.messages.send({ content: "Kick off the outreach run" });
@@ -76,6 +78,7 @@ await cadre.messages.send({ content: "Kick off the outreach run" });
 // Workflows
 await cadre.workflows.list();
 await cadre.workflows.run({ workflowId: "..." });
+await cadre.workflows.toggle("workflowId", false); // pause; true to re-enable
 await cadre.workflows.runs(); // all runs
 await cadre.workflows.runs("workflowId"); // scoped to one workflow
 
@@ -127,6 +130,35 @@ Dashboard → Approvals → Notifications) come with a signed, single-use
 itself is the credential — and are meant to be followed directly (they render
 a small confirmation page). Pass `?format=json` or `Accept: application/json`
 to get a JSON response instead, e.g. for a Slack/webhook "Approve" button.
+
+## Verifying inbound webhooks
+
+If you configured a webhook channel with a signing secret (Dashboard →
+Approvals → Notifications), Cadre signs each push with
+`X-Cadre-Signature: sha256=<hmac>`. Verify it with `verifyCadreWebhookSignature`
+before trusting the payload:
+
+```ts
+import { verifyCadreWebhookSignature } from "@/sdk/src";
+
+export async function POST(req: Request) {
+  const rawBody = await req.text(); // must be the raw, unparsed body — do not
+                                     // re-serialize a parsed object, the byte-
+                                     // for-byte body is what was signed
+  const ok = await verifyCadreWebhookSignature(
+    rawBody,
+    req.headers.get("x-cadre-signature"),
+    process.env.CADRE_WEBHOOK_SECRET!,
+  );
+  if (!ok) return new Response("invalid signature", { status: 401 });
+
+  const payload = JSON.parse(rawBody);
+  // payload.type === "approval.requested" | "test"
+}
+```
+
+Comparison is constant-time (no early-exit on the first mismatched byte), so
+a malformed or forged signature can't be brute-forced via response timing.
 
 ## Design notes
 

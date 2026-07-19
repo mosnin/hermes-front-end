@@ -190,6 +190,10 @@ export const insertFleetAgent = internalMutation({
  * is BYO-image (enterprise plan only): an arbitrary container image ref that
  * bypasses `harness` entirely — see docs/HARNESS_SPEC.md's "BYO image"
  * section for the current Cloudflare Containers limitation on this path.
+ * `agentCommand` is required when `harness === "generic-cli"` (that harness
+ * has no default command and fails fast at boot without one) and optional
+ * everywhere else — see docs/HARNESS_SPEC.md's "generic-cli requires
+ * agentCommand" section.
  */
 export const deploy = action({
   args: {
@@ -207,6 +211,9 @@ export const deploy = action({
     // Harness-agnostic runtime (features 1,3,5).
     harness: v.optional(v.string()),
     imageRef: v.optional(v.string()),
+    // argv template for CLI-shaped harnesses (-> HERMES_AGENT_COMMAND). See
+    // docs/HARNESS_SPEC.md "generic-cli requires agentCommand".
+    agentCommand: v.optional(v.string()),
   },
   handler: async (
     ctx,
@@ -227,6 +234,18 @@ export const deploy = action({
     // fleet worker trusts this call and does not re-check plan itself).
     if (args.imageRef && cap.plan !== "enterprise") {
       throw new Error("Bringing your own container image requires the enterprise plan");
+    }
+    // generic-cli's adapter (connector/control_plane/frameworks.py's
+    // CliExecutor) fails fast at container boot if HERMES_AGENT_COMMAND is
+    // unset — catch that here instead of letting every container in the
+    // batch spawn and immediately crash-loop. Not required for imageRef/BYO
+    // deploys (the image is opaque to us) or other harnesses (they ship a
+    // working default command, agentCommand only overrides it there).
+    const agentCommand = args.agentCommand?.trim() || undefined;
+    if (!args.imageRef && (args.harness ?? "hermes") === "generic-cli" && !agentCommand) {
+      throw new Error(
+        "The generic-cli harness requires agentCommand (the CLI invocation to run per instruction, e.g. \"my-agent --task '{instruction}'\")",
+      );
     }
 
     const configured = cloudflareConfigured();
@@ -253,6 +272,7 @@ export const deploy = action({
             modelApiKey: args.modelApiKey,
             harness: args.harness,
             imageRef: args.imageRef,
+            agentCommand,
           });
           vmId = res.vmId;
           resolvedHarness = res.harness;

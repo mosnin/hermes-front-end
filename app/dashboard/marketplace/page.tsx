@@ -4,11 +4,12 @@ import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { EmptyState, Input, Segmented, SkeletonRows } from "@/components/ui";
+import { Button, EmptyState, Input, Segmented, SkeletonRows } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Boxes, Search } from "@/components/icons";
+import { Boxes, Copy, Search } from "@/components/icons";
 import { TemplateCard, MarketplaceTemplate } from "@/components/marketplace/TemplateCard";
 import { TemplateDetailModal } from "@/components/marketplace/InstallDialog";
+import { SaveAgentDialog } from "@/components/marketplace/SaveAgentDialog";
 
 type CategoryValue = "all" | "sales" | "support" | "engineering" | "ops" | "marketing" | "custom";
 
@@ -27,6 +28,7 @@ export default function MarketplacePage() {
   const [category, setCategory] = useState<CategoryValue>("all");
   const [openId, setOpenId] = useState<Id<"agentTemplates"> | null>(null);
   const [search, setSearch] = useState("");
+  const [saveOpen, setSaveOpen] = useState(false);
 
   const templates = useQuery(
     api.marketplace.listTemplates,
@@ -50,12 +52,17 @@ export default function MarketplacePage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Template marketplace</h1>
-        <p className="text-sm text-muted">
-          Curated agent templates — harness, bundled skills, and suggested config, ready to
-          install into this Space. Save a live agent as a private template from its detail page.
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Template marketplace</h1>
+          <p className="text-sm text-muted">
+            Curated agent templates — harness, bundled skills, and suggested config, ready to
+            install into this Space.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => setSaveOpen(true)}>
+          <Copy className="h-4 w-4" /> Save an agent as template
+        </Button>
       </div>
 
       <div className="mb-4 max-w-sm">
@@ -82,7 +89,7 @@ export default function MarketplacePage() {
           body={
             search.trim()
               ? "Try a different search term, or clear the search to browse all templates."
-              : "Curated templates will appear here once seeded, or save one of your own agents as a private template."
+              : "Curated templates will appear here once seeded, or use \"Save an agent as template\" above to add your own."
           }
           graphic={<Boxes className="h-full w-full text-muted" />}
         />
@@ -110,6 +117,7 @@ export default function MarketplacePage() {
       )}
 
       <TemplateDetailModal templateId={openId} onClose={() => setOpenId(null)} />
+      <SaveAgentDialog open={saveOpen} onClose={() => setSaveOpen(false)} />
     </div>
   );
 }
