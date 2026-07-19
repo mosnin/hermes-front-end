@@ -1,9 +1,13 @@
 /* eslint-disable */
-import type {
-  ApiFromModules,
-  FilterApi,
-  FunctionReference,
-} from "convex/server";
+/**
+ * Generated `api` utility.
+ *
+ * THIS CODE IS AUTOMATICALLY GENERATED.
+ *
+ * To regenerate, run `npx convex dev`.
+ * @module
+ */
+
 import type * as a2a from "../a2a.js";
 import type * as a2aExternal from "../a2aExternal.js";
 import type * as a2aProtocol from "../a2aProtocol.js";
@@ -80,38 +84,44 @@ import type * as usage from "../usage.js";
 import type * as workEvents from "../workEvents.js";
 import type * as workflows from "../workflows.js";
 
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
+
 declare const fullApi: ApiFromModules<{
-  "a2a": typeof a2a;
-  "a2aExternal": typeof a2aExternal;
-  "a2aProtocol": typeof a2aProtocol;
-  "activity": typeof activity;
-  "admin": typeof admin;
-  "agentOps": typeof agentOps;
-  "agents": typeof agents;
-  "alerts": typeof alerts;
-  "analytics": typeof analytics;
-  "apiKeys": typeof apiKeys;
-  "approvals": typeof approvals;
-  "artifacts": typeof artifacts;
-  "audit": typeof audit;
-  "billing": typeof billing;
-  "bridges": typeof bridges;
-  "campaigns": typeof campaigns;
-  "capabilities": typeof capabilities;
-  "connector": typeof connector;
-  "costs": typeof costs;
-  "crons": typeof crons;
-  "demo": typeof demo;
-  "embeddings": typeof embeddings;
-  "engine": typeof engine;
-  "evals": typeof evals;
-  "fleet": typeof fleet;
-  "fleetMetering": typeof fleetMetering;
-  "goals": typeof goals;
-  "health": typeof health;
-  "http": typeof http;
-  "integrations": typeof integrations;
-  "ledger": typeof ledger;
+  a2a: typeof a2a;
+  a2aExternal: typeof a2aExternal;
+  a2aProtocol: typeof a2aProtocol;
+  activity: typeof activity;
+  admin: typeof admin;
+  agentOps: typeof agentOps;
+  agents: typeof agents;
+  alerts: typeof alerts;
+  analytics: typeof analytics;
+  apiKeys: typeof apiKeys;
+  approvals: typeof approvals;
+  artifacts: typeof artifacts;
+  audit: typeof audit;
+  billing: typeof billing;
+  bridges: typeof bridges;
+  campaigns: typeof campaigns;
+  capabilities: typeof capabilities;
+  connector: typeof connector;
+  costs: typeof costs;
+  crons: typeof crons;
+  demo: typeof demo;
+  embeddings: typeof embeddings;
+  engine: typeof engine;
+  evals: typeof evals;
+  fleet: typeof fleet;
+  fleetMetering: typeof fleetMetering;
+  goals: typeof goals;
+  health: typeof health;
+  http: typeof http;
+  integrations: typeof integrations;
+  ledger: typeof ledger;
   "lib/adminAuth": typeof lib_adminAuth;
   "lib/auditChain": typeof lib_auditChain;
   "lib/auth": typeof lib_auth;
@@ -127,41 +137,61 @@ declare const fullApi: ApiFromModules<{
   "lib/observability": typeof lib_observability;
   "lib/plans": typeof lib_plans;
   "lib/schedule": typeof lib_schedule;
-  "logs": typeof logs;
-  "maintenance": typeof maintenance;
-  "marketplace": typeof marketplace;
-  "mcp": typeof mcp;
-  "memories": typeof memories;
-  "messages": typeof messages;
-  "metrics": typeof metrics;
-  "notifications": typeof notifications;
-  "observability": typeof observability;
-  "planner": typeof planner;
-  "publicApi": typeof publicApi;
-  "reliability": typeof reliability;
-  "reports": typeof reports;
-  "router": typeof router;
-  "search": typeof search;
-  "secrets": typeof secrets;
-  "securityProfiles": typeof securityProfiles;
-  "skills": typeof skills;
-  "spaces": typeof spaces;
-  "squads": typeof squads;
-  "status": typeof status;
-  "streaming": typeof streaming;
-  "stripe": typeof stripe;
-  "tasks": typeof tasks;
-  "threads": typeof threads;
-  "triggers": typeof triggers;
-  "usage": typeof usage;
-  "workEvents": typeof workEvents;
-  "workflows": typeof workflows;
+  logs: typeof logs;
+  maintenance: typeof maintenance;
+  marketplace: typeof marketplace;
+  mcp: typeof mcp;
+  memories: typeof memories;
+  messages: typeof messages;
+  metrics: typeof metrics;
+  notifications: typeof notifications;
+  observability: typeof observability;
+  planner: typeof planner;
+  publicApi: typeof publicApi;
+  reliability: typeof reliability;
+  reports: typeof reports;
+  router: typeof router;
+  search: typeof search;
+  secrets: typeof secrets;
+  securityProfiles: typeof securityProfiles;
+  skills: typeof skills;
+  spaces: typeof spaces;
+  squads: typeof squads;
+  status: typeof status;
+  streaming: typeof streaming;
+  stripe: typeof stripe;
+  tasks: typeof tasks;
+  threads: typeof threads;
+  triggers: typeof triggers;
+  usage: typeof usage;
+  workEvents: typeof workEvents;
+  workflows: typeof workflows;
 }>;
+
+/**
+ * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
 export declare const api: FilterApi<
   typeof fullApi,
   FunctionReference<any, "public">
 >;
+
+/**
+ * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
+ */
 export declare const internal: FilterApi<
   typeof fullApi,
   FunctionReference<any, "internal">
 >;
+
+export declare const components: {};
