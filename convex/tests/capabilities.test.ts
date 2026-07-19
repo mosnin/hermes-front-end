@@ -290,6 +290,82 @@ describe("router: capability-based routing (feature 11)", () => {
     expect(best?._id).toBe(strong);
   });
 
+  test("ungrantedCapabilities flags matched tags with no capabilityGrants row wired up (feature 11+12 wiring)", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity({ subject: "user_owner", org_id: "org_route_cov" });
+    const spaceId = await owner.mutation(api.spaces.create, { name: "RoutingCoverage" });
+
+    const agentId = (
+      await owner.action(api.agents.create, { spaceId, name: "Multi-cap agent" })
+    ).agentId as Id<"agents">;
+    await t.mutation(internal.agents.recordHeartbeat, {
+      agentId,
+      status: "online",
+      capabilities: ["browser", "crm"],
+    });
+
+    // No grants configured yet — both matched capabilities should be flagged
+    // as declared-but-not-tool-ready.
+    let ranked = await owner.query(api.router.route, {
+      spaceId,
+      requiredCapabilities: ["browser", "crm"],
+    });
+    let row = ranked.find((r: { agentId: string }) => r.agentId === agentId)!;
+    expect(row.matchedCapabilities.sort()).toEqual(["browser", "crm"]);
+    expect(row.ungrantedCapabilities.sort()).toEqual(["browser", "crm"]);
+    // Grant coverage is informational only — capabilityScore is unaffected.
+    expect(row.capabilityScore).toBe(1);
+
+    // Grant "browser" space-wide (no agentIds restriction) — covers every
+    // agent, so it drops out of ungrantedCapabilities.
+    await owner.mutation(api.capabilities.upsertGrant, {
+      spaceId,
+      capability: "browser",
+      toolNames: ["composio_browser_navigate"],
+      enabled: true,
+    });
+    ranked = await owner.query(api.router.route, {
+      spaceId,
+      requiredCapabilities: ["browser", "crm"],
+    });
+    row = ranked.find((r: { agentId: string }) => r.agentId === agentId)!;
+    expect(row.ungrantedCapabilities).toEqual(["crm"]);
+
+    // Grant "crm" but restrict it to a different agent — still ungranted for
+    // this one.
+    const otherAgentId = (
+      await owner.action(api.agents.create, { spaceId, name: "Other agent" })
+    ).agentId as Id<"agents">;
+    await owner.mutation(api.capabilities.upsertGrant, {
+      spaceId,
+      capability: "crm",
+      toolNames: ["composio_hubspot_create_contact"],
+      agentIds: [otherAgentId],
+      enabled: true,
+    });
+    ranked = await owner.query(api.router.route, {
+      spaceId,
+      requiredCapabilities: ["browser", "crm"],
+    });
+    row = ranked.find((r: { agentId: string }) => r.agentId === agentId)!;
+    expect(row.ungrantedCapabilities).toEqual(["crm"]);
+
+    // Now also grant "crm" to our agent directly — fully tool-ready.
+    await owner.mutation(api.capabilities.upsertGrant, {
+      spaceId,
+      capability: "crm",
+      toolNames: ["composio_hubspot_create_contact"],
+      agentIds: [agentId],
+      enabled: true,
+    });
+    ranked = await owner.query(api.router.route, {
+      spaceId,
+      requiredCapabilities: ["browser", "crm"],
+    });
+    row = ranked.find((r: { agentId: string }) => r.agentId === agentId)!;
+    expect(row.ungrantedCapabilities).toEqual([]);
+  });
+
   test("an explicit override bypasses scoring entirely", async () => {
     const t = convexTest(schema, modules);
     const owner = t.withIdentity({ subject: "user_owner", org_id: "org_route2" });

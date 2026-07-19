@@ -20,6 +20,8 @@ import {
   restartAgent,
   isKnownHarness,
   KNOWN_HARNESS_IDS,
+  HARNESS_CATALOG,
+  harnessCapabilities,
 } from "./lib/cloudflare";
 
 /** The control-plane URL deployed agents connect back to (Convex HTTP actions). */
@@ -30,6 +32,21 @@ function controlPlaneUrl(): string {
 export const providerStatus = query({
   args: {},
   handler: async () => ({ cloudflare: cloudflareConfigured() }),
+});
+
+/**
+ * Harness picker feed (feature 2): every built-in harness a hosted deploy can
+ * boot, with the metadata a UI needs to render a picker — id, display name,
+ * description, pinned version, and capability tags — without any team
+ * needing to reach into connector/harnesses/** directly (convex/ can't
+ * import outside convex/, see docs/HARNESS_SPEC.md). No auth required: this
+ * is static catalog data, not Space-scoped.
+ */
+export const harnessCatalog = query({
+  args: {},
+  handler: async () => {
+    return KNOWN_HARNESS_IDS.map((id) => ({ id, ...HARNESS_CATALOG[id] }));
+  },
 });
 
 /** Deployed fleet agents (those provisioned onto a VM). */
@@ -140,6 +157,10 @@ export const insertFleetAgent = internalMutation({
       // `framework` kept for back-compat with pre-harness code paths; `harness`
       // is authoritative going forward (per architect schema notes).
       framework: rest.harness,
+      // Feeds the A2A card/directory listing (capabilities.ts) with the real
+      // framework capability tags for this harness, instead of leaving
+      // `capabilities` empty for every fleet-hosted agent.
+      capabilities: harnessCapabilities(rest.harness ?? "hermes"),
       ...rest,
     });
     await recordWorkEvent(ctx, {
@@ -402,6 +423,47 @@ export const eligibleForRestart = internalQuery({
         .withIndex("by_agent_status", (q) => q.eq("agentId", a._id).eq("status", "running"))
         .first();
       out.push({ agentId: a._id, vmId: a.vmId as string, name: a.name, draining: !!running });
+    }
+    return out;
+  },
+});
+
+/**
+ * Public read for a rolling-restart status panel: every agent in the Space
+ * currently flagged `restartRequestedAt` (queued by `rollingRestart`, either
+ * already restarted-and-cleared or still waiting on `sweepPendingRestarts` to
+ * pick it up), plus whether it's still draining right now. Operator-gated
+ * like the mutating actions in this section.
+ */
+export const pendingRestarts = query({
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+      .collect();
+    const pending = agents.filter((a) => a.restartRequestedAt !== undefined);
+    const out: {
+      agentId: Id<"agents">;
+      name: string;
+      harness: string;
+      restartRequestedAt: number;
+      draining: boolean;
+    }[] = [];
+    for (const a of pending) {
+      const running = await ctx.db
+        .query("runSteps")
+        .withIndex("by_agent_status", (q) => q.eq("agentId", a._id).eq("status", "running"))
+        .first();
+      out.push({
+        agentId: a._id,
+        name: a.name,
+        harness: a.harness ?? "hermes",
+        restartRequestedAt: a.restartRequestedAt as number,
+        draining: !!running,
+      });
     }
     return out;
   },

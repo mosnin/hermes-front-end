@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
+  BarChart3,
   DollarSign,
   Power,
   Radio,
@@ -222,9 +223,71 @@ export default function CostPage() {
         </Card>
       </div>
 
+      <SpendTrendSection />
       <CostControlsSection />
       <PnlSection />
     </div>
+  );
+}
+
+// --- Real spend trend (last 30 days) -----------------------------------------
+
+type TrendDay = { date: string; costUsd: number; inputTokens: number; outputTokens: number; events: number };
+
+function SpendTrendSection() {
+  const { spaceId } = useActiveSpace();
+  const trend = useQuery(api.costs.spendTrend, spaceId ? { spaceId, days: 30 } : "skip") as
+    | TrendDay[]
+    | undefined;
+
+  const total = trend ? trend.reduce((s, d) => s + d.costUsd, 0) : 0;
+  const max = trend ? Math.max(0.0001, ...trend.map((d) => d.costUsd)) : 0.0001;
+  const hasAnySpend = trend ? trend.some((d) => d.costUsd > 0) : false;
+
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-muted" />
+          <h2 className="font-semibold">Real spend, last 30 days</h2>
+        </div>
+        {trend && <span className="text-sm text-muted">Total {money(total)}</span>}
+      </div>
+      {trend === undefined ? (
+        <p className="text-sm text-muted">Loading…</p>
+      ) : !hasAnySpend ? (
+        <p className="text-sm text-muted">
+          No recorded usage cost yet. This chart reflects real <code>usage.costUsd</code> rows, not
+          the projection above.
+        </p>
+      ) : (
+        <div className="flex h-32 items-end gap-[2px]" role="img" aria-label="Daily spend, last 30 days">
+          {trend.map((d) => {
+            const pct = Math.max(2, (d.costUsd / max) * 100);
+            return (
+              <div
+                key={d.date}
+                className="group relative flex-1"
+                title={`${d.date}: ${money(d.costUsd)}${d.events ? ` (${d.events} usage events)` : ""}`}
+              >
+                <div
+                  className={`w-full rounded-t-sm transition-colors ${
+                    d.costUsd > 0 ? "bg-accent/70 group-hover:bg-accent" : "bg-border"
+                  }`}
+                  style={{ height: `${pct}%` }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {trend && trend.length > 0 && (
+        <div className="mt-1 flex justify-between text-[10px] text-muted">
+          <span>{trend[0].date}</span>
+          <span>{trend[trend.length - 1].date}</span>
+        </div>
+      )}
+    </Card>
   );
 }
 

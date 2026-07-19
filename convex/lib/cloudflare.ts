@@ -25,6 +25,61 @@ export function isKnownHarness(id: string): id is KnownHarnessId {
   return (KNOWN_HARNESS_IDS as readonly string[]).includes(id);
 }
 
+/**
+ * Display + capability metadata for each built-in harness, mirrored from
+ * connector/harnesses/<id>/harness.json for the same cross-boundary reason as
+ * `KNOWN_HARNESS_IDS` above (convex/ can't import connector/ code). Drives:
+ *   - `fleet.harnessCatalog` — a public query UIs can use to build a harness
+ *     picker (id/displayName/description/version/capabilities) without any
+ *     team needing to touch connector/harnesses/** themselves.
+ *   - `agents.capabilities` on hosted deploys (see fleet.ts deploy()) — feeds
+ *     the A2A directory/card listing (capabilities.ts) with the framework's
+ *     real capability tags instead of leaving it empty for fleet agents.
+ *
+ * Keep in sync with the harness.json files when adding/changing a harness —
+ * convex/tests/fleet.test.ts has a tripwire test for it.
+ */
+export const HARNESS_CATALOG: Record<
+  KnownHarnessId,
+  { displayName: string; description: string; version: string; capabilities: string[] }
+> = {
+  hermes: {
+    displayName: "Hermes (built-in)",
+    description:
+      "The default agentic LLM loop: Anthropic/OpenAI tool-use with MCP tools + RAG context, wired straight to the control plane. No external agent framework installed.",
+    version: "1.0.0",
+    capabilities: ["chat", "workflow", "rag", "mcp"],
+  },
+  openclaw: {
+    displayName: "OpenClaw",
+    description:
+      "Runs the OpenClaw CLI agent for each dispatched instruction. The connector still owns registration, heartbeat, A2A and work-stream plumbing; OpenClaw only produces the response text.",
+    version: "0.1.0",
+    capabilities: ["chat", "workflow", "framework:openclaw"],
+  },
+  goose: {
+    displayName: "Goose (Block)",
+    description: "Runs Block's Goose CLI headlessly for each dispatched instruction.",
+    version: "1.0.0",
+    capabilities: ["chat", "workflow", "framework:goose"],
+  },
+  "generic-cli": {
+    displayName: "Generic CLI agent",
+    description:
+      "Wraps an arbitrary CLI agent binary via HERMES_AGENT_COMMAND ('{instruction}' substituted, or piped on stdin).",
+    version: "1.0.0",
+    capabilities: ["chat", "workflow", "framework:cli"],
+  },
+};
+
+/** Capability tags this Convex mirror advertises for a resolved harness (or "custom" BYO). */
+export function harnessCapabilities(harness: string): string[] {
+  if (harness in HARNESS_CATALOG) return HARNESS_CATALOG[harness as KnownHarnessId].capabilities;
+  // BYO-image (harness === "custom") has no known manifest — the image is
+  // opaque to us, so advertise only the baseline every harness supports.
+  return ["chat", "workflow"];
+}
+
 export function cloudflareConfigured(): boolean {
   return !!process.env.CLOUDFLARE_FLEET_WORKER_URL && !!process.env.CLOUDFLARE_FLEET_SECRET;
 }

@@ -332,4 +332,74 @@ describe("securityProfiles integration with template install", () => {
     const agent1 = await owner.query(api.agents.get, { spaceId, agentId: install1.agentId });
     expect(agent1?.securityProfileId).toBeUndefined();
   });
+
+  test("an explicit securityProfileId override wins over the template's named suggestion", async () => {
+    const { t, owner, spaceId } = await setup();
+
+    const namedProfileId = await owner.mutation(api.securityProfiles.create, {
+      spaceId,
+      name: "sales-default",
+      toolAllowlist: ["email"],
+    });
+    const overrideProfileId = await owner.mutation(api.securityProfiles.create, {
+      spaceId,
+      name: "locked-down",
+      toolAllowlist: [],
+    });
+
+    const templateId: Id<"agentTemplates"> = await t.run(async (ctx) => {
+      const now = Date.now();
+      return await ctx.db.insert("agentTemplates", {
+        slug: "sec-profile-override",
+        name: "Override template",
+        visibility: "public",
+        harness: "hermes",
+        securityProfileName: "sales-default",
+        installCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const install1 = await owner.action(api.marketplace.install, {
+      spaceId,
+      templateId,
+      securityProfileId: overrideProfileId,
+    });
+    const agent1 = await owner.query(api.agents.get, { spaceId, agentId: install1.agentId });
+    expect(agent1?.securityProfileId).toBe(overrideProfileId);
+    expect(agent1?.securityProfileId).not.toBe(namedProfileId);
+  });
+
+  test("an override id from a different Space is rejected", async () => {
+    const { t, owner, spaceId } = await setup();
+
+    const otherOwner = t.withIdentity({ subject: "user_other_owner", org_id: "org_other" });
+    const otherSpaceId = await otherOwner.mutation(api.spaces.create, { name: "Other" });
+    const foreignProfileId = await otherOwner.mutation(api.securityProfiles.create, {
+      spaceId: otherSpaceId,
+      name: "foreign",
+    });
+
+    const templateId: Id<"agentTemplates"> = await t.run(async (ctx) => {
+      const now = Date.now();
+      return await ctx.db.insert("agentTemplates", {
+        slug: "sec-profile-foreign",
+        name: "Foreign override template",
+        visibility: "public",
+        harness: "hermes",
+        installCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await expect(
+      owner.action(api.marketplace.install, {
+        spaceId,
+        templateId,
+        securityProfileId: foreignProfileId,
+      }),
+    ).rejects.toThrow(/not found/i);
+  });
 });

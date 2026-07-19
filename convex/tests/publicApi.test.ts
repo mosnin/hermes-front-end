@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { convexTest } from "convex-test";
 import schema from "../schema";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 
 const modules = import.meta.glob("../**/*.*s");
@@ -235,6 +235,25 @@ describe("public API v1", () => {
     expect(body.error.code).toBe("rate_limited");
   });
 
+  test("successful responses also carry X-RateLimit-* headers", async () => {
+    const { t, key, keyId } = await boot("org_api_rl_headers");
+    await t.run(async (ctx) => ctx.db.patch(keyId, { rateLimitPerMinute: 5 }));
+
+    const first = await call(t, "GET", "/api/v1/agents", key);
+    expect(first.status).toBe(200);
+    expect(first.headers.get("X-RateLimit-Limit")).toBe("5");
+    expect(first.headers.get("X-RateLimit-Remaining")).toBe("4");
+
+    const second = await call(t, "GET", "/api/v1/agents", key);
+    expect(second.headers.get("X-RateLimit-Remaining")).toBe("3");
+
+    // A write route (different status code path) carries the same headers.
+    const created = await call(t, "POST", "/api/v1/tasks", key, { title: "x" });
+    expect(created.status).toBe(201);
+    expect(created.headers.get("X-RateLimit-Limit")).toBe("5");
+    expect(created.headers.get("X-RateLimit-Remaining")).toBe("2");
+  });
+
   test("usage endpoint reports today's request count", async () => {
     const { t, key } = await boot("org_api9");
     await call(t, "GET", "/api/v1/agents", key);
@@ -416,5 +435,30 @@ describe("public API v1", () => {
       body: JSON.stringify({ lines: [{ level: "not-a-level", message: "x" }] }),
     });
     expect(bogus.status).toBe(400);
+  });
+
+  test("usage retention sweep: purges stale minute buckets but keeps fresh ones and recent day buckets", async () => {
+    const { t, key } = await boot("org_api_usage_sweep");
+    await call(t, "GET", "/api/v1/agents", key);
+
+    const before = await t.run(async (ctx) => ctx.db.query("apiUsage").collect());
+    expect(before.length).toBe(2); // one minute bucket + one day bucket
+
+    // Age every row's updatedAt so both buckets look 2 days old.
+    const staleAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    await t.run(async (ctx) => {
+      for (const row of before) {
+        await ctx.db.patch(row._id, { updatedAt: staleAt });
+      }
+    });
+
+    const result = await t.mutation(internal.publicApi.sweepUsageRetention, {});
+    // Only the minute bucket (1-day retention) is purged; the day bucket
+    // (90-day retention) survives a mere 2-day-old `updatedAt`.
+    expect(result.deleted).toBe(1);
+
+    const remaining = await t.run(async (ctx) => ctx.db.query("apiUsage").collect());
+    expect(remaining.length).toBe(1);
+    expect(remaining[0].bucket.startsWith("day:")).toBe(true);
   });
 });

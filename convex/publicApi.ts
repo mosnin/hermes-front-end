@@ -108,6 +108,41 @@ export const recordRequest = internalMutation({
   },
 });
 
+// Retention (cross-team cron request, see report): apiUsage accumulates one
+// row per key per minute (plus one per key per day) forever with no natural
+// expiry — minute buckets are only useful for the live rate-limit window and
+// day buckets only for recent usage reporting, so both are swept well past
+// their useful life. Bounded + self-chaining like logs.sweepRetention /
+// approvals.sweepExpiredTokens (same pattern across the codebase).
+const MIN_BUCKET_RETENTION_MS = 24 * 60 * 60 * 1000; // 1 day of minute buckets
+const DAY_BUCKET_RETENTION_MS = 90 * 24 * 60 * 60 * 1000; // 90 days of daily buckets
+
+export const sweepUsageRetention = internalMutation({
+  args: {},
+  handler: async (ctx): Promise<{ deleted: number }> => {
+    const now = Date.now();
+    // A single `updatedAt` cutoff can't distinguish minute vs. day buckets by
+    // itself, so use the older (more permissive) cutoff to select candidates,
+    // then re-check each row's own bucket kind before deleting — a day bucket
+    // updated 2 days ago must survive even though it's past the minute cutoff.
+    const cutoff = now - MIN_BUCKET_RETENTION_MS;
+    const candidates = await ctx.db
+      .query("apiUsage")
+      .withIndex("by_updated", (q) => q.lt("updatedAt", cutoff))
+      .take(500);
+    let deleted = 0;
+    for (const row of candidates) {
+      const isDayBucket = row.bucket.startsWith("day:");
+      const retention = isDayBucket ? DAY_BUCKET_RETENTION_MS : MIN_BUCKET_RETENTION_MS;
+      if (now - row.updatedAt >= retention) {
+        await ctx.db.delete(row._id);
+        deleted++;
+      }
+    }
+    return { deleted };
+  },
+});
+
 /** Usage summary for the calling key: today's totals + a small route breakdown. */
 export const usageSummary = internalQuery({
   args: { apiKeyId: v.id("apiKeys") },

@@ -67,6 +67,20 @@ X-RateLimit-Remaining: 0
 Every request (allowed or not) is also counted against a daily usage bucket
 per key, queryable via `GET /api/v1/usage`.
 
+Every **successful** `/api/v1/*` response also carries `X-RateLimit-Limit`
+and `X-RateLimit-Remaining` (computed after that request was recorded), so
+you can back off before you hit `429` instead of only finding out after:
+
+```
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 57
+```
+
+Usage counters (`apiUsage`) are retained for 1 day (minute buckets, used for
+the live rate-limit window) and 90 days (daily buckets, used for `GET
+/api/v1/usage` reporting), swept hourly.
+
 ## Scopes
 
 Every route declares a required scope (e.g. `tasks:write`). A key minted

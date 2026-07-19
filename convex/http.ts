@@ -1012,6 +1012,9 @@ type ApiAuth = {
   apiKeyId: Id<"apiKeys">;
   rateLimitPerMinute?: number;
   scopes?: string[];
+  /** `X-RateLimit-*` pair for this request, set by `gate()` after recording
+   * it — pass straight into `apiOk(data, status, auth.rateLimitHeaders)`. */
+  rateLimitHeaders: Record<string, string>;
 };
 
 // Scope model (feature 20 hardening): each route declares the single scope
@@ -1038,14 +1041,20 @@ type ApiScope = (typeof ALL_SCOPES)[number];
 function apiError(code: string, message: string, status: number) {
   return json({ error: { code, message } }, status);
 }
-function apiOk(data: unknown, status = 200) {
-  return json({ data }, status);
+/** `headers` carries the `X-RateLimit-*` pair from `gate()` so a caller can
+ * see how much quota is left on every successful response, not just once
+ * they've already been cut off by a 429. */
+function apiOk(data: unknown, status = 200, headers?: Record<string, string>) {
+  return new Response(JSON.stringify({ data }), {
+    status,
+    headers: { "Content-Type": "application/json", ...(headers ?? {}) },
+  });
 }
 
 async function authApiKey(
   ctx: { runQuery: any; runMutation: any },
   request: Request,
-): Promise<ApiAuth | null> {
+): Promise<Omit<ApiAuth, "rateLimitHeaders"> | null> {
   const header = request.headers.get("Authorization") ?? "";
   const key = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (!key.startsWith("hk_")) return null;
@@ -1107,7 +1116,13 @@ async function gate(
       },
     );
   }
-  return auth;
+  return {
+    ...auth,
+    rateLimitHeaders: {
+      "X-RateLimit-Limit": String(rl.limit),
+      "X-RateLimit-Remaining": String(rl.remaining),
+    },
+  };
 }
 
 /** Parse the shared `?cursor=&limit=` pagination query params. */
@@ -1133,7 +1148,7 @@ http.route({
       cursor,
       limit,
     });
-    return apiOk(result);
+    return apiOk(result, 200, auth.rateLimitHeaders);
   }),
 });
 
@@ -1149,7 +1164,7 @@ http.route({
       cursor,
       limit,
     });
-    return apiOk(result);
+    return apiOk(result, 200, auth.rateLimitHeaders);
   }),
 });
 
@@ -1165,7 +1180,7 @@ http.route({
       cursor,
       limit,
     });
-    return apiOk(result);
+    return apiOk(result, 200, auth.rateLimitHeaders);
   }),
 });
 
@@ -1183,7 +1198,7 @@ http.route({
       title: String(body.title),
       description: body.description,
     });
-    return apiOk({ id }, 201);
+    return apiOk({ id }, 201, auth.rateLimitHeaders);
   }),
 });
 
@@ -1201,7 +1216,7 @@ http.route({
       content: String(body.content),
       threadTitle: body.threadTitle,
     });
-    return apiOk(res, 201);
+    return apiOk(res, 201, auth.rateLimitHeaders);
   }),
 });
 
@@ -1217,7 +1232,7 @@ http.route({
       cursor,
       limit,
     });
-    return apiOk(result);
+    return apiOk(result, 200, auth.rateLimitHeaders);
   }),
 });
 
@@ -1234,7 +1249,7 @@ http.route({
         workflowId: body.workflowId as Id<"workflows">,
         trigger: "api",
       });
-      return apiOk({ runId }, 201);
+      return apiOk({ runId }, 201, auth.rateLimitHeaders);
     } catch {
       return apiError("bad_request", "invalid workflowId", 400);
     }
@@ -1256,7 +1271,7 @@ http.route({
       cursor,
       limit,
     });
-    return apiOk(result);
+    return apiOk(result, 200, auth.rateLimitHeaders);
   }),
 });
 
@@ -1275,7 +1290,7 @@ http.route({
       cursor,
       limit,
     });
-    return apiOk(result);
+    return apiOk(result, 200, auth.rateLimitHeaders);
   }),
 });
 
@@ -1302,7 +1317,7 @@ http.route({
       approvalIds: body.approvalIds as Id<"approvals">[],
       approve: body.approve,
     });
-    return apiOk(result);
+    return apiOk(result, 200, auth.rateLimitHeaders);
   }),
 });
 
@@ -1328,7 +1343,7 @@ http.route({
         approvalId: match[1] as Id<"approvals">,
         approve: body.approve,
       });
-      return apiOk({ ok: true });
+      return apiOk({ ok: true }, 200, auth.rateLimitHeaders);
     } catch (e) {
       return apiError("bad_request", e instanceof Error ? e.message : String(e), 400);
     }
@@ -1344,7 +1359,7 @@ http.route({
     const usage = await ctx.runQuery(internal.publicApi.usageSummary, {
       apiKeyId: auth.apiKeyId,
     });
-    return apiOk(usage);
+    return apiOk(usage, 200, auth.rateLimitHeaders);
   }),
 });
 

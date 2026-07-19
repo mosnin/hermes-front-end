@@ -4,7 +4,11 @@ import schema from "../schema";
 import { api, internal } from "../_generated/api";
 import { Id } from "../_generated/dataModel";
 import { HARNESS_IDS } from "../../connector/harnesses/schema";
-import { KNOWN_HARNESS_IDS } from "../lib/cloudflare";
+import { KNOWN_HARNESS_IDS, HARNESS_CATALOG } from "../lib/cloudflare";
+import hermesManifest from "../../connector/harnesses/hermes/harness.json";
+import openclawManifest from "../../connector/harnesses/openclaw/harness.json";
+import gooseManifest from "../../connector/harnesses/goose/harness.json";
+import genericCliManifest from "../../connector/harnesses/generic-cli/harness.json";
 
 const modules = import.meta.glob("../**/*.*s");
 
@@ -152,6 +156,68 @@ describe("fleet.deploy — harness-agnostic runtime", () => {
     expect(fleet).toHaveLength(0);
   });
 
+  test("harnessCatalog mirrors connector/harnesses/*/harness.json (tripwire)", async () => {
+    // convex/fleet.ts can't import connector/harnesses (cross-boundary), so
+    // convex/lib/cloudflare.ts's HARNESS_CATALOG keeps its own copy of each
+    // manifest's display metadata + capabilities. This fails loudly on drift.
+    const manifests: Record<string, any> = {
+      hermes: hermesManifest,
+      openclaw: openclawManifest,
+      goose: gooseManifest,
+      "generic-cli": genericCliManifest,
+    };
+    for (const id of KNOWN_HARNESS_IDS) {
+      const mirror = HARNESS_CATALOG[id];
+      const real = manifests[id];
+      expect(mirror.displayName).toBe(real.displayName);
+      expect(mirror.version).toBe(real.version);
+      expect([...mirror.capabilities].sort()).toEqual([...real.capabilities].sort());
+    }
+  });
+
+  test("harnessCatalog query returns every known harness with its metadata", async () => {
+    const { t, owner } = await setup();
+    const catalog = await owner.query(api.fleet.harnessCatalog, {});
+    expect(catalog).toHaveLength(KNOWN_HARNESS_IDS.length);
+    const goose = catalog.find((c) => c.id === "goose");
+    expect(goose?.displayName).toBe("Goose (Block)");
+    expect(goose?.capabilities).toContain("framework:goose");
+    void t;
+  });
+
+  test("deploy writes the resolved harness's capability tags onto the agent", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    await owner.action(api.fleet.deploy, { spaceId, count: 1, harness: "openclaw" });
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet[0].capabilities).toEqual(
+      expect.arrayContaining(["chat", "workflow", "framework:openclaw"]),
+    );
+  });
+
+  test("deploy defaults to hermes's capability tags when harness is unspecified", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    await owner.action(api.fleet.deploy, { spaceId, count: 1 });
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet[0].capabilities).toEqual(expect.arrayContaining(["chat", "workflow", "rag", "mcp"]));
+  });
+
+  test("BYO container image gets the conservative baseline capability tags", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "enterprise");
+
+    await owner.action(api.fleet.deploy, {
+      spaceId,
+      count: 1,
+      imageRef: "ghcr.io/acme/custom-agent:latest",
+    });
+    const fleet = await owner.query(api.fleet.list, { spaceId });
+    expect(fleet[0].capabilities).toEqual(["chat", "workflow"]);
+  });
+
   test("BYO container image is allowed on the enterprise plan", async () => {
     const { t, owner, spaceId } = await setup();
     await setPlan(t, spaceId, "enterprise");
@@ -274,6 +340,43 @@ describe("fleet.rollingRestart — drain-aware rolling restart", () => {
     const hermesOnly = await owner.action(api.fleet.rollingRestart, { spaceId, harness: "hermes" });
     expect(hermesOnly.total).toBe(1);
     void agentId;
+  });
+});
+
+describe("fleet.pendingRestarts — rolling-restart status panel", () => {
+  test("a non-operator (viewer) cannot read pending restarts", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+
+    const viewerId = "user_pending_viewer";
+    await owner.mutation(api.spaces.addMember, { spaceId, userId: viewerId, role: "viewer" });
+    const viewer = t.withIdentity({ subject: viewerId, org_id: "org_fleet" });
+
+    await expect(viewer.query(api.fleet.pendingRestarts, { spaceId })).rejects.toThrow(/[Ff]orbidden/);
+  });
+
+  test("lists drained agents flagged by rollingRestart, empty once cleared", async () => {
+    const { t, owner, spaceId } = await setup();
+    await setPlan(t, spaceId, "team");
+    const res = await owner.action(api.fleet.deploy, { spaceId, count: 1, namePrefix: "Pending" });
+    const agentId = res.deployed[0].agentId as Id<"agents">;
+
+    // Nothing pending yet.
+    expect(await owner.query(api.fleet.pendingRestarts, { spaceId })).toHaveLength(0);
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, { restartRequestedAt: Date.now() });
+    });
+
+    const pending = await owner.query(api.fleet.pendingRestarts, { spaceId });
+    expect(pending).toHaveLength(1);
+    expect(pending[0].agentId).toBe(agentId);
+    expect(pending[0].draining).toBe(false);
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(agentId, { restartRequestedAt: undefined });
+    });
+    expect(await owner.query(api.fleet.pendingRestarts, { spaceId })).toHaveLength(0);
   });
 });
 

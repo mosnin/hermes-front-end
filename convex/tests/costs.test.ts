@@ -208,3 +208,82 @@ describe("costs — hard spend cap enforcement", () => {
     expect(agent?.deploymentStatus).toBe("stopped");
   });
 });
+
+describe("costs — spendTrend", () => {
+  test("buckets real usage.costUsd rows by UTC day, filling gaps with zero", async () => {
+    const { t, owner, spaceId } = await setup();
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    await t.run(async (ctx) => {
+      // Today: two rows, should sum.
+      await ctx.db.insert("usage", {
+        companyId: "org_costs",
+        spaceId,
+        kind: "tokens",
+        costUsd: 1.5,
+        createdAt: now,
+      });
+      await ctx.db.insert("usage", {
+        companyId: "org_costs",
+        spaceId,
+        kind: "tokens",
+        costUsd: 0.25,
+        createdAt: now - 1000,
+      });
+      // 5 days ago: one row.
+      await ctx.db.insert("usage", {
+        companyId: "org_costs",
+        spaceId,
+        kind: "tokens",
+        costUsd: 4,
+        createdAt: now - 5 * dayMs,
+      });
+      // Outside the 30-day window: must not be counted.
+      await ctx.db.insert("usage", {
+        companyId: "org_costs",
+        spaceId,
+        kind: "tokens",
+        costUsd: 999,
+        createdAt: now - 40 * dayMs,
+      });
+    });
+
+    const trend = await owner.query(api.costs.spendTrend, { spaceId, days: 30 });
+    expect(trend).toHaveLength(30);
+
+    const totalCost = trend.reduce((s, d) => s + d.costUsd, 0);
+    expect(totalCost).toBeCloseTo(5.75, 4);
+
+    const todayKey = new Date(now).toISOString().slice(0, 10);
+    const today = trend.find((d) => d.date === todayKey);
+    expect(today?.costUsd).toBeCloseTo(1.75, 4);
+    expect(today?.events).toBe(2);
+
+    const fiveDaysAgoKey = new Date(now - 5 * dayMs).toISOString().slice(0, 10);
+    const fiveDaysAgo = trend.find((d) => d.date === fiveDaysAgoKey);
+    expect(fiveDaysAgo?.costUsd).toBeCloseTo(4, 4);
+
+    // A day with no usage still appears, at zero.
+    const zeroDays = trend.filter((d) => d.costUsd === 0);
+    expect(zeroDays.length).toBeGreaterThan(0);
+  });
+
+  test("clamps days to [1, 90] and defaults to 30", async () => {
+    const { t, owner, spaceId } = await setup();
+    void t;
+    const clampedHigh = await owner.query(api.costs.spendTrend, { spaceId, days: 1000 });
+    expect(clampedHigh).toHaveLength(90);
+    const clampedLow = await owner.query(api.costs.spendTrend, { spaceId, days: 0 });
+    expect(clampedLow).toHaveLength(1);
+    const defaulted = await owner.query(api.costs.spendTrend, { spaceId });
+    expect(defaulted).toHaveLength(30);
+  });
+
+  test("requires Space membership", async () => {
+    const { t, owner, spaceId } = await setup();
+    void owner;
+    const stranger = t.withIdentity({ subject: "user_stranger", org_id: "org_other" });
+    await expect(stranger.query(api.costs.spendTrend, { spaceId, days: 7 })).rejects.toThrow();
+  });
+});

@@ -510,6 +510,7 @@ function RoutingPreviewSection() {
                   <th className="py-2 pr-3 font-medium">Score</th>
                   <th className="py-2 pr-3 font-medium">Matched</th>
                   <th className="py-2 pr-3 font-medium">Missing</th>
+                  <th className="py-2 pr-3 font-medium">Not tool-ready</th>
                   <th className="py-2 pr-3 font-medium">Health</th>
                   <th className="py-2 pr-3 font-medium">Recent cost</th>
                 </tr>
@@ -538,6 +539,19 @@ function RoutingPreviewSection() {
                           </Badge>
                         ))}
                       </div>
+                    </td>
+                    <td className="py-2 pr-3">
+                      {r.ungrantedCapabilities.length === 0 ? (
+                        <span className="text-muted">—</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1" title="Declared by the agent but no capabilityGrants row wired up yet in this Space">
+                          {r.ungrantedCapabilities.map((c: string) => (
+                            <Badge key={c} tone="yellow">
+                              {c}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 pr-3 text-muted">{r.status}</td>
                     <td className="py-2 pr-3 text-muted">${r.recentCostUsd.toFixed(4)}</td>

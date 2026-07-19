@@ -3,6 +3,7 @@ import { query, mutation, QueryCtx, MutationCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
 import { recordWorkEvent } from "./lib/events";
+import { grantCoverage } from "./capabilities";
 
 /**
  * Per-Space model policy: a primary model, an ordered fallback chain, and
@@ -108,6 +109,15 @@ export type AgentRouteScore = {
   harnessScore: number;
   matchedCapabilities: string[];
   missingCapabilities: string[];
+  /**
+   * Matched capabilities the agent *declares* but that have no enabled
+   * `capabilityGrants` row wired up for it in this Space yet — i.e. the
+   * agent claims the tag but has no actual tool behind it. Informational
+   * only (does not affect `score`/`capabilityScore`, so existing dispatch
+   * behavior and cost/health-driven ranking are unchanged); the UI surfaces
+   * this so admins know to add a grant before relying on the match.
+   */
+  ungrantedCapabilities: string[];
   recentCostUsd: number;
 };
 
@@ -158,10 +168,22 @@ export async function scoreAgentsForRequirements(
   }
   const maxCost = Math.max(0, ...Array.from(costByAgent.values()));
 
+  // Bulk-resolve which agents have an actual tool grant behind each required
+  // capability tag (feature 12 -> feature 11 wiring); done once for the whole
+  // Space rather than per-agent.
+  const coverage = required.length
+    ? await grantCoverage(ctx, spaceId, required)
+    : new Map<string, { spaceWide: boolean; agentIds: Set<string> }>();
+
   const scores: AgentRouteScore[] = agents.map((a) => {
     const caps = a.capabilities ?? [];
     const matched = required.filter((c) => caps.includes(c));
     const missing = required.filter((c) => !caps.includes(c));
+    const ungranted = matched.filter((c) => {
+      const cov = coverage.get(c);
+      if (!cov) return true;
+      return !(cov.spaceWide || cov.agentIds.has(a._id));
+    });
     const capabilityScore = required.length ? matched.length / required.length : 1;
 
     const healthScore = healthScoreFor(a);
@@ -192,6 +214,7 @@ export async function scoreAgentsForRequirements(
       harnessScore,
       matchedCapabilities: matched,
       missingCapabilities: missing,
+      ungrantedCapabilities: ungranted,
       recentCostUsd,
     };
   });

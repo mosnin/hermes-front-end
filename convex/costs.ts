@@ -228,6 +228,61 @@ export const estimate = query({
   },
 });
 
+/**
+ * Real (not estimated) daily spend trend from the `usage` ledger, last N
+ * days (default 30, capped at 90). Buckets by UTC calendar day. Bounded scan
+ * via the `by_space_time` index + a `gte` lower bound, so this stays cheap
+ * even for busy Spaces — unlike `estimate` above (which is a *projection*),
+ * this reflects real recorded `usage.costUsd` rows.
+ */
+export const spendTrend = query({
+  args: { spaceId: v.id("spaces"), days: v.optional(v.number()) },
+  handler: async (ctx, { spaceId, days }) => {
+    await resolveScope(ctx, spaceId);
+    const n = Math.max(1, Math.min(days ?? 30, 90));
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const since = now - n * dayMs;
+
+    // Bounded scan (same convention as ledger.ts's computePnlRows): cap the
+    // read so a very high-volume Space can't blow the query's read budget.
+    // 20k rows over up to 90 days is generous for a trend chart; if a Space
+    // legitimately exceeds it the tail of the range will undercount rather
+    // than the query failing outright.
+    const rows = await ctx.db
+      .query("usage")
+      .withIndex("by_space_time", (q) => q.eq("spaceId", spaceId).gte("createdAt", since))
+      .take(20_000);
+
+    const byDay = new Map<string, { costUsd: number; inputTokens: number; outputTokens: number; events: number }>();
+    for (const r of rows) {
+      const key = new Date(r.createdAt).toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+      const bucket = byDay.get(key) ?? { costUsd: 0, inputTokens: 0, outputTokens: 0, events: 0 };
+      bucket.costUsd += r.costUsd ?? 0;
+      bucket.inputTokens += r.inputTokens ?? 0;
+      bucket.outputTokens += r.outputTokens ?? 0;
+      bucket.events += 1;
+      byDay.set(key, bucket);
+    }
+
+    // Fill in every day in range (even zero-usage days) so the UI can render
+    // a continuous trend without gaps.
+    const out: { date: string; costUsd: number; inputTokens: number; outputTokens: number; events: number }[] = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const key = new Date(now - i * dayMs).toISOString().slice(0, 10);
+      const bucket = byDay.get(key) ?? { costUsd: 0, inputTokens: 0, outputTokens: 0, events: 0 };
+      out.push({
+        date: key,
+        costUsd: Math.round(bucket.costUsd * 10000) / 10000,
+        inputTokens: bucket.inputTokens,
+        outputTokens: bucket.outputTokens,
+        events: bucket.events,
+      });
+    }
+    return out;
+  },
+});
+
 // =============================================================================
 // Cost controls to the metal (feature 18): idle-hibernation policy + hard
 // spend caps that stop hosted VMs. Everything below is real enforcement, not

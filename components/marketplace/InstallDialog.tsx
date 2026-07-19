@@ -40,10 +40,15 @@ export function TemplateDetailModal({
     spaceId && templateId ? { spaceId, templateId } : "skip",
   ) as Template | null | undefined;
   const squads = useQuery(api.squads.list, spaceId ? { spaceId } : "skip");
+  const securityProfiles = useQuery(
+    api.securityProfiles.list,
+    spaceId ? { spaceId } : "skip",
+  ) as { _id: Id<"securityProfiles">; name: string }[] | undefined;
   const install = useAction(api.marketplace.install);
 
   const [name, setName] = useState("");
   const [squadId, setSquadId] = useState<string>("");
+  const [securityProfileId, setSecurityProfileId] = useState<string>("");
   const [mode, setMode] = useState<"hosted" | "connect">("connect");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ agentId: string; token?: string; hosted: boolean } | null>(
@@ -64,6 +69,9 @@ export function TemplateDetailModal({
         name: name.trim() || undefined,
         squadId: squadId ? (squadId as Id<"squads">) : undefined,
         deployHosted: mode === "hosted",
+        securityProfileId: securityProfileId
+          ? (securityProfileId as Id<"securityProfiles">)
+          : undefined,
       });
       setResult(res);
     } catch (e) {
@@ -78,6 +86,7 @@ export function TemplateDetailModal({
     setError(null);
     setName("");
     setSquadId("");
+    setSecurityProfileId("");
     onClose();
   }
 
@@ -180,6 +189,35 @@ export function TemplateDetailModal({
                     </option>
                   ))}
                 </select>
+              )}
+              {securityProfiles && securityProfiles.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-xs text-muted">Security profile</label>
+                  <select
+                    value={securityProfileId}
+                    onChange={(e) => setSecurityProfileId(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent"
+                  >
+                    <option value="">
+                      {template.securityProfileName
+                        ? `Template default (${template.securityProfileName})`
+                        : "None"}
+                    </option>
+                    {securityProfiles.map((p) => (
+                      <option key={p._id} value={p._id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  {template.securityProfileName &&
+                    !securityProfiles.some((p) => p.name === template.securityProfileName) && (
+                      <p className="mt-1 text-xs text-yellow-400">
+                        This template suggests a profile named &quot;{template.securityProfileName}
+                        &quot;, which doesn&apos;t exist in this Space yet — the agent will install
+                        without one unless you pick one above.
+                      </p>
+                    )}
+                </div>
               )}
               <Segmented
                 value={mode}

@@ -88,6 +88,36 @@ request.
    functions can only import from `convex/`, so this list is intentionally
    duplicated from `connector/harnesses/schema.ts`'s `HARNESS_IDS` — keep them
    in sync (a test in `convex/tests/fleet.test.ts` documents the expectation).
+7. Add the same displayName/description/version/capabilities to
+   `convex/lib/cloudflare.ts`'s `HARNESS_CATALOG` (mirrors the new
+   `harness.json`, same cross-boundary reason as step 6). This feeds two
+   things: the `fleet.harnessCatalog` public query (a harness-picker UI can
+   list every option without touching `connector/harnesses/**`) and the
+   `capabilities` array written onto every hosted agent at deploy time (see
+   "Capability tags flow into agents.capabilities" below). A tripwire test in
+   `convex/tests/fleet.test.ts` checks `HARNESS_CATALOG` stays in sync with
+   the real `harness.json` files.
+
+## Harness picker + capability tags for UI/routing consumers
+
+`fleet.harnessCatalog` (public, unauthenticated — static catalog data, not
+Space-scoped) returns `{ id, displayName, description, version, capabilities
+}[]` for every built-in harness, so any team's dashboard can render a harness
+picker without reaching past `convex/fleet.ts`.
+
+`fleet.deploy()` also writes the resolved harness's capability tags onto the
+new agent's `agents.capabilities` (via `insertFleetAgent`) — e.g. `["chat",
+"workflow", "rag", "mcp"]` for `hermes`, `["chat", "workflow",
+"framework:goose"]` for `goose`. A BYO-image (`imageRef` set, harness
+resolves to `"custom"`) gets the conservative baseline `["chat", "workflow"]`
+since the actual image is opaque to the fleet worker. This is what feeds the
+A2A directory/card listing in `capabilities.ts` with real capability tags for
+fleet-hosted agents instead of leaving the field empty.
+
+`fleet.pendingRestarts(spaceId)` (operator-gated) lists every agent currently
+flagged `restartRequestedAt` — restarted-and-cleared or still waiting on
+`sweepPendingRestarts` — plus live drain status, for a rolling-restart status
+panel.
 
 ## Cloudflare Containers constraint: one image per DO class
 

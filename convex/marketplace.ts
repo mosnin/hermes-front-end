@@ -188,8 +188,17 @@ function slugify(s: string): string {
 }
 
 export const loadTemplateForInstall = internalQuery({
-  args: { spaceId: v.id("spaces"), templateId: v.id("agentTemplates") },
-  handler: async (ctx, { spaceId, templateId }) => {
+  args: {
+    spaceId: v.id("spaces"),
+    templateId: v.id("agentTemplates"),
+    // Explicit caller choice from the install UI takes precedence over the
+    // template's suggested-by-name resolution below — lets an operator
+    // attach a different (or no) security profile than the template author
+    // suggested, e.g. because the suggested profile name doesn't exist yet
+    // in this Space, or the Space has stricter policy.
+    securityProfileIdOverride: v.optional(v.id("securityProfiles")),
+  },
+  handler: async (ctx, { spaceId, templateId, securityProfileIdOverride }) => {
     const scope = await resolveScope(ctx, spaceId);
     requireRole(scope, "operator");
     const t = await ctx.db.get(templateId);
@@ -197,8 +206,15 @@ export const loadTemplateForInstall = internalQuery({
     if (t.visibility !== "public" && t.spaceId !== spaceId) {
       throw new Error("Template not found");
     }
+
     let securityProfileId: Id<"securityProfiles"> | undefined;
-    if (t.securityProfileName) {
+    if (securityProfileIdOverride) {
+      const p = await ctx.db.get(securityProfileIdOverride);
+      if (!p || p.spaceId !== spaceId) {
+        throw new Error("Security profile not found in this Space");
+      }
+      securityProfileId = securityProfileIdOverride;
+    } else if (t.securityProfileName) {
       const profile = await ctx.db
         .query("securityProfiles")
         .withIndex("by_space_name", (q) =>
@@ -314,14 +330,18 @@ export const install = action({
     squadId: v.optional(v.id("squads")),
     deployHosted: v.optional(v.boolean()),
     region: v.optional(v.string()),
+    // Overrides the template's suggested `securityProfileName` resolution.
+    // Pass an explicit id to attach a different profile, or omit to fall
+    // back to the template's suggestion (if any resolves in this Space).
+    securityProfileId: v.optional(v.id("securityProfiles")),
   },
   handler: async (
     ctx,
-    { spaceId, templateId, name, squadId, deployHosted, region },
+    { spaceId, templateId, name, squadId, deployHosted, region, securityProfileId: securityProfileIdOverride },
   ): Promise<{ agentId: Id<"agents">; skillsCloned: number; hosted: boolean; token?: string }> => {
     const { template, securityProfileId } = await ctx.runQuery(
       internal.marketplace.loadTemplateForInstall,
-      { spaceId, templateId },
+      { spaceId, templateId, securityProfileIdOverride },
     );
 
     const clonedSkillIds: Id<"skills">[] = await ctx.runMutation(

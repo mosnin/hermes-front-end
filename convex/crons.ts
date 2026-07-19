@@ -96,4 +96,13 @@ crons.interval(
 // attempt an in-place restart with exponential backoff.
 crons.interval("hosted agent watchdog", { minutes: 5 }, internal.health.watchdogTick, {});
 
+// Public-API usage counters: purge stale per-minute rate-limit buckets (1d)
+// and daily usage-reporting buckets (90d) so apiUsage stays bounded.
+crons.interval(
+  "api usage retention",
+  { hours: 1 },
+  internal.publicApi.sweepUsageRetention,
+  {},
+);
+
 export default crons;

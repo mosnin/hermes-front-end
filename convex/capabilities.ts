@@ -179,6 +179,41 @@ async function resolveToolNames(
   return out;
 }
 
+/**
+ * Bulk-resolve, for a Space and a set of capability tags, which agents are
+ * actually covered by an *enabled* grant for each tag — a space-wide grant
+ * (no `agentIds` restriction) covers every agent, an agent-restricted grant
+ * covers only its listed agents. Consumed by the router (router.ts) so its
+ * scoring output can flag capabilities an agent *declares* but that have no
+ * grant wired up in this Space yet ("declared but not tool-ready"), tying
+ * feature 11 (routing) to feature 12 (the normalized tool layer) without the
+ * router owning grant storage itself.
+ */
+export async function grantCoverage(
+  ctx: { db: any },
+  spaceId: Id<"spaces">,
+  capabilityTags: string[],
+): Promise<Map<string, { spaceWide: boolean; agentIds: Set<string> }>> {
+  const out = new Map<string, { spaceWide: boolean; agentIds: Set<string> }>();
+  for (const capability of capabilityTags) {
+    const grants = await ctx.db
+      .query("capabilityGrants")
+      .withIndex("by_space_capability", (q: any) =>
+        q.eq("spaceId", spaceId).eq("capability", capability),
+      )
+      .collect();
+    let spaceWide = false;
+    const agentIds = new Set<string>();
+    for (const g of grants) {
+      if (!g.enabled) continue;
+      if (!g.agentIds || g.agentIds.length === 0) spaceWide = true;
+      else for (const id of g.agentIds) agentIds.add(id);
+    }
+    out.set(capability, { spaceWide, agentIds });
+  }
+  return out;
+}
+
 /** UI/API: resolve a set of capability tags to their granted tool names. */
 export const resolveTools = query({
   args: {

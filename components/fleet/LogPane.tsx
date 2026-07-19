@@ -33,6 +33,16 @@ export function LogPane({
 }) {
   const [level, setLevel] = useState<Level | "all">("all");
   const [follow, setFollow] = useState(true);
+  // Older pages loaded via "Load older", newest-first per page (matches
+  // `tail`'s ordering); the live tail (most recent 200) is a separate,
+  // always-fresh reactive query so new lines keep streaming in underneath.
+  const [olderBefore, setOlderBefore] = useState<number | null>(null);
+  const [olderLines, setOlderLines] = useState<
+    { _id: string; ts: number; level: Level; message: string; source?: string }[]
+  >([]);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [exhausted, setExhausted] = useState(false);
+  const mergedCursorRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const rows = useQuery(api.logs.tail, {
@@ -42,20 +52,58 @@ export function LogPane({
     limit: 200,
   });
   const counts = useQuery(api.logs.levelCounts, { spaceId, agentId });
+  const loadMore = useQuery(
+    api.logs.tail,
+    olderBefore !== null
+      ? { spaceId, agentId, level: level === "all" ? undefined : level, limit: 200, before: olderBefore }
+      : "skip",
+  );
 
-  // Newest-first from the server; render oldest-first like a terminal.
-  const lines = rows ? [...rows].reverse() : undefined;
+  // Reset the "load older" buffer whenever the agent or level filter changes
+  // — the pagination cursor is only valid within one filtered view.
+  useEffect(() => {
+    setOlderLines([]);
+    setOlderBefore(null);
+    setExhausted(false);
+    mergedCursorRef.current = null;
+  }, [level, agentId]);
+
+  useEffect(() => {
+    if (loadMore === undefined || olderBefore === null) return;
+    // Guard against the effect re-firing for the same cursor (e.g. a
+    // reactive re-render with unchanged data) so we never double-append.
+    if (mergedCursorRef.current === olderBefore) return;
+    mergedCursorRef.current = olderBefore;
+    setOlderLines((prev) => [...prev, ...loadMore]);
+    if (loadMore.length < 200) setExhausted(true);
+    setLoadingOlder(false);
+  }, [loadMore, olderBefore]);
+
+  // Newest-first from the server; render oldest-first like a terminal, with
+  // any previously loaded older pages stitched in front.
+  const tailLines = rows ? [...rows].reverse() : undefined;
+  const lines = tailLines ? [...[...olderLines].reverse(), ...tailLines] : undefined;
+  const canLoadOlder = !exhausted && ((rows?.length ?? 0) >= 200 || olderLines.length > 0);
 
   useEffect(() => {
     if (!follow || !scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [lines, follow]);
+  }, [tailLines, follow]);
 
   function onScroll() {
     const el = scrollRef.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
     setFollow(atBottom);
+  }
+
+  function loadOlder() {
+    // Cursor is the ts of the oldest line loaded so far.
+    const cursor = olderLines.length > 0 ? olderLines[olderLines.length - 1].ts : rows?.at(-1)?.ts;
+    if (cursor === undefined) return;
+    setFollow(false);
+    setLoadingOlder(true);
+    setOlderBefore(cursor);
   }
 
   return (
@@ -105,6 +153,20 @@ export function LogPane({
           </p>
         ) : (
           <div className="space-y-0.5">
+            {canLoadOlder && (
+              <div className="pb-1 pt-0.5 text-center">
+                <button
+                  onClick={loadOlder}
+                  disabled={loadingOlder}
+                  className="rounded-md px-2 py-1 text-[11px] font-medium text-muted hover:text-foreground disabled:opacity-50"
+                >
+                  {loadingOlder ? "Loading…" : "Load older"}
+                </button>
+              </div>
+            )}
+            {exhausted && olderLines.length > 0 && (
+              <p className="pb-1 text-center text-[11px] text-muted">— start of retained history —</p>
+            )}
             {lines.map((l) => (
               <div key={l._id} className="flex items-start gap-2">
                 <span className="shrink-0 text-muted">
