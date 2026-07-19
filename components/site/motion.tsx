@@ -26,6 +26,12 @@ import { cn } from "@/lib/utils";
    state when `useReducedMotion()` is true.
 --------------------------------------------------------------------------- */
 
+/** useLayoutEffect on the client, useEffect on the server (avoids the SSR
+ *  "useLayoutEffect does nothing on the server" warning while still running
+ *  before paint in the browser). */
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
+
 /** Shared "editorial rise" easing curve used across reveals and transitions. */
 export const EASE: [number, number, number, number] = [0.22, 0.61, 0.24, 1];
 
@@ -421,24 +427,29 @@ export function CountUp({
   const reduce = useReducedMotion();
   const ref = React.useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: "-80px" });
-  const [display, setDisplay] = React.useState(reduce ? value : 0);
-  const currentRef = React.useRef(reduce ? value : 0);
+  // Progressive enhancement: server and no-JS clients render the FINAL value
+  // (never a broken "0"). On the client we drop to 0 before first paint so the
+  // count-up has somewhere to travel from, then animate up when in view.
+  const [display, setDisplay] = React.useState(value);
+  const started = React.useRef(false);
   const popScale = useMotionValue(1);
 
+  useIsomorphicLayoutEffect(() => {
+    if (!reduce) setDisplay(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   React.useEffect(() => {
-    if (!inView) return;
+    if (!inView || started.current) return;
+    started.current = true;
     if (reduce) {
-      currentRef.current = value;
       setDisplay(value);
       return;
     }
-    const controls = animate(currentRef.current, value, {
+    const controls = animate(0, value, {
       duration,
       ease: easing,
-      onUpdate: (v) => {
-        currentRef.current = v;
-        setDisplay(v);
-      },
+      onUpdate: (v) => setDisplay(v),
       onComplete: () => {
         if (pop) animate(popScale, [1, 1.1, 1], { duration: 0.42, ease: EASE });
       },
