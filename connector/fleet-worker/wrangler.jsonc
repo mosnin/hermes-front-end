@@ -1,5 +1,5 @@
 {
-  // Hermes Fleet Worker — boots one container per agent.
+  // Hermes Fleet Worker — boots one container per agent, image chosen by harness.
   // Deploy with:  npx wrangler deploy   (Cloudflare account with Containers enabled)
   "name": "hermes-fleet",
   "main": "src/index.ts",
@@ -7,34 +7,100 @@
   "compatibility_date": "2025-06-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Container-backed Durable Object: one instance per agent. The class name must
-  // match the exported `AgentContainer` class in src/index.ts and the
-  // `class_name` in the `containers` block below.
+  // One Durable Object class per harness (see docs/HARNESS_SPEC.md — Cloudflare
+  // Containers bind exactly one image per DO class at deploy time, so there is
+  // no way to pick an image per /spawn call; each harness gets its own class +
+  // container image instead). `REGISTRY` is a plain (non-container) singleton
+  // Durable Object that tracks spawned agent ids + which harness/binding they
+  // live in, since Cloudflare has no native "list all DO instances" call.
   "durable_objects": {
-    "bindings": [{ "name": "AGENT", "class_name": "AgentContainer" }]
+    "bindings": [
+      { "name": "AGENT_HERMES", "class_name": "HermesAgentContainer" },
+      { "name": "AGENT_OPENCLAW", "class_name": "OpenclawAgentContainer" },
+      { "name": "AGENT_GOOSE", "class_name": "GooseAgentContainer" },
+      { "name": "AGENT_GENERIC_CLI", "class_name": "GenericCliAgentContainer" },
+      // Reserved BYO-image slot (enterprise plan only, see docs/HARNESS_SPEC.md
+      // "BYO image" section for the current per-class-image limitation). Points
+      // at the generic-cli image by default — swap the `image` below out of
+      // band for a customer-specific registry ref when a real BYO deploy needs
+      // one until Cloudflare supports per-spawn image selection.
+      { "name": "AGENT_BYO", "class_name": "CustomAgentContainer" },
+      { "name": "REGISTRY", "class_name": "FleetRegistry" }
+    ]
   },
 
   // Containers run on SQLite-backed Durable Objects, so the migration must use
   // `new_sqlite_classes` (not `new_classes`).
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AgentContainer"] }],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "HermesAgentContainer",
+        "OpenclawAgentContainer",
+        "GooseAgentContainer",
+        "GenericCliAgentContainer",
+        "CustomAgentContainer",
+        "FleetRegistry"
+      ]
+    }
+  ],
 
-  // Cloudflare Containers — the agent image built from ./Dockerfile.
-  // See https://developers.cloudflare.com/containers/ for the current schema;
-  // `instance_type` and `max_instances` may gain options over time.
+  // Cloudflare Containers — one per harness, each built from its own Dockerfile
+  // under connector/harnesses/<id>/. See https://developers.cloudflare.com/containers/
+  // for the current schema; `instance_type` and `max_instances` may gain options
+  // over time.
+  //
+  // COST ENVELOPE: `instance_type` + `max_instances` are the spend cap for this
+  // service. "basic" is Cloudflare's low tier (fractional vCPU / ~1GB memory
+  // class at time of writing) — plenty for the outbound-only connector loop.
+  // `max_instances` caps concurrently *running* containers PER CLASS fleet-wide
+  // (across all customers/Spaces) regardless of how many agents Convex thinks
+  // exist, so a bug or an abusive customer can't spin up unbounded billable
+  // containers. Raise these only alongside a real capacity/billing review; each
+  // unit is a running container billed for wall-clock time, not a free logical
+  // resource. AGENT_BYO gets a smaller ceiling since it's enterprise-gated and
+  // lower volume by design.
   "containers": [
     {
-      // Must match the Durable Object class above.
-      "class_name": "AgentContainer",
+      "class_name": "HermesAgentContainer",
       // Build context is the REPO ROOT so the Dockerfile can COPY the connector
-      // package (which lives at connector/control_plane, one dir up from here).
+      // package (connector/control_plane), which lives outside connector/harnesses/.
       // The path is relative to this wrangler.jsonc file.
-      "image": "./Dockerfile",
+      "image": "../harnesses/hermes/Dockerfile",
       "image_build_context": "../../",
-      // Smallest tier is plenty for the outbound-only connector loop.
-      // Options: "dev" | "basic" | "standard" (check docs for current tiers).
       "instance_type": "basic",
-      // Upper bound on concurrently running agent containers.
       "max_instances": 100
+    },
+    {
+      "class_name": "OpenclawAgentContainer",
+      "image": "../harnesses/openclaw/Dockerfile",
+      "image_build_context": "../../",
+      "instance_type": "basic",
+      "max_instances": 100
+    },
+    {
+      "class_name": "GooseAgentContainer",
+      "image": "../harnesses/goose/Dockerfile",
+      "image_build_context": "../../",
+      "instance_type": "basic",
+      "max_instances": 100
+    },
+    {
+      "class_name": "GenericCliAgentContainer",
+      "image": "../harnesses/generic-cli/Dockerfile",
+      "image_build_context": "../../",
+      "instance_type": "basic",
+      "max_instances": 100
+    },
+    {
+      "class_name": "CustomAgentContainer",
+      // Defaults to the generic-cli image (fully env-parameterized) until a
+      // real customer image is configured out of band — see the BYO image note
+      // above and in docs/HARNESS_SPEC.md.
+      "image": "../harnesses/generic-cli/Dockerfile",
+      "image_build_context": "../../",
+      "instance_type": "basic",
+      "max_instances": 10
     }
   ]
 

@@ -26,6 +26,37 @@ export const guardConfigValidator = v.object({
   monthlyBudgetUsd: v.optional(v.number()),
 });
 
+// Desired/applied runtime config for remote config push (feature 7). The
+// control plane writes pendingConfig; the connector polls, applies, and acks —
+// at which point the same shape is copied into appliedConfig. Drift = version
+// mismatch between the two.
+export const agentRuntimeConfigValidator = v.object({
+  version: v.number(),
+  model: v.optional(v.string()),
+  systemPrompt: v.optional(v.string()),
+  toolAllowlist: v.optional(v.array(v.string())),
+  envOverrides: v.optional(v.record(v.string(), v.string())),
+  updatedBy: v.optional(v.string()),
+  updatedAt: v.number(),
+});
+
+// Squad-level autoscaling policy (feature 8), evaluated by a cron-safe
+// internal function in agentOps.ts.
+export const squadAutoscaleValidator = v.object({
+  enabled: v.boolean(),
+  minAgents: v.number(),
+  maxAgents: v.number(),
+  // Scale up when (queued tasks / online agents) exceeds this.
+  queueDepthPerAgent: v.number(),
+  cooldownMinutes: v.number(),
+  // Template used to stamp out new agents on scale-up.
+  templateId: v.optional(v.id("agentTemplates")),
+  harness: v.optional(v.string()),
+  lastScaleAt: v.optional(v.number()),
+  lastScaleDirection: v.optional(v.string()), // "up" | "down"
+  lastEvaluatedAt: v.optional(v.number()),
+});
+
 export const DEFAULT_GUARD_CONFIG = {
   maxStepsPerRun: 50,
   maxAgentHops: 25,
@@ -62,6 +93,21 @@ export default defineSchema({
     plan: v.optional(v.string()), // "free" | "team" | "enterprise"
     // Model router policy: { primary, fallbacks[], byCapability? }.
     modelPolicy: v.optional(v.any()),
+    // A2A federation groundwork (feature 15): when true, agents in this Space
+    // with publishedToDirectory=true appear in the public agent directory.
+    directoryEnabled: v.optional(v.boolean()),
+    // Cost controls (feature 18): idle hibernation + hard spend cap.
+    costPolicy: v.optional(
+      v.object({
+        hibernationEnabled: v.optional(v.boolean()),
+        // Mark hosted agents idle after N minutes without work events.
+        idleHibernateMinutes: v.optional(v.number()),
+        // Hard monthly cap (USD); on breach hosted VMs are stopped, not just
+        // autonomy paused. 0/unset = no hard cap.
+        hardCapUsd: v.optional(v.number()),
+        hardCapAction: v.optional(v.string()), // "pause" | "stop_vms"
+      }),
+    ),
     guardConfig: v.optional(guardConfigValidator),
     // Scheduled active window (business-hours autonomy). Outside the window,
     // autonomous dispatch is refused — evaluated at guard time, no cron needed.
@@ -86,6 +132,9 @@ export default defineSchema({
     spaceId: v.id("spaces"),
     name: v.string(),
     description: v.optional(v.string()),
+    // Autoscaling (feature 8): min/max + queue-depth rule; see
+    // squadAutoscaleValidator.
+    autoscale: v.optional(squadAutoscaleValidator),
     createdAt: v.number(),
   }).index("by_space", ["spaceId"]),
 
@@ -152,12 +201,58 @@ export default defineSchema({
     capabilities: v.optional(v.array(v.string())),
     tags: v.optional(v.array(v.string())),
     meta: v.optional(v.any()),
+    // --- Harness-agnostic runtime (features 1,3,5) ---
+    // Which harness runtime image this hosted agent boots:
+    // "hermes" | "openclaw" | "goose" | "generic-cli" | "custom".
+    harness: v.optional(v.string()),
+    harnessVersion: v.optional(v.string()),
+    // BYO-image (enterprise-gated): arbitrary container image ref passed to
+    // /spawn instead of a curated per-harness image.
+    imageRef: v.optional(v.string()),
+    // Set when a rolling restart has been requested but not yet performed
+    // (drained agents are skipped until their running tasks finish).
+    restartRequestedAt: v.optional(v.number()),
+    // --- Remote config push (feature 7): desired vs applied ---
+    pendingConfig: v.optional(agentRuntimeConfigValidator),
+    appliedConfig: v.optional(agentRuntimeConfigValidator),
+    configAckedAt: v.optional(v.number()),
+    // --- Security profile link (feature 17) ---
+    securityProfileId: v.optional(v.id("securityProfiles")),
+    // --- Marketplace provenance / cloning (features 9,16) ---
+    templateId: v.optional(v.id("agentTemplates")),
+    // --- Idle / hibernation (feature 18) ---
+    // Last time this agent produced a work event (maintained by health sweep).
+    lastWorkAt: v.optional(v.number()),
+    idleState: v.optional(
+      v.union(
+        v.literal("active"),
+        v.literal("idle"),
+        v.literal("hibernated"),
+      ),
+    ),
+    hibernatedAt: v.optional(v.number()),
+    // Opt this agent out of idle hibernation.
+    hibernationExempt: v.optional(v.boolean()),
+    // Per-agent hard spend cap in USD (0/unset = space policy only).
+    spendCapUsd: v.optional(v.number()),
+    // Revenue attributed to this agent (manual/import) for P&L (feature 18).
+    attributedRevenueUsd: v.optional(v.number()),
+    // --- Self-healing watchdog (feature 10): exponential backoff ---
+    restartAttempts: v.optional(v.number()),
+    lastRestartAt: v.optional(v.number()),
+    nextRestartAt: v.optional(v.number()),
+    watchdogDisabled: v.optional(v.boolean()),
+    // --- A2A federation (feature 15): publish this agent's card to the
+    // public directory (only effective when the Space's directoryEnabled).
+    publishedToDirectory: v.optional(v.boolean()),
     createdAt: v.number(),
   })
     .index("by_space", ["spaceId"])
     .index("by_space_status", ["spaceId", "status"])
     .index("by_squad", ["squadId"])
-    .index("by_token", ["tokenHash"]),
+    .index("by_token", ["tokenHash"])
+    .index("by_directory", ["publishedToDirectory"])
+    .index("by_space_idle", ["spaceId", "idleState"]),
 
   // ===========================================================================
   // Conversations
@@ -267,6 +362,9 @@ export default defineSchema({
       v.literal("urgent"),
     ),
     assigneeAgentId: v.optional(v.id("agents")),
+    // Capability-based routing (feature 11): capability tags this task needs
+    // (e.g. "code-gen", "browser"); the router scores agents against these.
+    requiredCapabilities: v.optional(v.array(v.string())),
     threadId: v.optional(v.id("threads")),
     workflowRunId: v.optional(v.id("workflowRuns")),
     orderKey: v.string(),
@@ -336,6 +434,9 @@ export default defineSchema({
         agentId: v.optional(v.id("agents")),
         // Resolve an agent by capability if no explicit agentId.
         requiresCapability: v.optional(v.string()),
+        // Capability-based routing (feature 11): multi-tag needs; superset of
+        // requiresCapability (kept for back-compat).
+        requiredCapabilities: v.optional(v.array(v.string())),
         instruction: v.string(),
         dependsOn: v.optional(v.array(v.string())),
         maxAttempts: v.optional(v.number()),
@@ -636,6 +737,10 @@ export default defineSchema({
     prefix: v.string(), // first chars, for display
     createdBy: v.string(),
     lastUsedAt: v.optional(v.number()),
+    // Public API v1 (feature 20): optional scoping + limits.
+    scopes: v.optional(v.array(v.string())), // "read" | "write" | "deploy" | ...
+    rateLimitPerMinute: v.optional(v.number()),
+    expiresAt: v.optional(v.number()),
     revoked: v.boolean(),
     createdAt: v.number(),
   })
@@ -705,6 +810,13 @@ export default defineSchema({
     decidedBy: v.optional(v.string()),
     decidedAt: v.optional(v.number()),
     payload: v.optional(v.any()),
+    // Approval inbox everywhere (feature 19):
+    // Structured preview/diff of the pending action for richer UI.
+    preview: v.optional(v.any()),
+    riskLevel: v.optional(v.string()), // "low" | "medium" | "high"
+    // Channels this approval was pushed to ("email" | "webhook" | "in_app").
+    deliveredChannels: v.optional(v.array(v.string())),
+    expiresAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_space", ["spaceId"])
@@ -912,5 +1024,259 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_space_scope_bucket", ["spaceId", "scope", "bucket"])
+    .index("by_updated", ["updatedAt"]),
+
+  // ===========================================================================
+  // Agent logs — live log streaming from hosted/connected agents (feature 6).
+  // Ingested via connector HTTP route → internal mutation; retention sweep
+  // deletes by ts. Pagination via by_agent_time / by_space_time.
+  // ===========================================================================
+  agentLogs: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    agentId: v.id("agents"),
+    level: v.union(
+      v.literal("debug"),
+      v.literal("info"),
+      v.literal("warn"),
+      v.literal("error"),
+    ),
+    message: v.string(),
+    // Where the line came from: "stdout" | "stderr" | "harness" | "connector".
+    source: v.optional(v.string()),
+    // Monotonic sequence within one connector batch (tie-break within same ts).
+    seq: v.optional(v.number()),
+    meta: v.optional(v.any()),
+    ts: v.number(), // producer timestamp (ms epoch)
+  })
+    .index("by_space_time", ["spaceId", "ts"])
+    .index("by_agent_time", ["agentId", "ts"])
+    .index("by_agent_level_time", ["agentId", "level", "ts"])
+    .index("by_time", ["ts"]),
+
+  // ===========================================================================
+  // Agent templates — marketplace (feature 16) + snapshot/clone rows
+  // (feature 9). Curated public templates have visibility "public" and no
+  // spaceId; snapshots of a live agent are visibility "space" with
+  // sourceAgentId set.
+  // ===========================================================================
+  agentTemplates: defineTable({
+    // Null for curated/global templates; set for space-private snapshots.
+    companyId: v.optional(v.string()),
+    spaceId: v.optional(v.id("spaces")),
+    slug: v.string(),
+    name: v.string(),
+    tagline: v.optional(v.string()),
+    description: v.optional(v.string()),
+    category: v.optional(v.string()), // "sales" | "support" | "engineering" | "ops" | ...
+    visibility: v.union(v.literal("public"), v.literal("space")),
+    featured: v.optional(v.boolean()),
+    // Runtime shape:
+    harness: v.optional(v.string()), // "hermes" | "openclaw" | "goose" | "generic-cli"
+    suggestedModel: v.optional(v.string()),
+    systemPrompt: v.optional(v.string()),
+    toolsets: v.optional(v.array(v.string())),
+    capabilities: v.optional(v.array(v.string())),
+    suggestedConfig: v.optional(v.any()), // env overrides, tool allowlist, etc.
+    // Bundled content (portable, inlined so installs clone rather than link):
+    skills: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          description: v.optional(v.string()),
+          content: v.string(),
+          tags: v.optional(v.array(v.string())),
+        }),
+      ),
+    ),
+    // Optional workflow bundle: same shape as workflows.steps, stored loosely
+    // so template authoring isn't coupled to workflow schema evolution.
+    workflowBundle: v.optional(v.any()),
+    securityProfileName: v.optional(v.string()),
+    // Snapshot provenance (feature 9):
+    sourceAgentId: v.optional(v.id("agents")),
+    author: v.optional(v.string()),
+    version: v.optional(v.string()),
+    installCount: v.optional(v.number()),
+    createdBy: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_slug", ["slug"])
+    .index("by_visibility", ["visibility", "featured"])
+    .index("by_visibility_category", ["visibility", "category"]),
+
+  // ===========================================================================
+  // Security profiles — named container/tool policies attachable to agents
+  // (feature 17). Tool allowlist is enforced server-side; egress/fs/secret
+  // scopes are passed to /spawn as container policy.
+  // ===========================================================================
+  securityProfiles: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    // Hostnames/CIDRs the container may reach; empty = deny-all, unset = allow-all.
+    egressAllowlist: v.optional(v.array(v.string())),
+    fsQuotaMb: v.optional(v.number()),
+    // Secret names (secrets.name) this profile's agents may read.
+    secretScopes: v.optional(v.array(v.string())),
+    // Tool names allowed; unset = no restriction. Enforced by helper in
+    // securityProfiles.ts, callable from router/connector paths.
+    toolAllowlist: v.optional(v.array(v.string())),
+    // Extra opaque policy forwarded verbatim to the fleet worker /spawn.
+    containerPolicy: v.optional(v.any()),
+    isDefault: v.optional(v.boolean()),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_space_name", ["spaceId", "name"]),
+
+  // ===========================================================================
+  // Capability grants — normalized tool layer (feature 12): per-Space mapping
+  // of harness-neutral capability tags → concrete Composio/MCP/builtin tools.
+  // Consumed by the router (feature 11) and exposed to connectors via a query.
+  // ===========================================================================
+  capabilityGrants: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    capability: v.string(), // "code-gen" | "browser" | "email" | "crm" | ...
+    // Concrete tool identifiers this capability resolves to in this Space.
+    toolNames: v.array(v.string()),
+    provider: v.optional(v.string()), // "composio" | "mcp" | "builtin"
+    // Restrict grant to specific agents; unset = all agents in the Space.
+    agentIds: v.optional(v.array(v.id("agents"))),
+    enabled: v.boolean(),
+    grantedBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_space_capability", ["spaceId", "capability"]),
+
+  // ===========================================================================
+  // Eval benchmarks + runs — cross-harness benchmarking (feature 13). A
+  // benchmark is the reusable definition; each run is one agent × benchmark
+  // execution with cost + quality persisted for comparison.
+  // ===========================================================================
+  evalBenchmarks: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    prompt: v.string(),
+    // Grading rubric for the LLM judge / expected output for exact scoring.
+    rubric: v.optional(v.string()),
+    expectedOutput: v.optional(v.string()),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_space", ["spaceId"]),
+
+  evalRuns: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    benchmarkId: v.id("evalBenchmarks"),
+    // Groups the N agent-runs launched together for side-by-side comparison.
+    batchId: v.optional(v.string()),
+    agentId: v.id("agents"),
+    harness: v.optional(v.string()),
+    model: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+    output: v.optional(v.string()),
+    qualityScore: v.optional(v.number()), // 0..1
+    judge: v.optional(v.string()), // "llm" | "exact" | "human"
+    costUsd: v.optional(v.number()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    latencyMs: v.optional(v.number()),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    finishedAt: v.optional(v.number()),
+  })
+    .index("by_space_time", ["spaceId", "startedAt"])
+    .index("by_benchmark", ["benchmarkId"])
+    .index("by_batch", ["batchId"])
+    .index("by_agent", ["agentId"]),
+
+  // ===========================================================================
+  // Notification prefs — per user × space delivery channels for approvals and
+  // other alert categories (feature 19). Webhook secret stored as a reference
+  // into the secrets vault, never raw.
+  // ===========================================================================
+  notificationPrefs: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    userId: v.string(),
+    emailEnabled: v.optional(v.boolean()),
+    emailAddress: v.optional(v.string()),
+    webhookEnabled: v.optional(v.boolean()),
+    webhookUrl: v.optional(v.string()),
+    // Name of a secrets-vault entry holding the HMAC signing secret.
+    webhookSecretRef: v.optional(v.string()),
+    // Which categories to deliver: "approval" | "alert" | "run" | ...;
+    // unset = approvals only.
+    categories: v.optional(v.array(v.string())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_space_user", ["spaceId", "userId"]),
+
+  // ===========================================================================
+  // Approval tokens — signed short-lived single-use tokens for one-click
+  // approve/deny links (feature 19). Only the SHA-256 hash is stored; the raw
+  // token lives solely in the delivered email/webhook. usedAt enforces
+  // single-use; expired rows are swept by ts.
+  // ===========================================================================
+  approvalTokens: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    approvalId: v.id("approvals"),
+    tokenHash: v.string(),
+    action: v.union(
+      v.literal("approve"),
+      v.literal("deny"),
+      v.literal("either"),
+    ),
+    // Who the link was issued to (userId or email) — audit trail.
+    recipient: v.optional(v.string()),
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+    usedBy: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_hash", ["tokenHash"])
+    .index("by_approval", ["approvalId"])
+    .index("by_expires", ["expiresAt"]),
+
+  // ===========================================================================
+  // API usage counters — per-key request accounting for the public API
+  // (feature 20): rate limiting (minute buckets) + usage reporting (day
+  // buckets), O(1) patch-in-place like `counters`.
+  //   bucket "min:<epochMin>" | "day:<YYYY-MM-DD>"
+  // ===========================================================================
+  apiUsage: defineTable({
+    companyId: v.string(),
+    spaceId: v.id("spaces"),
+    apiKeyId: v.id("apiKeys"),
+    bucket: v.string(),
+    count: v.number(),
+    errorCount: v.optional(v.number()),
+    // Optional per-route breakdown { "GET /api/v1/agents": n, ... }.
+    routes: v.optional(v.record(v.string(), v.number())),
+    updatedAt: v.number(),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_key_bucket", ["apiKeyId", "bucket"])
     .index("by_updated", ["updatedAt"]),
 });

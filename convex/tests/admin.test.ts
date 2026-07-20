@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { convexTest } from "convex-test";
 import schema from "../schema";
 import { api, internal } from "../_generated/api";
@@ -100,6 +100,9 @@ describe("platform admin (SOC2)", () => {
   });
 
   test("the global kill switch also blocks the AUTONOMOUS trigger path", async () => {
+    // startFromTrigger schedules the engine dispatch chain; fake timers + an
+    // explicit drain keep it from writing after the test transaction closes.
+    vi.useFakeTimers();
     const t = convexTest(schema, modules);
     const admin = t.withIdentity({ subject: ADMIN, org_id: "org_admin" });
     const owner = t.withIdentity({ subject: "u", org_id: "org_trig" });
@@ -133,6 +136,12 @@ describe("platform admin (SOC2)", () => {
       trigger: "webhook",
     });
     expect(runId2).not.toBeNull();
+
+    // Drain the engine's scheduled chain (action hops run on a real
+    // setTimeout(0) inside convex-test — same pattern as publicApi.test.ts).
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    vi.useRealTimers();
+    await new Promise((resolve) => setTimeout(resolve, 20));
   });
 
   test("the global kill switch blocks tenant autonomy", async () => {

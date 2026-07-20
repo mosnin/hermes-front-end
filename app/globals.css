@@ -1,42 +1,60 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
-   Chirp-style theme: near-black surfaces, warm orange accent, mono type,
-   glowing instrument rings. Dark-only by design.
+   Cadre editorial light system: paper-white surfaces, warm beige cards, ink
+   text, hairline borders. This is the single skin for the whole product —
+   marketing site, application shell, and auth wall all read these same
+   tokens, so a token-only lane (this file) re-skins every surface that uses
+   the semantic `bg-background` / `bg-surface` / `border-border` / `text-
+   muted` / `text-foreground` utilities without touching those files. The
+   product is intentionally light-only now: no `[data-theme="dark"]` override
+   is defined, so a stale persisted preference from before this redesign
+   cannot resurrect the old near-black instrument-panel UI.
 --------------------------------------------------------------------------- */
 :root {
-  --background: #0e0e0e;
-  --surface: #161616;
-  --surface-2: #1f1f1f;
-  --border: #292929;
-  --foreground: #e8e6e3;
-  --muted: #8f8c86;
-  --accent: #ff5b04;
-  --accent-2: #a3e635;
-}
-
-/* The product is dark-only (instrument-panel aesthetic); a stray persisted
-   light preference must not break it. */
-[data-theme="light"] {
-  --background: #0e0e0e;
-  --surface: #161616;
-  --surface-2: #1f1f1f;
-  --border: #292929;
-  --foreground: #e8e6e3;
-  --muted: #8f8c86;
-  --accent: #ff5b04;
-  --accent-2: #a3e635;
+  --background: #ffffff; /* paper white */
+  --band: #f5f4f0; /* warm off-white band, e.g. sidebar / section fill */
+  --surface: #efede7; /* beige card fill */
+  --surface-2: #f5f4f0; /* lighter panel fill (inputs, menus) */
+  --border: #e7e5df; /* hairline */
+  --border-hover: #d6d4cd; /* hairline on hover, e.g. cards/pills/inputs */
+  --foreground: #1f1f1c; /* ink */
+  --muted: #8a8781; /* body */
+  --muted-strong: #4a4842; /* secondary ink, between foreground and muted
+    (e.g. resting-state nav-item text) */
+  --accent: #1f1f1c; /* solid-ink pill accent (primary actions) */
+  --accent-2: #c9a15c; /* warm secondary highlight (progress, emphasis) */
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-band: var(--band);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
+  --color-muted-strong: var(--muted-strong);
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
+  /* Shared "raised surface" shadow pair used across the shell's cards, pills,
+     and menus (sidebar switchers/search, promo card, Card, Button/Input/
+     Segmented) — one definition instead of the same rgba literal repeated at
+     every call site, so a future tune only happens here. */
+  --shadow-card: 0 1px 2px rgba(31, 31, 28, 0.04);
+  --shadow-card-hover: 0 8px 24px rgba(31, 31, 28, 0.07);
+  /* Cycle 7 cross-surface consistency: the two "large surface" corner radii
+     reused everywhere a beige card or a top-level overlay panel appears
+     (`rounded-card` / `rounded-modal` utilities) instead of the same
+     `rounded-[22px]` / `rounded-[26px]` bracket literal repeated at every
+     call site across Lane A/B/C/D/E's files (mockups.tsx, site/ui.tsx,
+     admin-shell.tsx, auth-shell.tsx, and this lane's ui.tsx all already
+     reach for one of these two exact values) — same computed radius, one
+     definition to tune from now on, and every lane can adopt the utility at
+     its own pace the same way `shadow-card` was picked up after cycle 5. */
+  --radius-card: 22px;
+  --radius-modal: 26px;
 }
 
 html,
@@ -44,12 +62,85 @@ body {
   background: var(--background);
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
-  font-family: var(--font-mono), ui-monospace, "SF Mono", "JetBrains Mono",
-    Menlo, Consolas, monospace;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Application shell scope: the dashboard route tree loads its own copy of
+   Instrument Sans (app/dashboard/layout.tsx) under `--font-app`; this rule
+   resolves it for that subtree so the authenticated app reads in the same
+   editorial grotesk as the marketing site and auth wall.
+--------------------------------------------------------------------------- */
+.app-light {
+  font-family: var(--font-app), "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Marketing-site scope: the same paper/beige/ink palette as the root tokens
+   above, kept as its own `--site-*` variables (and applied via this class at
+   the (site) route root) so Lane B's pages can stay self-contained even
+   though the app shell now shares the identical values by default.
+--------------------------------------------------------------------------- */
+.site-light {
+  --site-bg: #ffffff;
+  --site-band: #f5f4f0; /* warm off-white section band */
+  --site-card: #efede7; /* beige card fill */
+  --site-ink: #1f1f1c;
+  --site-body: #8a8781;
+  --site-line: #e7e5df;
+  background: var(--site-bg);
+  color: var(--site-ink);
+  font-family: var(--font-site), "Helvetica Neue", Arial, sans-serif;
+}
+.site-light ::selection {
+  background: #1f1f1c;
+  color: #fff;
+}
+.site-light :focus-visible {
+  outline: 2px solid #1f1f1c;
+}
+/* Slow logo marquee */
+@keyframes site-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.site-marquee {
+  animation: site-marquee 36s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-marquee { animation: none; }
 }
 
 * {
   border-color: var(--border);
+}
+
+/* ---------------------------------------------------------------------------
+   Cycle 6 reduced-motion safety net (global, defense-in-depth). Every loop
+   and scroll effect authored via `motion/react` already checks
+   `useReducedMotion()` in JS (see Reveal/Stagger/Parallax/Marquee/StickyScene
+   in components/site/motion.tsx, and the loops/springs in this file's sibling
+   components/ui.tsx + sidebar.tsx). This global rule is the backstop for
+   anything else: any plain CSS `transition`/`animation` on a hover/focus
+   state (ours or a third-party widget's, e.g. Clerk's own UI chrome) collapses
+   to effectively instant under reduced motion instead of relying on every
+   call site remembering to gate it. It only shortens duration, never removes
+   the transition outright, so end states (colors, opacity, layout) are
+   unaffected: elements still land exactly where they were going, just without
+   the motion. `!important` is required here (an OS/user-level accessibility
+   preference must win over any component's own inline/utility duration), and
+   it cannot fight the JS-driven motion/react animations elsewhere in this
+   codebase since those are driven imperatively via WAAPI/rAF, not by the CSS
+   `transition`/`animation` shorthand this rule targets. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 ::selection {
@@ -82,31 +173,37 @@ body {
   transform: translateY(0);
 }
 
-/* Thin, dark scrollbars to match the instrument-panel aesthetic. */
+/* Thin scrollbars, tuned to stay visible on paper-white surfaces. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
   border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--foreground) 30%, transparent);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* Glow helpers for rings, dots, and active elements. */
+/* Soft-shadow helpers for rings, dots, and active elements — traded the old
+   neon instrument-panel glow for a quiet ink-tinted lift that reads on
+   paper-white. Names kept stable: other lanes' files reference these
+   classes and pick up the new look automatically. */
 .glow-accent {
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .glow-green {
-  box-shadow: 0 0 10px rgba(163, 230, 53, 0.55);
+  box-shadow: 0 2px 10px rgba(22, 163, 74, 0.35);
 }
 .glow-red {
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.55);
+  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.35);
 }
 .text-glow-accent {
-  text-shadow: 0 0 18px color-mix(in srgb, var(--accent) 60%, transparent);
+  text-shadow: 0 1px 1px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 /* Skeleton shimmer for loading states (Apple-grade: no flash of empty). */
@@ -128,7 +225,7 @@ body {
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in srgb, var(--foreground) 6%, transparent),
+    color-mix(in srgb, var(--foreground) 10%, transparent),
     transparent
   );
   animation: hermes-shimmer 1.5s infinite;

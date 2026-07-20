@@ -40,4 +40,69 @@ crons.interval("retention sweep", { hours: 1 }, internal.maintenance.sweepRetent
 // and page the configured channel, respecting per-rule cooldowns.
 crons.interval("alert eval", { minutes: 3 }, internal.alerts.evaluateAll, {});
 
+// Managed hosting: meter one usage row per hosted (running) agent for the
+// current hour bucket. Idempotent per agent/hour; safe to run more than once.
+crons.interval(
+  "fleet agent-hour metering",
+  { hours: 1 },
+  internal.fleetMetering.runHourly,
+  {},
+);
+
+// Retention: bound streamed agent logs (7d) so agentLogs stays bounded.
+crons.interval("agent log retention", { hours: 1 }, internal.logs.sweepRetention, {});
+
+// Retention: purge expired/used one-click approval tokens.
+crons.interval(
+  "approval token sweep",
+  { hours: 1 },
+  internal.approvals.sweepExpiredTokens,
+  {},
+);
+
+// Cost controls: mark idle hosted agents and hibernate/stop their VMs per
+// each Space's cost policy.
+crons.interval(
+  "idle hibernation sweep",
+  { hours: 1 },
+  internal.costs.sweepIdleHibernation,
+  {},
+);
+
+// Cost controls: enforce space-level hard caps and per-agent spend caps
+// against month-to-date spend.
+crons.interval("spend cap enforcement", { hours: 1 }, internal.costs.enforceSpendCaps, {});
+
+// Rolling restarts: retry drained-and-now-idle agents whose restart was
+// deferred while they still had in-flight work. Safe no-op when Cloudflare
+// isn't configured.
+crons.interval(
+  "pending restart sweep",
+  { hours: 1 },
+  internal.fleet.sweepPendingRestarts,
+  {},
+);
+
+// Squad autoscaling: evaluate queue depth per autoscale-enabled squad and
+// scale up/down by at most one agent per squad per tick (cooldown-honoring).
+crons.interval(
+  "squad autoscale",
+  { minutes: 5 },
+  internal.agentOps.evaluateAutoscale,
+  {},
+);
+
+// Self-healing watchdog: confirm offline hosted agents are actually dead and
+// attempt an in-place restart with exponential backoff.
+crons.interval("hosted agent watchdog", { minutes: 5 }, internal.health.watchdogTick, {});
+
+// Public-API usage counters: purge stale per-minute rate-limit buckets (1d)
+// and daily usage-reporting buckets (90d) so apiUsage stays bounded.
+crons.interval(
+  "api usage retention",
+  { hours: 1 },
+  internal.publicApi.sweepUsageRetention,
+  {},
+);
+
 export default crons;

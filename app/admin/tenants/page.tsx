@@ -3,9 +3,14 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Card, Badge, Input, SkeletonRows } from "@/components/ui";
 import { useToast } from "@/components/toast";
 import { Building2, Pause, Play } from "@/components/icons";
+import { PageHead, Panel, StatTile, StatRow, ListRow } from "@/components/dash/kit";
+
+const PLAN_CLS: Record<string, string> = {
+  enterprise: "bg-green-50 text-green-700",
+  team: "bg-sky-50 text-sky-700",
+};
 
 export default function AdminTenants() {
   const tenants = useQuery(api.admin.tenants, {});
@@ -18,10 +23,7 @@ export default function AdminTenants() {
     setBusy(companyId);
     try {
       const res = await setCompanyAutonomy({ companyId, paused });
-      toast(
-        `${paused ? "Paused" : "Resumed"} ${res.spaces} space(s)`,
-        paused ? "error" : "success",
-      );
+      toast(`${paused ? "Paused" : "Resumed"} ${res.spaces} space(s)`, paused ? "error" : "success");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Failed", "error");
     } finally {
@@ -32,89 +34,98 @@ export default function AdminTenants() {
   const rows = useMemo(() => {
     const list = tenants ?? [];
     const needle = q.trim().toLowerCase();
-    return needle
-      ? list.filter((t) => t.companyId.toLowerCase().includes(needle))
-      : list;
+    return needle ? list.filter((t) => t.companyId.toLowerCase().includes(needle)) : list;
   }, [tenants, q]);
 
-  return (
-    <div className="p-8">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Tenants</h1>
-          <p className="text-sm text-muted">
-            Every company on the platform. Read-only, tenant data is never
-            mutated from here.
-          </p>
-        </div>
-        <div className="w-64">
-          <Input
-            placeholder="Filter by company id…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-      </div>
+  const totals = useMemo(() => {
+    const list = tenants ?? [];
+    return list.reduce(
+      (acc, t) => ({
+        spaces: acc.spaces + t.spaces,
+        agents: acc.agents + t.agents,
+        paused: acc.paused + t.paused,
+      }),
+      { spaces: 0, agents: 0, paused: 0 },
+    );
+  }, [tenants]);
 
-      <Card className="p-0">
-        <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-4 border-b border-border px-6 py-3 text-xs uppercase tracking-wider text-muted">
-          <span>Company</span>
-          <span className="text-right">Spaces</span>
-          <span className="text-right">Agents</span>
-          <span className="text-right">Paused</span>
-          <span className="text-right">Plans</span>
-          <span className="text-right">Control</span>
-        </div>
-        {rows.map((t) => {
-          const allPaused = t.paused >= t.spaces && t.spaces > 0;
-          return (
-            <div
-              key={t.companyId}
-              className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] items-center gap-4 border-b border-border px-6 py-3.5 text-sm last:border-b-0"
-            >
-              <span className="flex items-center gap-2 truncate font-mono text-xs">
-                <Building2 className="h-4 w-4 shrink-0 text-muted" />
-                {t.companyId}
-              </span>
-              <span className="text-right">{t.spaces}</span>
-              <span className="text-right">{t.agents}</span>
-              <span className={`text-right ${t.paused > 0 ? "text-red-400" : "text-muted"}`}>
-                {t.paused}
-              </span>
-              <span className="flex justify-end gap-1">
-                {t.plans.map((p) => (
-                  <Badge
-                    key={p}
-                    tone={p === "enterprise" ? "green" : p === "team" ? "blue" : "default"}
-                  >
-                    {p}
-                  </Badge>
-                ))}
-              </span>
-              <span className="flex justify-end">
-                <button
-                  disabled={busy === t.companyId}
-                  onClick={() => togglePause(t.companyId, !allPaused)}
-                  title={allPaused ? "Resume all autonomy" : "Pause all autonomy (break-glass)"}
-                  className={`rounded-lg border p-1.5 transition disabled:opacity-40 ${allPaused ? "border-lime-400/30 text-lime-400" : "border-red-500/30 text-red-400 hover:bg-red-500/10"}`}
-                >
-                  {allPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                </button>
-              </span>
+  return (
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="Platform admin · tenants"
+          title="Tenants"
+          sub="Every company on the platform. Read-only, tenant data is never mutated from here."
+        />
+
+        <StatRow>
+          <StatTile value={(tenants ?? []).length} label="Companies" hint="on the platform" tone="ink" />
+          <StatTile value={totals.spaces} label="Spaces" hint="across all tenants" />
+          <StatTile value={totals.agents} label="Agents" hint="registered" />
+          <StatTile
+            value={totals.paused}
+            label="Paused"
+            hint={totals.paused > 0 ? "autonomy on hold" : "all clear"}
+          />
+        </StatRow>
+
+        <Panel
+          title="Companies"
+          action={
+            <input
+              type="text"
+              placeholder="Filter by company id…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="w-full rounded-full border border-[var(--border)] bg-[var(--background)] px-4 py-2 text-[14px] text-[var(--foreground)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--border-hover)] sm:w-64"
+            />
+          }
+        >
+          {tenants === undefined ? (
+            <p className="py-10 text-center text-[13.5px] text-[var(--muted)]">Loading…</p>
+          ) : rows.length === 0 ? (
+            <p className="py-10 text-center text-[13.5px] text-[var(--muted)]">No tenants match.</p>
+          ) : (
+            <div>
+              {rows.map((t) => {
+                const allPaused = t.paused >= t.spaces && t.spaces > 0;
+                return (
+                  <ListRow
+                    key={t.companyId}
+                    leading={<Building2 className="h-4 w-4" />}
+                    title={<span className="font-mono text-[13px]">{t.companyId}</span>}
+                    meta={`${t.spaces} space${t.spaces === 1 ? "" : "s"} · ${t.agents} agent${t.agents === 1 ? "" : "s"}${t.paused > 0 ? ` · ${t.paused} paused` : ""}`}
+                    trailing={
+                      <div className="flex items-center gap-2">
+                        {t.plans.map((p) => (
+                          <span
+                            key={p}
+                            className={`rounded-full px-2 py-0.5 text-[11.5px] font-medium ${PLAN_CLS[p] ?? "bg-[var(--surface)] text-[var(--muted)]"}`}
+                          >
+                            {p}
+                          </span>
+                        ))}
+                        <button
+                          disabled={busy === t.companyId}
+                          onClick={() => togglePause(t.companyId, !allPaused)}
+                          title={allPaused ? "Resume all autonomy" : "Pause all autonomy (break-glass)"}
+                          className={`grid h-7 w-7 shrink-0 place-items-center rounded-full transition-colors disabled:opacity-40 ${
+                            allPaused
+                              ? "bg-green-50 text-green-700 hover:bg-green-100"
+                              : "bg-red-50 text-red-600 hover:bg-red-100"
+                          }`}
+                        >
+                          {allPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                    }
+                  />
+                );
+              })}
             </div>
-          );
-        })}
-        {tenants === undefined && (
-          <div className="p-6">
-            <SkeletonRows rows={5} />
-          </div>
-        )}
-        {tenants !== undefined && rows.length === 0 && (
-          <p className="px-6 py-10 text-center text-sm text-muted">
-            No tenants match.
-          </p>
-        )}
-      </Card>
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }

@@ -7,7 +7,10 @@ import {
   internalQuery,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Doc, Id } from "./_generated/dataModel";
 import { resolveScope, requireRole } from "./lib/auth";
+import { recordWorkEvent } from "./lib/events";
+import { recordUsage } from "./lib/metering";
 
 export const log = mutation({
   args: {
@@ -59,6 +62,14 @@ export const list = query({
   },
 });
 
+// Defensive bound on the aggregation scans below — `evals` rows accumulate
+// indefinitely (every human + auto eval, forever), unlike `agents` which
+// stays roughly proportional to fleet size. Rolling up over the most recent
+// slice keeps `scorecards`/`benchmarkTrend` from ever `.collect()`-ing an
+// unbounded table.
+const EVALS_ROLLUP_CAP = 2000;
+const RUNS_ROLLUP_CAP = 1000;
+
 export const scorecards = query({
   args: { spaceId: v.id("spaces") },
   handler: async (ctx, { spaceId }) => {
@@ -71,7 +82,8 @@ export const scorecards = query({
       ctx.db
         .query("evals")
         .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
-        .collect(),
+        .order("desc")
+        .take(EVALS_ROLLUP_CAP),
     ]);
 
     return agents
@@ -229,5 +241,410 @@ export const autoEvaluate = action({
     });
 
     return { rating, comment };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Cross-harness eval benchmarking (feature 13)
+//
+// A benchmark is a reusable prompt + rubric/expected-output. Running it
+// launches one `evalRuns` row per agent, all sharing a `batchId`, so the
+// evals page can render a cost-vs-quality comparison across harnesses/models.
+//
+// Execution note: Convex actions can't natively invoke an arbitrary remote
+// harness/container — real per-harness execution is the connector runtime's
+// job (owned by Team A/the connector). Until that dispatch path lands, this
+// runs the benchmark prompt through OpenAI directly (same OPENAI_API_KEY
+// dependency as autoEvaluate/embeddings elsewhere in this file), while still
+// persisting each run tagged with the *agent's own declared* harness/model so
+// the comparison table is meaningful once real per-harness execution is
+// wired in — only the execution step needs to change, not the schema or UI.
+// ---------------------------------------------------------------------------
+
+// Rough OpenAI pricing (USD per token) used to estimate benchmark run cost.
+// gpt-4o-mini: $0.15/1M input, $0.60/1M output.
+const PRICE_PER_INPUT_TOKEN = 0.15 / 1_000_000;
+const PRICE_PER_OUTPUT_TOKEN = 0.6 / 1_000_000;
+
+export const createBenchmark = mutation({
+  args: {
+    spaceId: v.id("spaces"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    prompt: v.string(),
+    rubric: v.optional(v.string()),
+    expectedOutput: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<Id<"evalBenchmarks">> => {
+    const scope = await resolveScope(ctx, args.spaceId);
+    requireRole(scope, "operator");
+    const now = Date.now();
+    const id = await ctx.db.insert("evalBenchmarks", {
+      companyId: scope.companyId,
+      spaceId: args.spaceId,
+      name: args.name,
+      description: args.description,
+      prompt: args.prompt,
+      rubric: args.rubric,
+      expectedOutput: args.expectedOutput,
+      createdBy: scope.userId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await recordWorkEvent(ctx, {
+      companyId: scope.companyId,
+      spaceId: args.spaceId,
+      actorType: "user",
+      actorId: scope.userId,
+      category: "system",
+      action: "eval_benchmark_created",
+      summary: `Created eval benchmark "${args.name}"`,
+    });
+    return id;
+  },
+});
+
+export const listBenchmarks = query({
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    await resolveScope(ctx, spaceId);
+    return await ctx.db
+      .query("evalBenchmarks")
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+      .order("desc")
+      .take(200);
+  },
+});
+
+export const removeBenchmark = mutation({
+  args: { spaceId: v.id("spaces"), benchmarkId: v.id("evalBenchmarks") },
+  handler: async (ctx, { spaceId, benchmarkId }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
+    const row = await ctx.db.get(benchmarkId);
+    if (!row || row.spaceId !== spaceId) throw new Error("Not found");
+    await ctx.db.delete(benchmarkId);
+  },
+});
+
+/** Recent batches for a Space, newest first, with per-batch rollups. */
+export const listBatches = query({
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    await resolveScope(ctx, spaceId);
+    const runs = await ctx.db
+      .query("evalRuns")
+      .withIndex("by_space_time", (q) => q.eq("spaceId", spaceId))
+      .order("desc")
+      .take(500);
+    const benchmarks = await ctx.db
+      .query("evalBenchmarks")
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+      .collect();
+    const benchName = new Map(benchmarks.map((b) => [b._id, b.name]));
+
+    const groups = new Map<string, Doc<"evalRuns">[]>();
+    for (const r of runs) {
+      const key = r.batchId ?? r._id;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(r);
+    }
+
+    return Array.from(groups.entries())
+      .map(([batchId, rows]) => {
+        const completed = rows.filter((r) => r.qualityScore != null);
+        const avgQuality = completed.length
+          ? completed.reduce((s, r) => s + (r.qualityScore ?? 0), 0) / completed.length
+          : null;
+        const totalCost = rows.reduce((s, r) => s + (r.costUsd ?? 0), 0);
+        return {
+          batchId,
+          benchmarkId: rows[0].benchmarkId,
+          benchmarkName: benchName.get(rows[0].benchmarkId) ?? "Benchmark",
+          runCount: rows.length,
+          avgQuality,
+          totalCostUsd: totalCost,
+          startedAt: Math.min(...rows.map((r) => r.startedAt)),
+          status: rows.some((r) => r.status === "running" || r.status === "pending")
+            ? "running"
+            : rows.some((r) => r.status === "failed")
+              ? "partial"
+              : "completed",
+        };
+      })
+      .sort((a, b) => b.startedAt - a.startedAt);
+  },
+});
+
+/** All runs in a batch, joined with agent name/harness for the comparison view. */
+export const compareBatch = query({
+  args: { spaceId: v.id("spaces"), batchId: v.string() },
+  handler: async (ctx, { spaceId, batchId }) => {
+    await resolveScope(ctx, spaceId);
+    const runs = await ctx.db
+      .query("evalRuns")
+      .withIndex("by_batch", (q) => q.eq("batchId", batchId))
+      .collect();
+    const scoped = runs.filter((r) => r.spaceId === spaceId);
+    const agents = await Promise.all(scoped.map((r) => ctx.db.get(r.agentId)));
+    return scoped.map((r, i) => ({
+      runId: r._id,
+      agentId: r.agentId,
+      agentName: agents[i]?.name ?? "Agent",
+      harness: r.harness ?? agents[i]?.harness ?? "unknown",
+      model: r.model ?? agents[i]?.model ?? "unknown",
+      status: r.status,
+      qualityScore: r.qualityScore ?? null,
+      costUsd: r.costUsd ?? null,
+      inputTokens: r.inputTokens ?? null,
+      outputTokens: r.outputTokens ?? null,
+      latencyMs: r.latencyMs ?? null,
+      output: r.output,
+      error: r.error,
+    }));
+  },
+});
+
+/**
+ * Historical trend for a single benchmark: one point per batch, ordered
+ * oldest -> newest, so the UI can chart quality/cost drift across repeated
+ * runs (e.g. after a prompt or model change) instead of only comparing a
+ * single batch's agents against each other.
+ */
+export const benchmarkTrend = query({
+  args: { spaceId: v.id("spaces"), benchmarkId: v.id("evalBenchmarks") },
+  handler: async (ctx, { spaceId, benchmarkId }) => {
+    await resolveScope(ctx, spaceId);
+    const bench = await ctx.db.get(benchmarkId);
+    if (!bench || bench.spaceId !== spaceId) throw new Error("Not found");
+
+    const runs = await ctx.db
+      .query("evalRuns")
+      .withIndex("by_benchmark", (q) => q.eq("benchmarkId", benchmarkId))
+      .order("desc")
+      .take(RUNS_ROLLUP_CAP);
+
+    const groups = new Map<string, Doc<"evalRuns">[]>();
+    for (const r of runs) {
+      const key = r.batchId ?? r._id;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(r);
+    }
+
+    return Array.from(groups.entries())
+      .map(([batchId, rows]) => {
+        const completed = rows.filter((r) => r.qualityScore != null);
+        const avgQuality = completed.length
+          ? completed.reduce((s, r) => s + (r.qualityScore ?? 0), 0) / completed.length
+          : null;
+        const totalCostUsd = rows.reduce((s, r) => s + (r.costUsd ?? 0), 0);
+        const avgLatencyMs = rows.length
+          ? rows.reduce((s, r) => s + (r.latencyMs ?? 0), 0) / rows.length
+          : null;
+        return {
+          batchId,
+          runCount: rows.length,
+          avgQuality,
+          totalCostUsd,
+          avgLatencyMs,
+          startedAt: Math.min(...rows.map((r) => r.startedAt)),
+        };
+      })
+      // Most-recent-first take() above means older history beyond the cap is
+      // dropped entirely rather than sampled — trend still reads oldest->newest.
+      .sort((a, b) => a.startedAt - b.startedAt);
+  },
+});
+
+export const createBenchmarkRuns = internalMutation({
+  args: {
+    spaceId: v.id("spaces"),
+    benchmarkId: v.id("evalBenchmarks"),
+    agentIds: v.array(v.id("agents")),
+    userId: v.string(),
+  },
+  handler: async (ctx, { spaceId, benchmarkId, agentIds, userId }) => {
+    const scope = await resolveScope(ctx, spaceId);
+    requireRole(scope, "operator");
+    const bench = await ctx.db.get(benchmarkId);
+    if (!bench || bench.spaceId !== spaceId) throw new Error("Benchmark not found");
+
+    const batchId = crypto.randomUUID();
+    const now = Date.now();
+    const runIds: Id<"evalRuns">[] = [];
+    for (const agentId of agentIds) {
+      const agent = await ctx.db.get(agentId);
+      if (!agent || agent.spaceId !== spaceId) continue;
+      const runId = await ctx.db.insert("evalRuns", {
+        companyId: scope.companyId,
+        spaceId,
+        benchmarkId,
+        batchId,
+        agentId,
+        harness: agent.harness,
+        model: agent.model,
+        status: "pending",
+        startedAt: now,
+      });
+      runIds.push(runId);
+    }
+    await recordWorkEvent(ctx, {
+      companyId: scope.companyId,
+      spaceId,
+      actorType: "user",
+      actorId: userId,
+      category: "system",
+      action: "eval_batch_started",
+      summary: `Started eval batch "${bench.name}" across ${runIds.length} agent(s)`,
+      payload: { batchId, benchmarkId },
+    });
+    return { batchId, runIds, prompt: bench.prompt, rubric: bench.rubric, expectedOutput: bench.expectedOutput };
+  },
+});
+
+export const finalizeRun = internalMutation({
+  args: {
+    runId: v.id("evalRuns"),
+    status: v.union(v.literal("completed"), v.literal("failed")),
+    output: v.optional(v.string()),
+    qualityScore: v.optional(v.number()),
+    judge: v.optional(v.string()),
+    costUsd: v.optional(v.number()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    latencyMs: v.optional(v.number()),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, { runId, ...rest }) => {
+    const run = await ctx.db.get(runId);
+    if (!run) return;
+    await ctx.db.patch(runId, { ...rest, finishedAt: Date.now() });
+    if (rest.costUsd) {
+      await recordUsage(ctx, {
+        companyId: run.companyId,
+        spaceId: run.spaceId,
+        agentId: run.agentId,
+        model: run.model,
+        kind: "eval",
+        costUsd: rest.costUsd,
+        inputTokens: rest.inputTokens,
+        outputTokens: rest.outputTokens,
+      });
+    }
+  },
+});
+
+/**
+ * Run a benchmark across N agents and persist per-run cost + quality. See the
+ * module note above on the current execution stand-in.
+ */
+export const runBenchmarkBatch = action({
+  args: {
+    spaceId: v.id("spaces"),
+    benchmarkId: v.id("evalBenchmarks"),
+    agentIds: v.array(v.id("agents")),
+  },
+  handler: async (ctx, { spaceId, benchmarkId, agentIds }): Promise<{ batchId: string }> => {
+    if (!agentIds.length) throw new Error("Select at least one agent");
+    const identity = await ctx.auth.getUserIdentity();
+    const userId = identity?.subject ?? "system";
+
+    const { batchId, runIds, prompt, rubric, expectedOutput } = await ctx.runMutation(
+      internal.evals.createBenchmarkRuns,
+      { spaceId, benchmarkId, agentIds, userId },
+    );
+
+    const key = process.env.OPENAI_API_KEY;
+    await Promise.all(
+      runIds.map(async (runId) => {
+        const start = Date.now();
+        if (!key) {
+          await ctx.runMutation(internal.evals.finalizeRun, {
+            runId,
+            status: "failed",
+            error: "OPENAI_API_KEY not configured — benchmark execution unavailable",
+          });
+          return;
+        }
+        try {
+          const res = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${key}`,
+            },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: [{ role: "user", content: prompt }],
+              temperature: 0,
+            }),
+          });
+          if (!res.ok) throw new Error(`OpenAI ${res.status}`);
+          const data = (await res.json()) as {
+            choices?: { message?: { content?: string } }[];
+            usage?: { prompt_tokens?: number; completion_tokens?: number };
+          };
+          const output = data.choices?.[0]?.message?.content ?? "";
+          const inputTokens = data.usage?.prompt_tokens ?? 0;
+          const outputTokens = data.usage?.completion_tokens ?? 0;
+          const costUsd =
+            inputTokens * PRICE_PER_INPUT_TOKEN + outputTokens * PRICE_PER_OUTPUT_TOKEN;
+
+          let qualityScore: number | undefined;
+          try {
+            const judgePrompt =
+              `Rate how well this OUTPUT satisfies the PROMPT` +
+              (rubric ? ` against this RUBRIC: ${rubric}` : "") +
+              (expectedOutput ? ` (expected output for reference: ${expectedOutput})` : "") +
+              `. Reply with ONLY a JSON object {"score": n} where n is 0..1.\n\nPROMPT:\n${prompt}\n\nOUTPUT:\n${output.slice(0, 6000)}`;
+            const judgeRes = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${key}`,
+              },
+              body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: [{ role: "user", content: judgePrompt }],
+                temperature: 0,
+              }),
+            });
+            if (judgeRes.ok) {
+              const judgeData = (await judgeRes.json()) as {
+                choices?: { message?: { content?: string } }[];
+              };
+              const raw = judgeData.choices?.[0]?.message?.content ?? "";
+              const match = raw.match(/\{[\s\S]*\}/);
+              const parsed = JSON.parse(match ? match[0] : raw) as { score?: unknown };
+              const n = Number(parsed.score);
+              qualityScore = Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : undefined;
+            }
+          } catch {
+            qualityScore = undefined;
+          }
+
+          await ctx.runMutation(internal.evals.finalizeRun, {
+            runId,
+            status: "completed",
+            output: output.slice(0, 8000),
+            qualityScore,
+            judge: qualityScore != null ? "llm" : undefined,
+            costUsd,
+            inputTokens,
+            outputTokens,
+            latencyMs: Date.now() - start,
+          });
+        } catch (e) {
+          await ctx.runMutation(internal.evals.finalizeRun, {
+            runId,
+            status: "failed",
+            error: e instanceof Error ? e.message : "Benchmark run failed",
+            latencyMs: Date.now() - start,
+          });
+        }
+      }),
+    );
+
+    return { batchId };
   },
 });

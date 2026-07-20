@@ -4,12 +4,14 @@ import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, Input, Modal } from "@/components/ui";
+import { Input, Modal } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useDialog } from "@/components/dialog";
 import { useToast } from "@/components/toast";
+import { PageHead, PillButton, Panel, SectionLabel } from "@/components/dash/kit";
+import { Stagger, StaggerItem } from "@/components/site/motion";
 
-const statusTone = { connected: "green", disconnected: "default", error: "red" } as const;
+const statusLabel = { connected: "connected", disconnected: "disconnected", error: "error" } as const;
 
 export default function IntegrationsPage() {
   const { spaceId } = useActiveSpace();
@@ -58,86 +60,88 @@ export default function IntegrationsPage() {
     }
   }
 
+  const canEnableTrigger = !!trigSlug.trim() && !!trigWf;
+
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Integrations</h1>
-          <p className="text-sm text-muted">
-            Connect tools via Composio managed OAuth. Agents and workflows can
-            then execute actions, and Composio triggers can start workflows.
-          </p>
-        </div>
-        {canManage && spaceId && (
-          <Button variant="outline" onClick={() => refresh({ spaceId })}>
-            Refresh status
-          </Button>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="Build"
+          title="Integrations"
+          sub="Connect tools via Composio managed OAuth. Agents and workflows can then execute actions, and Composio triggers can start workflows."
+          actions={
+            canManage && spaceId ? (
+              <PillButton variant="outline" onClick={() => refresh({ spaceId })}>
+                Refresh status
+              </PillButton>
+            ) : undefined
+          }
+        />
+
+        {status && !status.composioConfigured && (
+          <div className="rounded-[18px] bg-amber-50 px-4 py-3.5 text-[13.5px] text-amber-800 ring-1 ring-inset ring-amber-200">
+            Composio isn&apos;t configured. Set <code className="font-mono text-[12.5px]">COMPOSIO_API_KEY</code> in
+            the Convex environment to enable managed OAuth, tool execution, and triggers.
+          </div>
         )}
-      </div>
 
-      {status && !status.composioConfigured && (
-        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
-          Composio isn&apos;t configured. Set <code>COMPOSIO_API_KEY</code> in the
-          Convex environment to enable managed OAuth, tool execution, and
-          triggers.
-        </div>
-      )}
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {(catalog ?? []).map((c) => {
-          const existing = byToolkit.get(c.toolkit);
-          return (
-            <Card key={c.toolkit}>
-              <div className="flex items-center justify-between">
-                <p className="font-medium">{c.name}</p>
-                {existing && (
-                  <Badge tone={statusTone[existing.status]}>{existing.status}</Badge>
-                )}
-              </div>
-              <p className="mt-1 text-sm text-muted">{c.body}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {existing ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      disabled={!canManage}
-                      onClick={() => setTrigOpen({ toolkit: c.toolkit })}
-                    >
-                      Add trigger
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      disabled={!canManage || !spaceId}
-                      onClick={() =>
-                        spaceId && remove({ spaceId, integrationId: existing._id })
-                      }
-                    >
-                      Disconnect
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    disabled={!canManage || busy === c.toolkit}
-                    onClick={() => connect(c.toolkit, c.name)}
+        <div>
+          <SectionLabel>catalog</SectionLabel>
+          <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {(catalog ?? []).map((c) => {
+              const existing = byToolkit.get(c.toolkit);
+              return (
+                <StaggerItem key={c.toolkit}>
+                  <Panel
+                    title={c.name}
+                    action={
+                      existing && (
+                        <span className="rounded-full bg-[var(--surface)] px-2 py-0.5 text-[11px] text-[var(--muted-strong)]">
+                          {statusLabel[existing.status]}
+                        </span>
+                      )
+                    }
                   >
-                    {busy === c.toolkit ? "Connecting…" : "Connect"}
-                  </Button>
-                )}
-              </div>
-            </Card>
-          );
-        })}
+                    <p className="text-[13.5px] text-[var(--muted)]">{c.body}</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {existing ? (
+                        <>
+                          <PillButton
+                            variant="outline"
+                            className={!canManage ? "pointer-events-none opacity-50" : undefined}
+                            onClick={() => canManage && setTrigOpen({ toolkit: c.toolkit })}
+                          >
+                            Add trigger
+                          </PillButton>
+                          <PillButton
+                            variant="outline"
+                            className={!canManage || !spaceId ? "pointer-events-none opacity-50" : undefined}
+                            onClick={() => spaceId && canManage && remove({ spaceId, integrationId: existing._id })}
+                          >
+                            Disconnect
+                          </PillButton>
+                        </>
+                      ) : (
+                        <PillButton
+                          className={!canManage || busy === c.toolkit ? "pointer-events-none opacity-50" : undefined}
+                          onClick={() => canManage && busy !== c.toolkit && connect(c.toolkit, c.name)}
+                        >
+                          {busy === c.toolkit ? "Connecting…" : "Connect"}
+                        </PillButton>
+                      )}
+                    </div>
+                  </Panel>
+                </StaggerItem>
+              );
+            })}
+          </Stagger>
+        </div>
       </div>
 
-      <Modal
-        open={!!trigOpen}
-        onClose={() => setTrigOpen(null)}
-        title={`Add ${trigOpen?.toolkit ?? ""} trigger`}
-      >
+      <Modal open={!!trigOpen} onClose={() => setTrigOpen(null)} title={`Add ${trigOpen?.toolkit ?? ""} trigger`}>
         <div className="space-y-4">
           <p className="text-sm text-muted">
-            Bind a Composio trigger to a workflow. When the event fires, the
-            workflow runs, fully autonomous.
+            Bind a Composio trigger to a workflow. When the event fires, the workflow runs, fully autonomous.
           </p>
           <Input
             value={trigSlug}
@@ -157,13 +161,13 @@ export default function IntegrationsPage() {
             ))}
           </select>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setTrigOpen(null)}>
+            <PillButton variant="outline" onClick={() => setTrigOpen(null)}>
               Cancel
-            </Button>
-            <Button
-              disabled={!trigSlug.trim() || !trigWf}
+            </PillButton>
+            <PillButton
+              className={!canEnableTrigger ? "pointer-events-none opacity-50" : undefined}
               onClick={async () => {
-                if (!spaceId || !trigOpen) return;
+                if (!spaceId || !trigOpen || !canEnableTrigger) return;
                 await enableTrigger({
                   spaceId,
                   toolkit: trigOpen.toolkit,
@@ -176,7 +180,7 @@ export default function IntegrationsPage() {
               }}
             >
               Enable trigger
-            </Button>
+            </PillButton>
           </div>
         </div>
       </Modal>

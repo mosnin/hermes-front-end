@@ -12,15 +12,18 @@ import { recordWorkEvent, recordNotification } from "./lib/events";
  * (npx convex env set ...):
  *   STRIPE_SECRET_KEY        sk_live_... / sk_test_...
  *   STRIPE_WEBHOOK_SECRET    whsec_... (from the webhook endpoint config)
- *   STRIPE_PRICE_TEAM        price_... for the Team plan
- *   STRIPE_PRICE_ENTERPRISE  price_... for the Enterprise plan
- *   APP_URL                  https://your-app.example (checkout redirects)
+ *   STRIPE_PRICE_TEAM          price_... for the Team plan
+ *   STRIPE_PRICE_ENTERPRISE    price_... for the Enterprise plan
+ *   STRIPE_PRICE_HOSTED_AGENT  price_... flat per-hosted-agent/month add-on
+ *   APP_URL                    https://your-app.example (checkout redirects)
  *
  * Flow: dashboard calls createCheckout → Stripe-hosted checkout → Stripe fires
  * checkout.session.completed at /billing/stripe/webhook (signature-verified)
  * → applyPlanFromStripe upgrades the Space. Subscription cancellation
- * downgrades back to free. The plan limits themselves are enforced
- * server-side in lib/plans.ts, so billing state IS entitlement state.
+ * downgrades back to free AND schedules termination of the Space's hosted
+ * fleet agents (see lapseHostedFleet below). The plan limits themselves are
+ * enforced server-side in lib/plans.ts, so billing state IS entitlement
+ * state.
  */
 
 const STRIPE_API = "https://api.stripe.com/v1";
@@ -41,19 +44,35 @@ export const checkoutContext = internalQuery({
   },
 });
 
-/** Create a Stripe Checkout session for a plan upgrade; returns its URL. */
+/** Create a Stripe Checkout session for a plan upgrade; returns its URL.
+ *
+ * Optionally bundles a quantity of hosted-agent seats (STRIPE_PRICE_HOSTED_AGENT)
+ * as a second line item — one flat per-agent/month charge, quantity = number of
+ * managed-hosting seats the Space wants to buy alongside the plan.
+ */
 export const createCheckout = action({
   args: {
     spaceId: v.id("spaces"),
     plan: v.union(v.literal("team"), v.literal("enterprise")),
+    hostedAgentSeats: v.optional(v.number()),
   },
-  handler: async (ctx, { spaceId, plan }): Promise<{ url: string }> => {
+  handler: async (
+    ctx,
+    { spaceId, plan, hostedAgentSeats },
+  ): Promise<{ url: string }> => {
     const key = process.env.STRIPE_SECRET_KEY;
     const price = priceEnvFor(plan);
     const appUrl = process.env.APP_URL ?? "http://localhost:3000";
     if (!key || !price) {
       throw new Error(
         "Stripe is not configured — set STRIPE_SECRET_KEY and STRIPE_PRICE_* in the Convex env",
+      );
+    }
+    const seats = hostedAgentSeats && hostedAgentSeats > 0 ? Math.floor(hostedAgentSeats) : 0;
+    const hostedPrice = process.env.STRIPE_PRICE_HOSTED_AGENT;
+    if (seats > 0 && !hostedPrice) {
+      throw new Error(
+        "Hosted agent billing is not configured — set STRIPE_PRICE_HOSTED_AGENT in the Convex env",
       );
     }
     // Authorize against the Space (admin) before creating anything on Stripe.
@@ -73,6 +92,12 @@ export const createCheckout = action({
       "subscription_data[metadata][spaceId]": spaceId,
       "subscription_data[metadata][plan]": plan,
     });
+    if (seats > 0 && hostedPrice) {
+      params.set("line_items[1][price]", hostedPrice);
+      params.set("line_items[1][quantity]", String(seats));
+      params.set("metadata[hostedAgentSeats]", String(seats));
+      params.set("subscription_data[metadata][hostedAgentSeats]", String(seats));
+    }
     const resp = await fetch(`${STRIPE_API}/checkout/sessions`, {
       method: "POST",
       headers: {
@@ -129,6 +154,54 @@ export const applyPlanFromStripe = internalMutation({
  * Process a verified Stripe event (called by the webhook route AFTER signature
  * verification). Exported for the webhook + tests.
  */
+/**
+ * Lapse handling: on subscription cancellation, stop billing for hosted fleet
+ * agents by marking them offline directly. This does NOT tear down the actual
+ * Cloudflare Container VM — that's a follow-up wired through fleet.terminate
+ * (Team 2's file); this only stops the agent from looking "live" and being
+ * usable so a lapsed customer isn't served by a VM we're no longer billing
+ * for. Called by the webhook handler in http.ts on customer.subscription.deleted.
+ */
+export const lapseHostedFleet = internalMutation({
+  args: { spaceId: v.id("spaces"), stripeEvent: v.string() },
+  handler: async (ctx, { spaceId, stripeEvent }) => {
+    const space = await ctx.db.get(spaceId);
+    if (!space) return; // Space deleted since checkout — nothing to do.
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_space", (q) => q.eq("spaceId", spaceId))
+      .collect();
+    // Only agents actually running on hosted infra (fleet-deployed), not every
+    // connector agent in the Space.
+    const hosted = agents.filter(
+      (a) => a.deploymentStatus !== undefined && a.deploymentStatus !== "stopped",
+    );
+    for (const agent of hosted) {
+      await ctx.db.patch(agent._id, {
+        deploymentStatus: "stopped",
+        status: "offline",
+      });
+    }
+    if (hosted.length > 0) {
+      await recordWorkEvent(ctx, {
+        companyId: space.companyId,
+        spaceId,
+        actorType: "system",
+        category: "billing",
+        action: "hosted_fleet_lapsed",
+        summary: `Subscription lapsed (Stripe: ${stripeEvent}) — stopped ${hosted.length} hosted agent(s)`,
+      });
+      await recordNotification(ctx, {
+        companyId: space.companyId,
+        spaceId,
+        type: "system",
+        title: `Subscription ended — ${hosted.length} hosted agent(s) stopped`,
+        href: "/dashboard/billing",
+      });
+    }
+  },
+});
+
 export function planChangeFromEvent(event: {
   type?: string;
   data?: { object?: { metadata?: Record<string, string> } };

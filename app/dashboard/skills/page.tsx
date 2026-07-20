@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
+import { Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
-import { Plus, Search } from "@/components/icons";
+import { Search } from "@/components/icons";
+import { PageHead, PillButton, Panel, ListRow, SectionLabel } from "@/components/dash/kit";
 
 type Skill = {
   _id: string;
@@ -73,85 +74,84 @@ export default function SkillsPage() {
     }
   }
 
+  const canSubmit = !busy && !!name.trim() && !!content.trim();
+
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Skills</h1>
-          <p className="text-sm text-muted">
-            Reusable instructions and context for your agents. Semantic search
-            powered by Convex vector search.
-          </p>
-        </div>
-        <Button onClick={() => setOpen(true)}>
-          <Plus className="h-4 w-4" /> New skill
-        </Button>
-      </div>
-
-      <div className="mb-6 flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && search()}
-            placeholder="Search skills by meaning…"
-            className="pl-9"
-          />
-        </div>
-        <Button variant="outline" onClick={search} disabled={searching}>
-          {searching ? "Searching…" : "Search"}
-        </Button>
-        {results && (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setResults(null);
-              setQuery("");
-            }}
-          >
-            Clear
-          </Button>
-        )}
-      </div>
-
-      {list.length === 0 ? (
-        <EmptyState
-          title={results ? "No matching skills" : "No skills yet"}
-          body={
-            results
-              ? "Try a different search."
-              : "Save a prompt, playbook, or set of instructions your agents can reuse."
-          }
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="Build"
+          title="Skills"
+          sub="Reusable instructions and context for your agents. Semantic search powered by Convex vector search."
+          actions={<PillButton onClick={() => setOpen(true)}>New skill</PillButton>}
         />
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {list.map((s) => (
-            <Card key={s._id}>
-              <div className="flex items-start justify-between">
-                <p className="font-medium">{s.name}</p>
-                <button
-                  onClick={() => spaceId && remove({ spaceId, skillId: s._id as never })}
-                  className="text-xs text-muted hover:text-red-400"
-                >
-                  Delete
-                </button>
-              </div>
-              {s.description && (
-                <p className="mt-1 text-sm text-muted">{s.description}</p>
-              )}
-              <p className="mt-2 line-clamp-3 text-xs text-muted">{s.content}</p>
-              <div className="mt-3 flex flex-wrap gap-1">
-                {(s.tags ?? []).map((t) => (
-                  <Badge key={t} tone="blue">
-                    {t}
-                  </Badge>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[220px] flex-1">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && search()}
+              placeholder="Search skills by meaning…"
+              className="rounded-full pl-10"
+            />
+          </div>
+          <PillButton variant="outline" onClick={search}>
+            {searching ? "Searching…" : "Search"}
+          </PillButton>
+          {results && (
+            <PillButton
+              variant="outline"
+              onClick={() => {
+                setResults(null);
+                setQuery("");
+              }}
+            >
+              Clear
+            </PillButton>
+          )}
+        </div>
+
+        <div>
+          <SectionLabel>{results ? "search results" : "your skills"}</SectionLabel>
+          {list.length === 0 ? (
+            <Panel>
+              <p className="py-10 text-center text-[13.5px] text-[var(--muted)]">
+                {results
+                  ? "No matching skills. Try a different search."
+                  : "No skills yet. Save a prompt, playbook, or set of instructions your agents can reuse."}
+              </p>
+            </Panel>
+          ) : (
+            <Panel>
+              <div>
+                {list.map((s) => (
+                  <ListRow
+                    key={s._id}
+                    leading={s.name.slice(0, 2).toUpperCase()}
+                    title={
+                      <>
+                        <span className="font-medium">{s.name}</span>
+                        {s.description && <span className="text-[var(--muted)]"> · {s.description}</span>}
+                      </>
+                    }
+                    meta={[s.content, ...(s.tags ?? [])].filter(Boolean).join(" · ")}
+                    trailing={
+                      <button
+                        onClick={() => spaceId && remove({ spaceId, skillId: s._id as never })}
+                        className="text-[12.5px] text-[var(--muted)] transition-colors hover:text-red-500"
+                      >
+                        Delete
+                      </button>
+                    }
+                  />
                 ))}
               </div>
-            </Card>
-          ))}
+            </Panel>
+          )}
         </div>
-      )}
+      </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title="New skill">
         <div className="space-y-4">
@@ -178,12 +178,15 @@ export default function SkillsPage() {
             placeholder="Tags, comma separated"
           />
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <PillButton variant="outline" onClick={() => setOpen(false)}>
               Cancel
-            </Button>
-            <Button onClick={submit} disabled={busy || !name.trim() || !content.trim()}>
+            </PillButton>
+            <PillButton
+              className={!canSubmit ? "pointer-events-none opacity-50" : undefined}
+              onClick={() => canSubmit && submit()}
+            >
               {busy ? "Saving…" : "Save skill"}
-            </Button>
+            </PillButton>
           </div>
         </div>
       </Modal>

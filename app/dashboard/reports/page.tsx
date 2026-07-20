@@ -2,9 +2,10 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Card, EmptyState } from "@/components/ui";
+import { EmptyState } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
+import { PageHead, PillButton, Panel, ListRow } from "@/components/dash/kit";
 
 export default function ReportsPage() {
   const { spaceId } = useActiveSpace();
@@ -12,53 +13,54 @@ export default function ReportsPage() {
   const generate = useMutation(api.reports.generate);
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Reports</h1>
-          <p className="text-sm text-muted">
-            Auto-generated digests of what the Space accomplished. Daily digests
-            run automatically; generate one on demand any time.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => spaceId && generate({ spaceId, kind: "daily" })}
-          >
-            Generate daily
-          </Button>
-          <Button onClick={() => spaceId && generate({ spaceId, kind: "weekly" })}>
-            Generate weekly
-          </Button>
-        </div>
-      </div>
-
-      {reports?.length === 0 ? (
-        <EmptyState
-          title="No reports yet"
-          body="Generate a digest now, or wait for the automatic daily run."
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="reports · this space"
+          title="Reports"
+          sub="Auto-generated digests of what the Space accomplished. Daily digests run automatically; generate one on demand any time."
+          actions={
+            <>
+              <PillButton variant="outline" onClick={() => spaceId && generate({ spaceId, kind: "daily" })}>
+                Generate daily
+              </PillButton>
+              <PillButton onClick={() => spaceId && generate({ spaceId, kind: "weekly" })}>Generate weekly</PillButton>
+            </>
+          }
         />
-      ) : (
-        <div className="space-y-3">
-          {(reports ?? []).map((r) => (
-            <Card key={r._id}>
-              <div className="flex items-center justify-between">
-                <p className="font-medium">{r.title}</p>
-                <div className="flex items-center gap-2">
-                  <Badge tone="blue">{r.kind}</Badge>
-                  <span className="text-xs text-muted">{timeAgo(r.createdAt)}</span>
-                </div>
-              </div>
-              <p className="mt-2 text-sm text-muted">{r.summary}</p>
-              <p className="mt-2 text-xs text-muted">
-                {new Date(r.periodStart).toLocaleDateString()} –{" "}
-                {new Date(r.periodEnd).toLocaleDateString()}
-              </p>
-            </Card>
-          ))}
-        </div>
-      )}
+
+        {reports?.length === 0 ? (
+          <Panel>
+            <EmptyState title="No reports yet" body="Generate a digest now, or wait for the automatic daily run." />
+          </Panel>
+        ) : (
+          <Panel>
+            <div>
+              {(reports ?? []).map((r) => (
+                <ListRow
+                  key={r._id}
+                  title={<span className="font-medium text-[var(--foreground)]">{r.title}</span>}
+                  meta={
+                    <>
+                      {r.summary}
+                      <span className="mx-1.5">·</span>
+                      {new Date(r.periodStart).toLocaleDateString()} – {new Date(r.periodEnd).toLocaleDateString()}
+                    </>
+                  }
+                  trailing={
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-[var(--surface)] px-2.5 py-1 text-[11.5px] font-medium capitalize text-[var(--muted-strong)]">
+                        {r.kind}
+                      </span>
+                      <span>{timeAgo(r.createdAt)}</span>
+                    </div>
+                  }
+                />
+              ))}
+            </div>
+          </Panel>
+        )}
+      </div>
     </div>
   );
 }

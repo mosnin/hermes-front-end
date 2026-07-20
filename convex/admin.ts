@@ -225,6 +225,43 @@ export const setCompanyAutonomy = mutation({
 });
 
 /**
+ * Cross-tenant hosted fleet (managed hosting): every agent with a vmProvider
+ * set, across all tenants. Read-only oversight — no terminate action yet
+ * (follow-up: wire to fleet.terminate via an internal mutation once we want
+ * admins to break-glass a runaway hosted agent).
+ */
+export const fleet = query({
+  args: {},
+  handler: async (ctx) => {
+    await requirePlatformAdmin(ctx);
+    const CAP = 5000;
+    const agents = await ctx.db.query("agents").take(CAP);
+    const hosted = agents.filter((a) => !!a.vmProvider);
+    const spaceIds = Array.from(new Set(hosted.map((a) => a.spaceId)));
+    const spaces = await Promise.all(spaceIds.map((id) => ctx.db.get(id)));
+    const spaceById = new Map(
+      spaces.filter((s): s is NonNullable<typeof s> => s !== null).map((s) => [s._id, s]),
+    );
+    return hosted
+      .map((a) => {
+        const space = spaceById.get(a.spaceId);
+        return {
+          agentId: a._id,
+          name: a.name,
+          companyId: a.companyId,
+          spaceId: a.spaceId,
+          spaceName: space?.name ?? "(unknown space)",
+          vmProvider: a.vmProvider ?? "unknown",
+          region: a.region ?? null,
+          deploymentStatus: a.deploymentStatus ?? "unknown",
+          createdAt: a.createdAt,
+        };
+      })
+      .sort((a, b) => b.createdAt - a.createdAt);
+  },
+});
+
+/**
  * SOC2 control posture — a live, evidence-backed compliance snapshot. Each
  * control reports its status from the actual system state (not a static
  * checklist), mapped to Trust Service Criteria.

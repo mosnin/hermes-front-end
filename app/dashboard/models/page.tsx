@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Button, Card, Input } from "@/components/ui";
+import { Input } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { Cpu, Plus, X } from "@/components/icons";
+import { Cpu } from "@/components/icons";
+import { PageHead, PillButton, Panel, SectionLabel } from "@/components/dash/kit";
+import { Stagger, StaggerItem } from "@/components/site/motion";
 
 type ModelPolicy = {
   primary: string;
@@ -21,10 +23,7 @@ export default function ModelsPage() {
   const canAdmin = useCan("admin");
   const toast = useToast();
 
-  const policy = useQuery(
-    api.router.getPolicy,
-    spaceId ? { spaceId } : "skip",
-  );
+  const policy = useQuery(api.router.getPolicy, spaceId ? { spaceId } : "skip");
   const setPolicy = useMutation(api.router.setPolicy);
 
   const [primary, setPrimary] = useState("");
@@ -67,141 +66,130 @@ export default function ModelsPage() {
     }
   };
 
-  if (!policy) return <div className="p-8 text-sm text-muted">Loading…</div>;
+  if (!policy) {
+    return (
+      <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+        <div className="mx-auto max-w-[1120px]">
+          <p className="text-[13.5px] text-[var(--muted)]">Loading…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Model router</h1>
-        <p className="text-sm text-muted">
-          Choose the default model, fallback chain, and per-capability
-          overrides. Agents and workflows route through this.
-        </p>
-      </div>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="Build"
+          title="Model router"
+          sub="Choose the default model, fallback chain, and per-capability overrides. Agents and workflows route through this."
+        />
 
-      {/* Effective primary */}
-      <Card className="mb-4">
-        <div className="flex items-center gap-3">
-          <Cpu className="h-5 w-5 text-muted" />
-          <div>
-            <p className="text-xs text-muted">Effective primary model</p>
-            <p className="font-mono text-lg font-semibold">
-              {policy.primary}
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      {/* Editor */}
-      <Card className="mb-4">
-        <h2 className="mb-1 font-semibold">Routing policy</h2>
-        <p className="mb-4 text-sm text-muted">
-          The primary model is used by default; the fallback chain is tried in
-          order when the primary is unavailable.
-        </p>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs text-muted">
-              Primary model
-            </label>
-            <Input
-              value={primary}
-              disabled={!canAdmin}
-              onChange={(e) => setPrimary(e.target.value)}
-              placeholder="claude-opus-4-8"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted">
-              Fallback chain (comma-separated)
-            </label>
-            <Input
-              value={fallbacks}
-              disabled={!canAdmin}
-              onChange={(e) => setFallbacks(e.target.value)}
-              placeholder="claude-sonnet-4-6, gpt-4o-mini"
-            />
-          </div>
-        </div>
-
-        {/* Per-capability overrides */}
-        <div className="mt-6">
-          <div className="mb-2 flex items-center justify-between">
-            <label className="block text-xs text-muted">
-              Per-capability overrides
-            </label>
-            {canAdmin && (
-              <button
-                onClick={() =>
-                  setCaps([...caps, { capability: "", model: "" }])
-                }
-                className="flex items-center gap-1 text-xs text-muted hover:text-foreground"
-              >
-                <Plus className="h-3 w-3" />
-                Add override
-              </button>
-            )}
-          </div>
-          {caps.length === 0 ? (
-            <p className="text-xs text-muted">
-              No overrides, every capability uses the primary model.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {caps.map((row, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <Input
-                    value={row.capability}
-                    disabled={!canAdmin}
-                    onChange={(e) =>
-                      setCaps(
-                        caps.map((r, j) =>
-                          j === i
-                            ? { ...r, capability: e.target.value }
-                            : r,
-                        ),
-                      )
-                    }
-                    placeholder="capability (e.g. vision)"
-                  />
-                  <Input
-                    value={row.model}
-                    disabled={!canAdmin}
-                    onChange={(e) =>
-                      setCaps(
-                        caps.map((r, j) =>
-                          j === i ? { ...r, model: e.target.value } : r,
-                        ),
-                      )
-                    }
-                    placeholder="model (e.g. gpt-4o)"
-                  />
-                  {canAdmin && (
-                    <button
-                      onClick={() =>
-                        setCaps(caps.filter((_, j) => j !== i))
-                      }
-                      className="text-muted hover:text-red-400"
-                      aria-label="Remove override"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
+        <Panel tone="band">
+          <div className="flex items-center gap-3.5">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--background)] ring-1 ring-inset ring-[var(--border)]">
+              <Cpu className="h-5 w-5 text-[var(--muted-strong)]" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[12.5px] text-[var(--muted)]">Effective primary model</p>
+              <p className="truncate font-mono text-[18px] font-medium text-[var(--foreground)]">{policy.primary}</p>
             </div>
-          )}
-        </div>
-
-        {canAdmin && (
-          <div className="mt-6 flex justify-end">
-            <Button onClick={save} disabled={!spaceId}>
-              Save policy
-            </Button>
           </div>
-        )}
-      </Card>
+        </Panel>
+
+        <div>
+          <SectionLabel>routing policy</SectionLabel>
+          <Panel>
+            <p className="mb-5 text-[13.5px] text-[var(--muted)]">
+              The primary model is used by default; the fallback chain is tried in order when the primary is
+              unavailable.
+            </p>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs text-muted">Primary model</label>
+                <Input
+                  value={primary}
+                  disabled={!canAdmin}
+                  onChange={(e) => setPrimary(e.target.value)}
+                  placeholder="claude-opus-4-8"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted">Fallback chain (comma-separated)</label>
+                <Input
+                  value={fallbacks}
+                  disabled={!canAdmin}
+                  onChange={(e) => setFallbacks(e.target.value)}
+                  placeholder="claude-sonnet-4-6, gpt-4o-mini"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <div className="mb-3 flex items-center justify-between">
+                <label className="block text-xs text-muted">Per-capability overrides</label>
+                {canAdmin && (
+                  <button
+                    onClick={() => setCaps([...caps, { capability: "", model: "" }])}
+                    className="text-[12.5px] text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
+                  >
+                    + Add override
+                  </button>
+                )}
+              </div>
+              {caps.length === 0 ? (
+                <p className="text-[12.5px] text-[var(--muted)]">
+                  No overrides, every capability uses the primary model.
+                </p>
+              ) : (
+                <Stagger className="flex flex-col gap-2" gap={0.05}>
+                  {caps.map((row, i) => (
+                    <StaggerItem key={i} className="flex items-center gap-2">
+                      <Input
+                        value={row.capability}
+                        disabled={!canAdmin}
+                        onChange={(e) =>
+                          setCaps(caps.map((r, j) => (j === i ? { ...r, capability: e.target.value } : r)))
+                        }
+                        placeholder="capability (e.g. vision)"
+                      />
+                      <Input
+                        value={row.model}
+                        disabled={!canAdmin}
+                        onChange={(e) => setCaps(caps.map((r, j) => (j === i ? { ...r, model: e.target.value } : r)))}
+                        placeholder="model (e.g. gpt-4o)"
+                      />
+                      {canAdmin && (
+                        <button
+                          onClick={() => setCaps(caps.filter((_, j) => j !== i))}
+                          aria-label="Remove override"
+                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--muted)] transition-colors hover:bg-[var(--surface)] hover:text-red-500"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
+                            <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                      )}
+                    </StaggerItem>
+                  ))}
+                </Stagger>
+              )}
+            </div>
+
+            {canAdmin && (
+              <div className="mt-6 flex justify-end">
+                <PillButton
+                  className={!spaceId ? "pointer-events-none opacity-50" : undefined}
+                  onClick={() => spaceId && save()}
+                >
+                  Save policy
+                </PillButton>
+              </div>
+            )}
+          </Panel>
+        </div>
+      </div>
     </div>
   );
 }

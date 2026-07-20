@@ -4,8 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
-import { PagePath } from "@/components/page-header";
+import { EmptyState, Input, Modal, Textarea } from "@/components/ui";
 import { OrbitGraphic } from "@/components/marketing/graphics";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
@@ -20,18 +19,17 @@ import {
   Zap,
 } from "@/components/icons";
 import { WorkflowTrace } from "@/components/workflow-trace";
+import { PageHead, PillButton, Panel, Dot, SectionLabel } from "@/components/dash/kit";
 
 type StepDraft = { id: string; name: string; instruction: string; agentId: string };
 
-const runTone = {
-  pending: "default",
-  running: "yellow",
-  paused: "yellow",
-  awaiting_approval: "blue",
-  completed: "green",
-  failed: "red",
-  killed: "red",
-} as const;
+/** Map a workflow run status to a kit Dot tone. */
+function runDotTone(status: string): "online" | "paused" | "idle" | "error" {
+  if (status === "running" || status === "completed") return "online";
+  if (status === "paused" || status === "awaiting_approval") return "paused";
+  if (status === "failed" || status === "killed") return "error";
+  return "idle";
+}
 
 function newStep(): StepDraft {
   return { id: crypto.randomUUID(), name: "", instruction: "", agentId: "" };
@@ -111,117 +109,133 @@ export default function WorkflowsPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <PagePath>workflows</PagePath>
-          <h1 className="text-2xl font-semibold">Workflows</h1>
-          <p className="text-sm text-muted">
-            Autonomous multi-agent workflows. Steps dispatch to agents and run
-            under the Space&apos;s guardrails and kill switch.
-          </p>
-        </div>
-        <Button onClick={() => setOpen(true)}>
-          <Plus className="h-4 w-4" /> New workflow
-        </Button>
-      </div>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="workflows"
+          title="Workflows"
+          sub="Autonomous multi-agent workflows. Steps dispatch to agents and run under the Space's guardrails and kill switch."
+          actions={
+            <PillButton onClick={() => setOpen(true)}>
+              <Plus className="h-4 w-4" /> New workflow
+            </PillButton>
+          }
+        />
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="space-y-3">
-          <h2 className="text-sm font-medium text-muted">Definitions</h2>
-          {workflows?.length === 0 ? (
-            <EmptyState
-              graphic={<OrbitGraphic />}
-              title="No workflows yet"
-              body="Compose a sequence of agent steps. Start a run and watch the engine drive it to completion."
-              action={<Button onClick={() => setOpen(true)}>Create a workflow</Button>}
-            />
-          ) : (
-            (workflows ?? []).map((wf) => (
-              <Card key={wf._id}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium">{wf.name}</p>
-                    {wf.description && (
-                      <p className="text-sm text-muted">{wf.description}</p>
-                    )}
-                    <p className="mt-1 text-xs text-muted">
-                      {wf.steps.length} step{wf.steps.length === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      variant="outline"
-                      title="Run with simulated step completion"
-                      onClick={() =>
-                        spaceId &&
-                        start({
-                          spaceId,
-                          workflowId: wf._id,
-                          autoComplete: true,
-                        })
-                      }
+        <div className="grid gap-8 lg:grid-cols-2">
+          <div>
+            <SectionLabel>definitions</SectionLabel>
+            {workflows?.length === 0 ? (
+              <EmptyState
+                graphic={<OrbitGraphic />}
+                title="No workflows yet"
+                body="Compose a sequence of agent steps. Start a run and watch the engine drive it to completion."
+                action={<PillButton onClick={() => setOpen(true)}>Create a workflow</PillButton>}
+              />
+            ) : (
+              <Panel>
+                <div>
+                  {(workflows ?? []).map((wf) => (
+                    <div
+                      key={wf._id}
+                      className="flex flex-col gap-3 border-b border-[var(--border)] px-1 py-3.5 last:border-0 sm:flex-row sm:items-center sm:justify-between"
                     >
-                      <FlaskConical className="h-4 w-4" /> Simulate
-                    </Button>
-                    <Button
-                      title="Run live (agents execute each step)"
-                      onClick={() =>
-                        spaceId &&
-                        start({
-                          spaceId,
-                          workflowId: wf._id,
-                          autoComplete: false,
-                        })
-                      }
-                    >
-                      <Play className="h-4 w-4" /> Run live
-                    </Button>
-                    <button
-                      onClick={() =>
-                        spaceId && remove({ spaceId, workflowId: wf._id })
-                      }
-                      className="text-muted hover:text-red-400"
-                      title="Delete workflow"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-[14.5px] font-medium text-[var(--foreground)]">{wf.name}</p>
+                        {wf.description && (
+                          <p className="truncate text-[12.5px] text-[var(--muted)]">{wf.description}</p>
+                        )}
+                        <p className="mt-0.5 text-[12px] text-[var(--muted)]">
+                          {wf.steps.length} step{wf.steps.length === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <PillButton
+                          variant="outline"
+                          onClick={() =>
+                            spaceId &&
+                            start({
+                              spaceId,
+                              workflowId: wf._id,
+                              autoComplete: true,
+                            })
+                          }
+                          className="!px-3"
+                        >
+                          <FlaskConical className="h-4 w-4" /> Simulate
+                        </PillButton>
+                        <PillButton
+                          onClick={() =>
+                            spaceId &&
+                            start({
+                              spaceId,
+                              workflowId: wf._id,
+                              autoComplete: false,
+                            })
+                          }
+                          className="!px-3"
+                        >
+                          <Play className="h-4 w-4" /> Run live
+                        </PillButton>
+                        <button
+                          onClick={() =>
+                            spaceId && remove({ spaceId, workflowId: wf._id })
+                          }
+                          className="text-[var(--muted)] hover:text-red-500"
+                          title="Delete workflow"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </Card>
-            ))
-          )}
-        </div>
+              </Panel>
+            )}
+          </div>
 
-        <div className="space-y-3">
-          <h2 className="text-sm font-medium text-muted">Runs (live)</h2>
-          {runs?.length === 0 ? (
-            <p className="text-sm text-muted">No runs yet. Start a workflow.</p>
-          ) : (
-            (runs ?? []).map((r) => (
-              <Card key={r._id}>
-                <button
-                  className="flex w-full items-center justify-between"
-                  onClick={() =>
-                    setSelectedRun(selectedRun === r._id ? null : r._id)
-                  }
-                >
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-accent" />
-                    <span className="text-sm">
-                      {r.stepsDone} done · {r.hops} hops · {r.trigger}
-                    </span>
-                  </div>
-                  <Badge tone={runTone[r.status]}>{r.status}</Badge>
-                </button>
-                <p className="mt-1 text-xs text-muted">
-                  started {timeAgo(r.startedAt)}
-                  {r.error ? ` · ${r.error}` : ""}
-                </p>
-                {selectedRun === r._id && <WorkflowTrace runId={r._id} />}
-              </Card>
-            ))
-          )}
+          <div>
+            <SectionLabel>runs · live</SectionLabel>
+            {runs?.length === 0 ? (
+              <p className="text-[13.5px] text-[var(--muted)]">No runs yet. Start a workflow.</p>
+            ) : (
+              <Panel>
+                <div>
+                  {(runs ?? []).map((r) => (
+                    <div key={r._id} className="border-b border-[var(--border)] last:border-0">
+                      <button
+                        className="flex w-full items-center gap-3.5 px-1 py-3.5 text-left transition-colors hover:bg-[var(--surface)]/50"
+                        onClick={() =>
+                          setSelectedRun(selectedRun === r._id ? null : r._id)
+                        }
+                      >
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--surface)] text-[var(--muted-strong)]">
+                          <Zap className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[14.5px] text-[var(--foreground)]">
+                            {r.stepsDone} done &middot; {r.hops} hops &middot; {r.trigger}
+                          </p>
+                          <p className="truncate text-[12.5px] text-[var(--muted)]">
+                            started {timeAgo(r.startedAt)}
+                            {r.error ? ` · ${r.error}` : ""}
+                          </p>
+                        </div>
+                        <span className="flex shrink-0 items-center gap-1.5 text-[13px] text-[var(--muted)]">
+                          <Dot tone={runDotTone(r.status)} /> {r.status}
+                        </span>
+                      </button>
+                      {selectedRun === r._id && (
+                        <div className="px-1 pb-4">
+                          <WorkflowTrace runId={r._id} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            )}
+          </div>
         </div>
       </div>
 
@@ -301,7 +315,7 @@ export default function WorkflowsPage() {
                       {steps.length > 1 && (
                         <button
                           onClick={() => removeStep(s.id)}
-                          className="text-muted hover:text-red-400"
+                          className="text-muted hover:text-red-500"
                           title="Remove step"
                         >
                           <X className="h-4 w-4" />
@@ -317,16 +331,16 @@ export default function WorkflowsPage() {
                     placeholder="Instruction for the agent…"
                   />
                   {incomplete && (
-                    <p className="mt-1 text-xs text-red-400">
+                    <p className="mt-1 text-xs text-red-500">
                       Both a name and an instruction are required.
                     </p>
                   )}
                 </div>
               );
             })}
-            <Button variant="outline" onClick={addStep}>
+            <PillButton variant="outline" onClick={addStep}>
               <Plus className="h-4 w-4" /> Add step
-            </Button>
+            </PillButton>
           </div>
           <div className="flex items-center justify-end gap-2">
             {!canSubmit && (name.trim() || completeSteps.length > 0) && (
@@ -338,12 +352,15 @@ export default function WorkflowsPage() {
                     : "Add at least one complete step."}
               </span>
             )}
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <PillButton variant="outline" onClick={() => setOpen(false)}>
               Cancel
-            </Button>
-            <Button onClick={submit} disabled={!canSubmit}>
+            </PillButton>
+            <PillButton
+              onClick={submit}
+              className={!canSubmit ? "pointer-events-none opacity-50" : undefined}
+            >
               Create
-            </Button>
+            </PillButton>
           </div>
         </div>
       </Modal>

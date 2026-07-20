@@ -2,61 +2,76 @@
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Card, Badge } from "@/components/ui";
 import { timeAgo } from "@/lib/utils";
-import { ShieldCheck } from "@/components/icons";
+import { PageHead, Panel, StatTile, StatRow, ListRow, Dot } from "@/components/dash/kit";
 
 const SEV_TONE = {
-  info: "default",
-  warning: "yellow",
-  critical: "red",
+  info: "idle",
+  warning: "paused",
+  critical: "error",
+} as const;
+
+const SEV_LABEL_CLS = {
+  info: "text-[var(--muted)]",
+  warning: "text-amber-600",
+  critical: "text-red-600",
 } as const;
 
 export default function AdminAudit() {
   const trail = useQuery(api.admin.auditTrail, { limit: 200 });
+  const rows = trail ?? [];
 
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Admin audit trail</h1>
-        <p className="text-sm text-muted">
-          Append-only record of every platform-admin action. There is no delete
-          or edit path, this is the tamper-evident record of privileged access.
-        </p>
-      </div>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="Platform admin · audit trail"
+          title="Admin audit trail"
+          sub="Append-only record of every platform-admin action. There is no delete or edit path, this is the tamper-evident record of privileged access."
+        />
 
-      <Card className="p-0">
-        {(trail ?? []).map((e) => (
-          <div
-            key={e._id}
-            className="flex items-start gap-3 border-b border-border px-6 py-3.5 last:border-b-0"
-          >
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
-            <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-medium">{e.action}</span>
-                {e.resource && <span className="text-muted">· {e.resource}</span>}
-                {e.target && (
-                  <span className="font-mono text-xs text-muted">{e.target}</span>
-                )}
-              </p>
-              <p className="truncate text-xs text-muted">
-                {e.adminEmail ?? e.adminId}
-                {e.detail ? `, ${e.detail}` : ""}
-              </p>
+        <StatRow>
+          <StatTile
+            value={rows.length}
+            label={rows.length === 1 ? "Entry recorded" : "Entries recorded"}
+            hint="last 200, newest first"
+            tone="ink"
+          />
+        </StatRow>
+
+        <Panel title="Activity">
+          {trail === undefined ? (
+            <p className="py-10 text-center text-[13.5px] text-[var(--muted)]">Loading…</p>
+          ) : rows.length === 0 ? (
+            <p className="py-10 text-center text-[13.5px] text-[var(--muted)]">No admin actions recorded yet.</p>
+          ) : (
+            <div>
+              {rows.map((e) => (
+                <ListRow
+                  key={e._id}
+                  leading={<Dot tone={SEV_TONE[(e.severity ?? "info") as keyof typeof SEV_TONE]} />}
+                  title={
+                    <>
+                      <span className="font-medium">{e.action}</span>
+                      {e.resource && <span className="text-[var(--muted)]"> · {e.resource}</span>}
+                      {e.target && <span className="ml-1.5 font-mono text-[12px] text-[var(--muted)]">{e.target}</span>}
+                    </>
+                  }
+                  meta={`${e.adminEmail ?? e.adminId}${e.detail ? `, ${e.detail}` : ""}`}
+                  trailing={
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span className={SEV_LABEL_CLS[(e.severity ?? "info") as keyof typeof SEV_LABEL_CLS]}>
+                        {e.severity ?? "info"}
+                      </span>
+                      <span>{timeAgo(e.createdAt)}</span>
+                    </div>
+                  }
+                />
+              ))}
             </div>
-            <Badge tone={SEV_TONE[(e.severity ?? "info") as keyof typeof SEV_TONE]}>
-              {e.severity ?? "info"}
-            </Badge>
-            <span className="shrink-0 text-xs text-muted">{timeAgo(e.createdAt)}</span>
-          </div>
-        ))}
-        {(trail ?? []).length === 0 && (
-          <p className="px-6 py-10 text-center text-sm text-muted">
-            {trail === undefined ? "Loading…" : "No admin actions recorded yet."}
-          </p>
-        )}
-      </Card>
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }

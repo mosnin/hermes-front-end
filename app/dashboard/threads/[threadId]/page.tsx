@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { useActiveSpace } from "@/components/active-space";
 import { useToast } from "@/components/toast";
@@ -15,6 +14,8 @@ import {
 } from "@/components/chat/message-bubble";
 import { Markdown } from "@/components/chat/markdown";
 import { ArrowLeft, Brain, Send, Square } from "@/components/icons";
+import { Reveal } from "@/components/site/motion";
+import { PillButton, Dot } from "@/components/dash/kit";
 
 export default function ThreadDetailPage({
   params,
@@ -73,10 +74,10 @@ export default function ThreadDetailPage({
   }, [draft]);
 
   if (thread === undefined) {
-    return <div className="p-8 text-sm text-muted">Loading…</div>;
+    return <div className="p-8 text-[13.5px] text-muted">Loading…</div>;
   }
   if (thread === null) {
-    return <div className="p-8 text-sm text-muted">Thread not found.</div>;
+    return <div className="p-8 text-[13.5px] text-muted">Thread not found.</div>;
   }
 
   async function submit() {
@@ -128,23 +129,26 @@ export default function ThreadDetailPage({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-border p-4">
+      <Reveal as="div" y={-8} duration={0.4} className="flex items-center gap-3 border-b border-[var(--border)] p-4">
         <button
           onClick={() => router.push("/dashboard/threads")}
-          className="text-muted hover:text-foreground"
+          className="text-muted transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <div className="flex-1">
-          <p className="font-medium">{thread.title}</p>
+        <div className="flex flex-1 items-center gap-2.5">
+          <Dot tone={thread.status === "active" ? "online" : thread.status === "archived" ? "paused" : "idle"} />
+          <p className="text-[14.5px] font-medium text-foreground">{thread.title}</p>
+          <span className="text-[12.5px] text-muted">{thread.status}</span>
         </div>
-        <Button variant="outline" onClick={saveToMemory} disabled={saving}>
+        <PillButton
+          variant="outline"
+          onClick={saveToMemory}
+          className={saving ? "pointer-events-none opacity-60" : undefined}
+        >
           <Brain className="h-4 w-4" /> {saving ? "Saving…" : "Save to memory"}
-        </Button>
-        <Badge tone={thread.status === "active" ? "green" : "default"}>
-          {thread.status}
-        </Badge>
-      </div>
+        </PillButton>
+      </Reveal>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-6">
         {list.map((m) => (
@@ -181,7 +185,7 @@ export default function ThreadDetailPage({
         )}
       </div>
 
-      <div className="border-t border-border p-4">
+      <div className="border-t border-[var(--border)] p-4">
         <div className="flex items-end gap-2">
           <textarea
             ref={textareaRef}
@@ -196,17 +200,13 @@ export default function ThreadDetailPage({
             )}
           />
           {sending ? (
-            <Button
-              variant="outline"
-              onClick={() => setSending(false)}
-              title="Stop"
-            >
+            <PillButton variant="outline" onClick={() => setSending(false)}>
               <Square className="h-4 w-4" /> Stop
-            </Button>
+            </PillButton>
           ) : (
-            <Button onClick={submit} disabled={!draft.trim()}>
+            <PillButton onClick={submit} className={!draft.trim() ? "pointer-events-none opacity-50" : undefined}>
               <Send className="h-4 w-4" />
-            </Button>
+            </PillButton>
           )}
         </div>
       </div>

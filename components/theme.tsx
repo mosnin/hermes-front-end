@@ -8,19 +8,27 @@ import {
   ReactNode,
 } from "react";
 
-type Theme = "dark" | "light";
+/**
+ * The product runs a single skin now: the paper-white editorial system
+ * (see app/globals.css). `Theme`/`toggle` are kept as a stable API — some
+ * future surface may reintroduce a dark variant — but nothing in globals.css
+ * currently branches on `data-theme`, so toggling is a harmless no-op today
+ * and a persisted "dark" value from before this redesign can't resurrect the
+ * old instrument-panel look.
+ */
+type Theme = "light" | "dark";
 const ThemeCtx = createContext<{ theme: Theme; toggle: () => void }>({
-  theme: "dark",
+  theme: "light",
   toggle: () => {},
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
     const saved = (typeof window !== "undefined" &&
       localStorage.getItem("theme")) as Theme | null;
-    if (saved) setTheme(saved);
+    if (saved === "light" || saved === "dark") setTheme(saved);
   }, []);
 
   useEffect(() => {
@@ -30,7 +38,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeCtx.Provider
-      value={{ theme, toggle: () => setTheme((t) => (t === "dark" ? "light" : "dark")) }}
+      value={{ theme, toggle: () => setTheme((t) => (t === "light" ? "dark" : "light")) }}
     >
       {children}
     </ThemeCtx.Provider>

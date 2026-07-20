@@ -3,17 +3,19 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { api } from "@/convex/_generated/api";
 import { Card, RingGauge } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { runGlobalAction } from "@/components/global-actions";
 import { CheckCircle2, Circle, Sparkles, X } from "@/components/icons";
+import { DURATION, EASE, STAGGER } from "@/components/site/motion";
 
 export function Onboarding() {
   const { spaceId } = useActiveSpace();
   const router = useRouter();
   const [dismissed, setDismissed] = useState(false);
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -76,9 +78,10 @@ export function Onboarding() {
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, y: -8 }}
+        initial={reduce ? false : { opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, height: 0 }}
+        exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
+        transition={{ duration: reduce ? DURATION.reduced : DURATION.base, ease: EASE }}
       >
         <Card className="mb-6 overflow-hidden">
           <div className="flex items-center gap-5">
@@ -93,7 +96,7 @@ export function Onboarding() {
                 <Sparkles className="h-4 w-4 text-accent" /> Get your fleet running
               </h2>
               <p className="text-sm text-muted">
-                {completed} of {total} essentials done — you&apos;re almost there.
+                {completed} of {total} essentials done. You&apos;re almost there.
               </p>
             </div>
             <button
@@ -110,18 +113,23 @@ export function Onboarding() {
               <motion.button
                 key={item.label}
                 onClick={item.act}
-                initial={{ opacity: 0, y: 10 }}
+                initial={reduce ? false : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.04 * i }}
-                whileHover={{ y: -2 }}
+                transition={{
+                  delay: reduce ? 0 : STAGGER.tight * i,
+                  duration: reduce ? DURATION.reduced : DURATION.base,
+                  ease: EASE,
+                }}
+                whileHover={reduce ? undefined : { y: -2 }}
+                whileTap={reduce ? undefined : { scale: 0.98 }}
                 className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition ${
                   item.done
-                    ? "border-lime-400/30 bg-lime-400/5"
+                    ? "border-lime-600/30 bg-lime-600/5"
                     : "border-border bg-surface-2/40 hover:border-accent/40"
                 }`}
               >
                 {item.done ? (
-                  <CheckCircle2 className="h-5 w-5 shrink-0 text-lime-400" />
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-lime-600" />
                 ) : (
                   <Circle className="h-5 w-5 shrink-0 text-muted" />
                 )}

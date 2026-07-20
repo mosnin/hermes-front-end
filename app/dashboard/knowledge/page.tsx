@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Card, EmptyState, Input, Modal, Textarea } from "@/components/ui";
-import { KnowledgeGraphic } from "@/components/marketing/graphics";
+import { Input, Modal, Textarea } from "@/components/ui";
 import { useActiveSpace } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { FileText, Link2, Plus, Search } from "@/components/icons";
+import { Search } from "@/components/icons";
+import { PageHead, PillButton, Panel, ListRow, SectionLabel } from "@/components/dash/kit";
 
 type Memory = {
   _id: string;
@@ -125,99 +125,96 @@ export default function KnowledgePage() {
     }
   }
 
+  const canSubmit = !busy && !!title.trim() && !!content.trim();
+  const canSubmitUrl = !urlBusy && !!url.trim();
+  const canSubmitDoc = !docBusy && !!docTitle.trim() && !!docContent.trim();
+
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Knowledge</h1>
-          <p className="text-sm text-muted">
-            The shared memory brain. Space-scoped and company-wide context your
-            agents retrieve with semantic (vector) search.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setUrlOpen(true)}>
-            <Link2 className="h-4 w-4" /> Ingest URL
-          </Button>
-          <Button variant="outline" onClick={() => setDocOpen(true)}>
-            <FileText className="h-4 w-4" /> Ingest document
-          </Button>
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> Add memory
-          </Button>
-        </div>
-      </div>
-
-      <div className="mb-6 flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && search()}
-            placeholder="Search memory by meaning…"
-            className="pl-9"
-          />
-        </div>
-        <Button variant="outline" onClick={search} disabled={searching}>
-          {searching ? "Searching…" : "Search"}
-        </Button>
-        {results && (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setResults(null);
-              setQuery("");
-            }}
-          >
-            Clear
-          </Button>
-        )}
-      </div>
-
-      {list.length === 0 ? (
-        <EmptyState
-          graphic={<KnowledgeGraphic />}
-          title={results ? "No matching memory" : "No memory yet"}
-          body={
-            results
-              ? "Try a different search."
-              : "Add company policies, learnings, or context. Agents retrieve it automatically via the context engine."
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="Build"
+          title="Knowledge"
+          sub="The shared memory brain. Space-scoped and company-wide context your agents retrieve with semantic (vector) search."
+          actions={
+            <>
+              <PillButton variant="outline" onClick={() => setUrlOpen(true)}>
+                Ingest URL
+              </PillButton>
+              <PillButton variant="outline" onClick={() => setDocOpen(true)}>
+                Ingest document
+              </PillButton>
+              <PillButton onClick={() => setOpen(true)}>Add memory</PillButton>
+            </>
           }
         />
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {list.map((m) => (
-            <Card key={m._id}>
-              <div className="flex items-start justify-between gap-2">
-                <p className="font-medium">{m.title}</p>
-                <Badge tone={m.scope === "company" ? "blue" : "default"}>
-                  {m.scope}
-                </Badge>
-              </div>
-              <p className="mt-2 line-clamp-4 text-xs text-muted">{m.content}</p>
-              <div className="mt-3 flex items-center justify-between">
-                <div className="flex flex-wrap gap-1">
-                  <Badge>{m.source}</Badge>
-                  {(m.tags ?? []).map((t) => (
-                    <Badge key={t} tone="blue">
-                      {t}
-                    </Badge>
-                  ))}
-                </div>
-                <button
-                  onClick={() =>
-                    spaceId && remove({ spaceId, memoryId: m._id as never })
-                  }
-                  className="text-xs text-muted hover:text-red-400"
-                >
-                  Delete
-                </button>
-              </div>
-            </Card>
-          ))}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[220px] flex-1">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && search()}
+              placeholder="Search memory by meaning…"
+              className="rounded-full pl-10"
+            />
+          </div>
+          <PillButton variant="outline" onClick={search}>
+            {searching ? "Searching…" : "Search"}
+          </PillButton>
+          {results && (
+            <PillButton
+              variant="outline"
+              onClick={() => {
+                setResults(null);
+                setQuery("");
+              }}
+            >
+              Clear
+            </PillButton>
+          )}
         </div>
-      )}
+
+        <div>
+          <SectionLabel>{results ? "search results" : "memory"}</SectionLabel>
+          {list.length === 0 ? (
+            <Panel>
+              <p className="py-10 text-center text-[13.5px] text-[var(--muted)]">
+                {results
+                  ? "No matching memory. Try a different search."
+                  : "Add company policies, learnings, or context. Agents retrieve it automatically via the context engine."}
+              </p>
+            </Panel>
+          ) : (
+            <Panel>
+              <div>
+                {list.map((m) => (
+                  <ListRow
+                    key={m._id}
+                    leading={m.scope === "company" ? "CO" : "SP"}
+                    title={<span className="font-medium">{m.title}</span>}
+                    meta={[m.content, m.source, ...(m.tags ?? [])].filter(Boolean).join(" · ")}
+                    trailing={
+                      <div className="flex items-center gap-3">
+                        <span className="rounded-full bg-[var(--surface)] px-2 py-0.5 text-[11px] text-[var(--muted-strong)]">
+                          {m.scope}
+                        </span>
+                        <button
+                          onClick={() => spaceId && remove({ spaceId, memoryId: m._id as never })}
+                          className="text-[12.5px] text-[var(--muted)] transition-colors hover:text-red-500"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    }
+                  />
+                ))}
+              </div>
+            </Panel>
+          )}
+        </div>
+      </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Add memory">
         <div className="space-y-4">
@@ -255,12 +252,15 @@ export default function KnowledgePage() {
             </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <PillButton variant="outline" onClick={() => setOpen(false)}>
               Cancel
-            </Button>
-            <Button onClick={submit} disabled={busy || !title.trim() || !content.trim()}>
+            </PillButton>
+            <PillButton
+              className={!canSubmit ? "pointer-events-none opacity-50" : undefined}
+              onClick={() => canSubmit && submit()}
+            >
               {busy ? "Saving…" : "Save memory"}
-            </Button>
+            </PillButton>
           </div>
         </div>
       </Modal>
@@ -286,21 +286,20 @@ export default function KnowledgePage() {
             </select>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setUrlOpen(false)}>
+            <PillButton variant="outline" onClick={() => setUrlOpen(false)}>
               Cancel
-            </Button>
-            <Button onClick={submitUrl} disabled={urlBusy || !url.trim()}>
+            </PillButton>
+            <PillButton
+              className={!canSubmitUrl ? "pointer-events-none opacity-50" : undefined}
+              onClick={() => canSubmitUrl && submitUrl()}
+            >
               {urlBusy ? "Ingesting…" : "Ingest URL"}
-            </Button>
+            </PillButton>
           </div>
         </div>
       </Modal>
 
-      <Modal
-        open={docOpen}
-        onClose={() => setDocOpen(false)}
-        title="Ingest document"
-      >
+      <Modal open={docOpen} onClose={() => setDocOpen(false)} title="Ingest document">
         <div className="space-y-4">
           <Input
             value={docTitle}
@@ -326,15 +325,15 @@ export default function KnowledgePage() {
             </select>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setDocOpen(false)}>
+            <PillButton variant="outline" onClick={() => setDocOpen(false)}>
               Cancel
-            </Button>
-            <Button
-              onClick={submitDoc}
-              disabled={docBusy || !docTitle.trim() || !docContent.trim()}
+            </PillButton>
+            <PillButton
+              className={!canSubmitDoc ? "pointer-events-none opacity-50" : undefined}
+              onClick={() => canSubmitDoc && submitDoc()}
             >
               {docBusy ? "Ingesting…" : "Ingest document"}
-            </Button>
+            </PillButton>
           </div>
         </div>
       </Modal>

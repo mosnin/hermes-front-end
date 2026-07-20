@@ -2,10 +2,20 @@
 
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Card } from "@/components/ui";
+import { Badge } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
 import { Check, Sparkles } from "@/components/icons";
+import { cn } from "@/lib/utils";
+import {
+  PageHead,
+  PillButton,
+  Panel,
+  StatTile,
+  StatRow,
+  ListRow,
+  SectionLabel,
+} from "@/components/dash/kit";
 
 type PlanId = "free" | "team" | "enterprise";
 
@@ -90,134 +100,152 @@ export default function BillingPage() {
     }
   };
 
+  const entitlementRows = entitlements
+    ? ([
+        ["Agents", entitlements.usage.agents, entitlements.limits.maxAgents],
+        ["Workflows", entitlements.usage.workflows, entitlements.limits.maxWorkflows],
+        ["Bridges", entitlements.usage.bridges, entitlements.limits.maxBridges],
+        ["API keys", entitlements.usage.apiKeys, entitlements.limits.maxApiKeys],
+      ] as const)
+    : null;
+
   return (
-    <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Billing &amp; plans</h1>
-        <p className="text-sm text-muted">
-          Your plan tier and usage for this Space.
-        </p>
-      </div>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="billing"
+          title="Billing & plans"
+          sub="Your plan tier and usage for this Space."
+        />
 
-      {/* Current usage */}
-      <Card className="mb-6">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Usage this month</h2>
-          <Badge>{currentPlan} plan</Badge>
-        </div>
-        <p className="mt-2 text-3xl font-semibold">
-          ${usage?.totalCost.toFixed(2) ?? "0.00"}
+        <Panel
+          title="Usage this month"
+          tone="band"
+          action={<Badge>{currentPlan} plan</Badge>}
+        >
+          <p className="text-[38px] font-medium leading-none tracking-[-0.02em] tabular-nums text-[var(--foreground)] sm:text-[44px]">
+            ${usage?.totalCost.toFixed(2) ?? "0.00"}
+            {usage && usage.budget > 0 && (
+              <span className="ml-1.5 text-[16px] font-normal text-[var(--muted)]">
+                / ${usage.budget}
+              </span>
+            )}
+          </p>
           {usage && usage.budget > 0 && (
-            <span className="text-base font-normal text-muted">
-              {" "}
-              / ${usage.budget}
-            </span>
-          )}
-        </p>
-        {usage && usage.budget > 0 && (
-          <div className="mt-2 h-2 w-full rounded-full bg-surface-2">
-            <div
-              className={`h-2 rounded-full ${usage.budgetUsedPct >= 1 ? "bg-red-500" : "bg-accent-2"}`}
-              style={{ width: `${Math.round(usage.budgetUsedPct * 100)}%` }}
-            />
-          </div>
-        )}
-        <p className="mt-3 text-sm text-muted">
-          {usage?.events ?? 0} usage events recorded this month.
-        </p>
-        {entitlements && (
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {(
-              [
-                ["Agents", entitlements.usage.agents, entitlements.limits.maxAgents],
-                ["Workflows", entitlements.usage.workflows, entitlements.limits.maxWorkflows],
-                ["Bridges", entitlements.usage.bridges, entitlements.limits.maxBridges],
-                ["API keys", entitlements.usage.apiKeys, entitlements.limits.maxApiKeys],
-              ] as const
-            ).map(([label, used, max]) => (
-              <div key={label} className="rounded-lg border border-border p-2 text-sm">
-                <span className="text-muted">{label}</span>
-                <p className="font-semibold">
-                  {used} <span className="font-normal text-muted">/ {max >= 100000 ? "∞" : max}</span>
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="mt-3 space-y-1">
-          {usage &&
-            Object.entries(usage.byKind).map(([k, val]) => {
-              const vv = val as { count: number; cost: number };
-              return (
-                <div key={k} className="flex justify-between text-sm">
-                  <span className="capitalize text-muted">{k}</span>
-                  <span>
-                    {vv.count} · ${vv.cost.toFixed(2)}
-                  </span>
-                </div>
-              );
-            })}
-        </div>
-      </Card>
-
-      {/* Plan cards */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        {PLANS.map((p) => {
-          const isCurrent = p.id === currentPlan;
-          return (
-            <Card
-              key={p.id}
-              className={isCurrent ? "border-accent-2 ring-1 ring-accent-2" : ""}
-            >
-              <div className="mb-1 flex items-center justify-between">
-                <h3 className="text-lg font-semibold">{p.name}</h3>
-                {isCurrent && (
-                  <Badge tone="green">
-                    <Sparkles className="h-3 w-3" />
-                    Current plan
-                  </Badge>
+            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[var(--background)]">
+              <div
+                className={cn(
+                  "h-1.5 rounded-full",
+                  usage.budgetUsedPct >= 1 ? "bg-red-500" : "bg-[var(--foreground)]",
                 )}
+                style={{ width: `${Math.round(usage.budgetUsedPct * 100)}%` }}
+              />
+            </div>
+          )}
+          <p className="mt-3 text-[13px] text-[var(--muted)]">
+            {usage?.events ?? 0} usage events recorded this month.
+          </p>
+
+          {entitlementRows && (
+            <StatRow className="mt-6">
+              {entitlementRows.map(([label, used, max]) => (
+                <StatTile
+                  key={label}
+                  value={used}
+                  label={label}
+                  hint={`of ${max >= 100000 ? "∞" : max}`}
+                />
+              ))}
+            </StatRow>
+          )}
+
+          {usage && Object.keys(usage.byKind).length > 0 && (
+            <div className="mt-6">
+              <SectionLabel>by kind</SectionLabel>
+              <div>
+                {Object.entries(usage.byKind).map(([k, val]) => {
+                  const vv = val as { count: number; cost: number };
+                  return (
+                    <ListRow
+                      key={k}
+                      title={<span className="capitalize">{k}</span>}
+                      meta={`${vv.count} events`}
+                      trailing={`$${vv.cost.toFixed(2)}`}
+                    />
+                  );
+                })}
               </div>
-              <p className="text-2xl font-semibold">{p.price}</p>
-              <p className="mb-4 text-sm text-muted">{p.blurb}</p>
-              <ul className="mb-5 space-y-2">
-                {p.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2 text-sm">
-                    <Check className="h-4 w-4 text-accent-2" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-              {isCurrent ? (
-                <Button variant="outline" disabled>
-                  Current plan
-                </Button>
-              ) : p.id === "enterprise" ? (
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    (window.location.href = "mailto:sales@cadre.to")
+            </div>
+          )}
+        </Panel>
+
+        <div>
+          <SectionLabel>plans</SectionLabel>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {PLANS.map((p) => {
+              const isCurrent = p.id === currentPlan;
+              const disabled = !canAdmin || !spaceId;
+              return (
+                <Panel
+                  key={p.id}
+                  tone={isCurrent ? "band" : "white"}
+                  title={p.name}
+                  action={
+                    isCurrent ? (
+                      <Badge tone="green">
+                        <Sparkles className="h-3 w-3" />
+                        Current
+                      </Badge>
+                    ) : undefined
                   }
                 >
-                  Contact sales
-                </Button>
-              ) : (
-                <Button
-                  disabled={!canAdmin || !spaceId}
-                  onClick={() => changePlan(p.id)}
-                >
-                  {p.id === "team" ? "Upgrade" : "Switch"}
-                </Button>
-              )}
-            </Card>
-          );
-        })}
-      </div>
+                  <p className="text-[26px] font-medium tracking-[-0.01em] text-[var(--foreground)]">
+                    {p.price}
+                  </p>
+                  <p className="mt-1 text-[13.5px] text-[var(--muted)]">{p.blurb}</p>
+                  <ul className="mt-4 space-y-2">
+                    {p.features.map((f) => (
+                      <li key={f} className="flex items-center gap-2 text-[13.5px] text-[var(--foreground)]">
+                        <Check className="h-3.5 w-3.5 shrink-0 text-[var(--muted-strong)]" />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-5">
+                    {isCurrent ? (
+                      <PillButton variant="outline" className="pointer-events-none opacity-60">
+                        Current plan
+                      </PillButton>
+                    ) : p.id === "enterprise" ? (
+                      <PillButton
+                        variant="outline"
+                        onClick={() => (window.location.href = "mailto:sales@cadre.to")}
+                      >
+                        Contact sales
+                      </PillButton>
+                    ) : (
+                      <PillButton
+                        onClick={() => {
+                          if (disabled) return;
+                          changePlan(p.id);
+                        }}
+                        className={disabled ? "pointer-events-none opacity-50" : undefined}
+                      >
+                        {p.id === "team" ? "Upgrade" : "Switch"}
+                      </PillButton>
+                    )}
+                  </div>
+                </Panel>
+              );
+            })}
+          </div>
+        </div>
 
-      <p className="mt-6 text-xs text-muted">
-        Note: real metered billing (Stripe) is wired up in a later phase. For
-        now this sets your plan tier and shows current usage.
-      </p>
+        <p className="text-[12.5px] text-[var(--muted)]">
+          Note: real metered billing (Stripe) is wired up in a later phase. For
+          now this sets your plan tier and shows current usage.
+        </p>
+      </div>
     </div>
   );
 }

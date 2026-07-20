@@ -1,16 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot } from "@/components/ui";
-import { PagePath } from "@/components/page-header";
+import { EmptyState, Input, Modal } from "@/components/ui";
 import { MeshGraphic } from "@/components/marketing/graphics";
 import { RegisterAgentDialog } from "@/components/register-agent-dialog";
 import { useActiveSpace } from "@/components/active-space";
 import { timeAgo } from "@/lib/utils";
 import { Globe, Plus } from "@/components/icons";
+import { PageHead, PillButton, Panel, ListRow, Dot } from "@/components/dash/kit";
+
+/** Map an agent status string to a kit Dot tone. */
+function toneFor(status?: string): "online" | "paused" | "idle" | "error" {
+  if (status === "online") return "online";
+  if (status === "paused") return "paused";
+  if (status === "error" || status === "degraded") return "error";
+  return "idle";
+}
 
 export default function AgentsPage() {
   const { spaceId } = useActiveSpace();
@@ -23,64 +30,56 @@ export default function AgentsPage() {
   const [extCaps, setExtCaps] = useState("");
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <PagePath>agents</PagePath>
-          <h1 className="text-2xl font-semibold">Agents</h1>
-          <p className="text-sm text-muted">
-            Every agent connected to this Space.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setExtOpen(true)}>
-            <Globe className="h-4 w-4" /> Add external A2A
-          </Button>
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> Connect agent
-          </Button>
-        </div>
-      </div>
-
-      {agents?.length === 0 ? (
-        <EmptyState
-          graphic={<MeshGraphic />}
-          title="No agents connected"
-          body="Deploy an agent anywhere, then connect it here to give it threads, tasks, and skills."
-          action={<Button onClick={() => setOpen(true)}>Connect your first agent</Button>}
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow="agents"
+          title="Agents"
+          sub="Every agent connected to this Space."
+          actions={
+            <>
+              <PillButton variant="outline" onClick={() => setExtOpen(true)}>
+                <Globe className="h-4 w-4" /> Add external A2A
+              </PillButton>
+              <PillButton onClick={() => setOpen(true)}>
+                <Plus className="h-4 w-4" /> Connect agent
+              </PillButton>
+            </>
+          }
         />
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {(agents ?? []).map((a) => (
-            <Link key={a._id} href={`/dashboard/agents/${a._id}`}>
-              <Card className="h-full transition hover:border-accent">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <StatusDot status={a.status} />
-                    <span className="font-medium">{a.name}</span>
-                  </div>
-                  <Badge>{a.platform ?? a.kind ?? "—"}</Badge>
-                </div>
-                {a.description && (
-                  <p className="mt-2 line-clamp-2 text-sm text-muted">
-                    {a.description}
-                  </p>
-                )}
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {(a.capabilities ?? []).slice(0, 4).map((c) => (
-                    <Badge key={c} tone="blue">
-                      {c}
-                    </Badge>
-                  ))}
-                </div>
-                <p className="mt-3 text-xs text-muted">
-                  Last seen {timeAgo(a.lastHeartbeat)}
-                </p>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      )}
+
+        {agents?.length === 0 ? (
+          <EmptyState
+            graphic={<MeshGraphic />}
+            title="No agents connected"
+            body="Deploy an agent anywhere, then connect it here to give it threads, tasks, and skills."
+            action={<PillButton onClick={() => setOpen(true)}>Connect your first agent</PillButton>}
+          />
+        ) : (
+          <Panel title="Fleet">
+            <div>
+              {(agents ?? []).map((a) => (
+                <ListRow
+                  key={a._id}
+                  href={`/dashboard/agents/${a._id}`}
+                  leading={<Dot tone={toneFor(a.status)} />}
+                  title={
+                    <>
+                      <span className="font-medium">{a.name}</span>{" "}
+                      <span className="text-[12.5px] text-[var(--muted)]">{a.platform ?? a.kind ?? "—"}</span>
+                    </>
+                  }
+                  meta={
+                    a.description ||
+                    ((a.capabilities ?? []).length > 0 ? (a.capabilities ?? []).slice(0, 4).join(", ") : undefined)
+                  }
+                  trailing={`Last seen ${timeAgo(a.lastHeartbeat)}`}
+                />
+              ))}
+            </div>
+          </Panel>
+        )}
+      </div>
 
       <RegisterAgentDialog open={open} onClose={() => setOpen(false)} />
 
@@ -107,10 +106,10 @@ export default function AgentsPage() {
             placeholder="Capabilities (comma separated)"
           />
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setExtOpen(false)}>
+            <PillButton variant="outline" onClick={() => setExtOpen(false)}>
               Cancel
-            </Button>
-            <Button
+            </PillButton>
+            <PillButton
               onClick={async () => {
                 if (!spaceId || !extName.trim() || !extUrl.trim()) return;
                 await registerExternal({
@@ -129,7 +128,7 @@ export default function AgentsPage() {
               }}
             >
               Add agent
-            </Button>
+            </PillButton>
           </div>
         </div>
       </Modal>

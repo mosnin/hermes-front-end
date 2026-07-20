@@ -4,10 +4,25 @@ import { useMemo, useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Card, EmptyState, Input, Modal, StatusDot } from "@/components/ui";
+import { Badge, EmptyState, Input, Modal, SkeletonRows } from "@/components/ui";
 import { useActiveSpace, useCan } from "@/components/active-space";
 import { useToast } from "@/components/toast";
-import { Cloud, Plus, Rocket, Trash2 } from "@/components/icons";
+import { Boxes, KeyRound, RefreshCw, Rocket, Trash2 } from "@/components/icons";
+import { TemplatesPanel } from "@/components/fleet/TemplatesPanel";
+import { AutoscalePanel } from "@/components/fleet/AutoscalePanel";
+import { RestartPanel } from "@/components/fleet/RestartPanel";
+import { EASE } from "@/components/site/motion";
+import { motion, useReducedMotion, type Variants } from "motion/react";
+import {
+  PageHead,
+  PillButton,
+  Panel,
+  StatTile,
+  StatRow,
+  ListRow,
+  Dot,
+  SectionLabel,
+} from "@/components/dash/kit";
 
 const deployTone = {
   provisioning: "yellow",
@@ -16,29 +31,72 @@ const deployTone = {
   failed: "red",
 } as const;
 
+/** Map a fleet agent's status string to a kit Dot tone. */
+function fleetDotTone(status?: string): "online" | "paused" | "idle" | "error" {
+  if (status === "online") return "online";
+  if (status === "degraded") return "error";
+  if (status === "pending") return "idle";
+  return "idle";
+}
+
+function fleetListContainer(reduce: boolean | null): Variants {
+  return { hidden: {}, show: { transition: { staggerChildren: reduce ? 0 : 0.04 } } };
+}
+
+function fleetListItem(reduce: boolean | null): Variants {
+  return {
+    hidden: { opacity: 0, y: reduce ? 0 : 10 },
+    show: { opacity: 1, y: 0, transition: { duration: reduce ? 0.3 : 0.5, ease: EASE } },
+  };
+}
+
 export default function FleetPage() {
-  const { spaceId } = useActiveSpace();
+  const { spaceId, active } = useActiveSpace();
   const canAdmin = useCan("admin");
   const canOperate = useCan("operator");
   const toast = useToast();
+  const reduce = useReducedMotion();
 
   const provider = useQuery(api.fleet.providerStatus, {});
+  const harnessCatalog = useQuery(api.fleet.harnessCatalog, {});
   const fleet = useQuery(api.fleet.list, spaceId ? { spaceId } : "skip");
   const org = useQuery(api.fleet.orgChart, spaceId ? { spaceId } : "skip");
   const squads = useQuery(api.squads.list, spaceId ? { spaceId } : "skip");
   const agents = useQuery(api.agents.list, spaceId ? { spaceId } : "skip");
+  // Hosted-agent plan usage. Falls back to counting the fleet list client-side
+  // if entitlements hasn't loaded yet, so the page still shows something sane.
+  const entitlements = useQuery(
+    api.billing.entitlements,
+    spaceId ? { spaceId } : "skip",
+  );
+  const fleetList = fleet ?? [];
+  const runningCount = fleetList.filter((a) => a.deploymentStatus === "running").length;
+  const provisioningCount = fleetList.filter((a) => a.deploymentStatus === "provisioning").length;
+  const hostedUsed =
+    entitlements?.usage.hostedAgents ??
+    fleetList.filter(
+      (a) => a.deploymentStatus === "provisioning" || a.deploymentStatus === "running",
+    ).length;
+  const hostedLimit = entitlements?.limits.hostedAgents;
+  const hostedLimitLabel = hostedLimit && hostedLimit >= 100000 ? "unlimited plan" : `of ${hostedLimit ?? "—"} allowed`;
+  const atLimit = typeof hostedLimit === "number" && hostedUsed >= hostedLimit && hostedLimit > 0;
 
   const deploy = useAction(api.fleet.deploy);
   const terminate = useAction(api.fleet.terminate);
+  const refreshStatus = useAction(api.fleet.refreshStatus);
 
   const [open, setOpen] = useState(false);
   const [count, setCount] = useState(1);
   const [prefix, setPrefix] = useState("Agent");
   const [region, setRegion] = useState("");
   const [model, setModel] = useState("claude-opus-4-8");
+  const [apiKey, setApiKey] = useState("");
+  const [harness, setHarness] = useState("hermes");
+  const [imageRef, setImageRef] = useState("");
   const [squad, setSquad] = useState("");
   const [manager, setManager] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [tokens, setTokens] = useState<{ name: string; token: string }[] | null>(null);
 
   async function submit() {
@@ -54,6 +112,9 @@ export default function FleetPage() {
         model: model.trim() || undefined,
         squadId: squad ? (squad as Id<"squads">) : undefined,
         reportsTo: manager ? (manager as Id<"agents">) : undefined,
+        modelApiKey: apiKey.trim() || undefined,
+        harness: imageRef.trim() ? undefined : harness || undefined,
+        imageRef: imageRef.trim() || undefined,
       });
       if (res.cloudflare) {
         toast(`Deployed ${res.deployed.length} agent(s) on Cloudflare`, "success");
@@ -63,10 +124,24 @@ export default function FleetPage() {
         setTokens(res.deployed.map((d) => ({ name: d.name, token: d.token })));
         toast("Agents created, Cloudflare not configured, connect manually", "info");
       }
+      setApiKey("");
+      setImageRef("");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Deploy failed", "error");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function doRefresh() {
+    if (!spaceId) return;
+    setRefreshing(true);
+    try {
+      await refreshStatus({ spaceId });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Refresh failed", "error");
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -87,80 +162,129 @@ export default function FleetPage() {
   }, [org]);
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Fleet</h1>
-          <p className="text-sm text-muted">
-            One-click deploy agents onto cloud VMs and assign them to your
-            hierarchy. Each agent runs isolated and auto-connects.
-          </p>
-        </div>
-        <Button onClick={() => setOpen(true)} disabled={!canOperate}>
-          <Rocket className="h-4 w-4" /> Deploy agents
-        </Button>
-      </div>
+    <div className="min-w-0 px-5 py-7 sm:px-8 sm:py-9">
+      <div className="mx-auto max-w-[1120px] space-y-8">
+        <PageHead
+          eyebrow={`${active?.name ?? "Workspace"} · fleet`}
+          title="Fleet"
+          sub="One-click deploy agents onto cloud VMs and assign them to your hierarchy. Each agent runs isolated and auto-connects."
+          actions={
+            <>
+              <PillButton variant="outline" onClick={doRefresh} className={refreshing || !spaceId ? "pointer-events-none opacity-60" : undefined}>
+                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                {refreshing ? "Refreshing…" : "Refresh status"}
+              </PillButton>
+              <PillButton onClick={() => canOperate && setOpen(true)} className={!canOperate ? "pointer-events-none opacity-50" : undefined}>
+                <Rocket className="h-4 w-4" /> Deploy agents
+              </PillButton>
+            </>
+          }
+        />
 
-      <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm">
-        <Cloud className="h-4 w-4 text-accent" />
-        Cloudflare:
-        {provider?.cloudflare ? (
-          <Badge tone="green">configured</Badge>
-        ) : (
-          <span className="text-muted">
-            not configured, set <code>CLOUDFLARE_FLEET_WORKER_URL</code> +{" "}
-            <code>CLOUDFLARE_FLEET_SECRET</code> (deploy the worker in
-            connector/fleet-worker). Agents still provision; connect them manually.
+        <StatRow>
+          <StatTile value={fleetList.length} label="Deployed agents" hint="in fleet" tone="ink" />
+          <StatTile value={runningCount} label="Running" hint="healthy now" />
+          <StatTile value={provisioningCount} label="Provisioning" hint="spinning up" />
+          <StatTile value={hostedUsed} label="Hosted usage" hint={hostedLimitLabel} />
+        </StatRow>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--background)] px-3 py-1.5 text-[13px] text-[var(--muted-strong)]">
+            <Dot tone={provider?.cloudflare ? "online" : "idle"} />
+            Cloudflare {provider?.cloudflare ? "configured" : "not configured"}
           </span>
+          {atLimit && <Badge tone="yellow">at limit</Badge>}
+        </div>
+
+        {!provider?.cloudflare && (
+          <Panel tone="band">
+            <p className="text-[14.5px] font-medium text-amber-700">Cadre Cloud isn&apos;t enabled yet</p>
+            <p className="mt-1 text-[13.5px] text-[var(--muted)]">
+              Managed hosting requires <code>CLOUDFLARE_FLEET_WORKER_URL</code> +{" "}
+              <code>CLOUDFLARE_FLEET_SECRET</code> (deploy the worker in
+              connector/fleet-worker). Until then, deploy still creates agents
+              and hands you one-time tokens to connect them manually.
+            </p>
+          </Panel>
         )}
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-        <Card>
-          <h2 className="mb-3 font-semibold">Deployed agents</h2>
-          {fleet?.length === 0 ? (
-            <EmptyState
-              title="No fleet agents yet"
-              body="Deploy your first batch of agents onto the cloud."
-              action={<Button onClick={() => setOpen(true)} disabled={!canOperate}>Deploy agents</Button>}
-            />
-          ) : (
-            <ul className="divide-y divide-border">
-              {(fleet ?? []).map((a) => (
-                <li key={a._id} className="flex items-center gap-3 py-2">
-                  <StatusDot status={a.status} />
-                  <span className="flex-1 truncate text-sm">{a.name}</span>
-                  <Badge>{a.region ?? a.vmProvider}</Badge>
-                  <Badge tone={deployTone[a.deploymentStatus ?? "provisioning"]}>
-                    {a.deploymentStatus ?? "provisioning"}
-                  </Badge>
-                  {canAdmin && (
-                    <button
-                      onClick={() => spaceId && terminate({ spaceId, agentId: a._id })}
-                      className="text-muted hover:text-red-400"
-                      title="Terminate"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+          <Panel title="Deployed agents">
+            {fleet === undefined ? (
+              <SkeletonRows rows={4} />
+            ) : fleetList.length === 0 ? (
+              <EmptyState
+                title="No fleet agents yet"
+                body="Deploy your first batch of agents onto the cloud."
+                action={
+                  <PillButton onClick={() => setOpen(true)} className={!canOperate ? "pointer-events-none opacity-50" : undefined}>
+                    Deploy agents
+                  </PillButton>
+                }
+              />
+            ) : (
+              // Semantic <ul>/<li>, so this hand-rolls the Stagger/StaggerItem
+              // variant shape directly on motion.ul/motion.li (those helpers
+              // only support block-level container tags, not lists).
+              <motion.ul
+                initial="hidden"
+                whileInView="show"
+                viewport={{ once: true, margin: "-40px", amount: 0.2 }}
+                variants={fleetListContainer(reduce)}
+              >
+                {fleetList.map((a) => (
+                  <motion.li key={a._id} variants={fleetListItem(reduce)}>
+                    <ListRow
+                      leading={<Dot tone={fleetDotTone(a.status)} />}
+                      title={a.name}
+                      trailing={
+                        <div className="flex items-center gap-1.5">
+                          <Badge>{a.region ?? a.vmProvider}</Badge>
+                          {a.harness && a.harness !== "hermes" && <Badge tone="blue">{a.harness}</Badge>}
+                          <Badge tone={deployTone[a.deploymentStatus ?? "provisioning"]}>
+                            {a.deploymentStatus ?? "provisioning"}
+                          </Badge>
+                          {canAdmin && (
+                            <button
+                              onClick={() => spaceId && terminate({ spaceId, agentId: a._id })}
+                              className="grid h-7 w-7 place-items-center rounded-full text-[var(--muted)] transition-colors hover:bg-[#fbe9e9] hover:text-red-500"
+                              title="Terminate"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      }
+                    />
+                  </motion.li>
+                ))}
+              </motion.ul>
+            )}
+          </Panel>
 
-        <Card>
-          <h2 className="mb-3 font-semibold">Org chart</h2>
-          {tree.roots.length === 0 ? (
-            <p className="text-sm text-muted">No agents yet.</p>
-          ) : (
-            <div className="space-y-1">
-              {tree.roots.map((n) => (
-                <OrgNode key={n.id} node={n} byParent={tree.byParent} depth={0} />
-              ))}
+          <Panel title="Org chart" tone="band">
+            {tree.roots.length === 0 ? (
+              <p className="text-[13.5px] text-[var(--muted)]">No agents yet.</p>
+            ) : (
+              <div className="space-y-1">
+                {tree.roots.map((n) => (
+                  <OrgNode key={n.id} node={n} byParent={tree.byParent} depth={0} />
+                ))}
+              </div>
+            )}
+          </Panel>
+        </div>
+
+        {spaceId && (
+          <div>
+            <SectionLabel>autoscaling · templates · restarts</SectionLabel>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <AutoscalePanel spaceId={spaceId} />
+              <TemplatesPanel spaceId={spaceId} />
+              <RestartPanel spaceId={spaceId} />
             </div>
-          )}
-        </Card>
+          </div>
+        )}
       </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Deploy agents">
@@ -187,6 +311,27 @@ export default function FleetPage() {
             <div>
               <label className="mb-1 block text-xs text-muted">Model</label>
               <Input value={model} onChange={(e) => setModel(e.target.value)} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted">Harness</label>
+              <select
+                value={harness}
+                onChange={(e) => setHarness(e.target.value)}
+                disabled={!!imageRef.trim()}
+                className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm disabled:opacity-50"
+              >
+                {(harnessCatalog ?? []).map((h) => (
+                  <option key={h.id} value={h.id}>{h.displayName ?? h.id}</option>
+                ))}
+                {(harnessCatalog ?? []).length === 0 && (
+                  <option value="hermes">hermes</option>
+                )}
+              </select>
+              {harnessCatalog?.find((h) => h.id === harness)?.description && (
+                <p className="mt-1 text-xs text-muted">
+                  {harnessCatalog.find((h) => h.id === harness)?.description}
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs text-muted">Squad (optional)</label>
@@ -216,9 +361,43 @@ export default function FleetPage() {
             </div>
           </div>
 
+          <div>
+            <label className="mb-1 flex items-center gap-1.5 text-xs text-muted">
+              <KeyRound className="h-3 w-3" /> Model API key (optional)
+            </label>
+            <Input
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-…"
+            />
+            <p className="mt-1 text-xs text-muted">
+              BYOK: passed to the container as a runtime secret, never stored on
+              the agent record. Leave blank to configure keys on the agent later.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 flex items-center gap-1.5 text-xs text-muted">
+              <Boxes className="h-3 w-3" /> Bring your own container image (optional)
+            </label>
+            <Input
+              value={imageRef}
+              onChange={(e) => setImageRef(e.target.value)}
+              placeholder="registry.example.com/my-agent:latest"
+              disabled={entitlements?.plan !== "enterprise"}
+            />
+            <p className="mt-1 text-xs text-muted">
+              {entitlements?.plan === "enterprise"
+                ? "Overrides the harness picker above and boots this image directly."
+                : "Enterprise plan only. Upgrade to deploy an arbitrary container image instead of a built-in harness."}
+            </p>
+          </div>
+
           {tokens && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-              <p className="mb-2 text-xs text-amber-300">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="mb-2 text-xs text-amber-800">
                 Cloudflare isn&apos;t configured, connect these agents manually with
                 their one-time tokens:
               </p>
@@ -229,10 +408,10 @@ export default function FleetPage() {
           )}
 
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>
-            <Button onClick={submit} disabled={busy}>
-              {busy ? "Deploying…" : <><Plus className="h-4 w-4" /> Deploy</>}
-            </Button>
+            <PillButton variant="outline" onClick={() => setOpen(false)}>Close</PillButton>
+            <PillButton onClick={submit} className={busy ? "pointer-events-none opacity-60" : undefined}>
+              {busy ? "Deploying…" : "Deploy"}
+            </PillButton>
           </div>
         </div>
       </Modal>
@@ -255,10 +434,10 @@ function OrgNode({
   return (
     <div>
       <div
-        className="flex items-center gap-2 rounded-md px-2 py-1 text-sm"
+        className="flex items-center gap-2 rounded-md px-2 py-1 text-[13.5px] text-[var(--foreground)]"
         style={{ paddingLeft: depth * 16 + 8 }}
       >
-        <StatusDot status={node.status} />
+        <Dot tone={fleetDotTone(node.status)} />
         <span className="truncate">{node.name}</span>
         {node.vmProvider && <Badge tone="blue">{node.vmProvider}</Badge>}
       </div>

@@ -123,6 +123,73 @@ http.route({
   }),
 });
 
+// POST /connector/logs — an agent (or the fleet worker on its behalf) ships a
+// batch of log lines. Serviced for Team B/agentOps: wires straight into
+// internal.logs.ingestBatch the same way /connector/activity feeds
+// internal.activity.append; tenancy (companyId/spaceId/agentId) comes from the
+// token-authenticated agent, never from the request body.
+http.route({
+  path: "/connector/logs",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    const lines = Array.isArray(body.lines) ? body.lines : [];
+    if (!lines.length) return json({ error: "lines required" }, 400);
+    const VALID_LEVELS = new Set(["debug", "info", "warn", "error"]);
+    if (lines.some((l: any) => !l || typeof l.message !== "string" || !VALID_LEVELS.has(l.level))) {
+      return json({ error: "each line requires level (debug|info|warn|error) and message" }, 400);
+    }
+    try {
+      const res = await ctx.runMutation(internal.logs.ingestBatch, {
+        companyId: agent.companyId,
+        spaceId: agent.spaceId,
+        agentId: agent._id,
+        lines,
+      });
+      return json({ ok: true, ...res });
+    } catch (e) {
+      return json({ error: "invalid log line", detail: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  }),
+});
+
+// POST /connector/config/poll — a deployed agent asks whether a config newer
+// than what it has applied is pending (Team B's remote-config protocol; see
+// convex/agentOps.ts). Tenancy comes from the token-authenticated agent.
+http.route({
+  path: "/connector/config/poll",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const pending = await ctx.runQuery(internal.agentOps.pollPendingConfig, {
+      agentId: agent._id,
+    });
+    return json({ ok: true, pending });
+  }),
+});
+
+// POST /connector/config/ack — the agent confirms it applied config {version}.
+http.route({
+  path: "/connector/config/ack",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const agent = await authAgent(ctx, request);
+    if (!agent) return unauthorized();
+    const body = await request.json().catch(() => ({}));
+    if (typeof body.version !== "number") {
+      return json({ error: "version (number) required" }, 400);
+    }
+    const res = await ctx.runMutation(internal.agentOps.ackConfig, {
+      agentId: agent._id,
+      version: body.version,
+    });
+    return json(res);
+  }),
+});
+
 http.route({
   path: "/connector/message",
   method: "POST",
@@ -912,39 +979,214 @@ http.route({
         stripeEvent: String(event.type),
       });
     }
+    // Subscription lapsed/canceled — stop billing customers from continuing to
+    // run hosted fleet agents on our infra. Separate from the plan downgrade
+    // above so a future event type can trigger this without also touching plan.
+    if (event.type === "customer.subscription.deleted") {
+      const spaceId = event.data?.object?.metadata?.spaceId;
+      if (spaceId) {
+        await ctx.runMutation(internal.stripe.lapseHostedFleet, {
+          spaceId: spaceId as Id<"spaces">,
+          stripeEvent: String(event.type),
+        });
+      }
+    }
     // Always 200 for recognized-but-ignored events so Stripe stops retrying.
     return json({ received: true });
   }),
 });
 
 // ===========================================================================
-// Public REST API — authenticated by an API key (hk_...) minted in Developer.
+// Public REST API v1 — authenticated by an API key (hk_...) minted in
+// Developer settings (convex/apiKeys.ts). Consistent JSON envelope:
+//   success: { data: <payload> }
+//   failure: { error: { code, message } }
+// Every route is rate-limited per key (fixed window, apiUsage table) and
+// counted for the usage endpoint. `docs/API.md` + `sdk/` are the client-facing
+// reference for this surface — keep them in sync with routes added here.
 // ===========================================================================
+
+type ApiAuth = {
+  spaceId: Id<"spaces">;
+  companyId: string;
+  apiKeyId: Id<"apiKeys">;
+  rateLimitPerMinute?: number;
+  scopes?: string[];
+  /** `X-RateLimit-*` pair for this request, set by `gate()` after recording
+   * it — pass straight into `apiOk(data, status, auth.rateLimitHeaders)`. */
+  rateLimitHeaders: Record<string, string>;
+};
+
+// Scope model (feature 20 hardening): each route declares the single scope
+// it needs (e.g. "tasks:write"). A key with no `scopes` array set (every key
+// minted before scoped keys existed, and any minted without explicit scopes)
+// is treated as full-access for backward compatibility — `apiKeys.scopes` is
+// in schema but `apiKeys.create` doesn't collect it from the mint UI yet;
+// cross-team request below extends it. Once a key does carry `scopes`, it is
+// strictly allow-listed: unlisted routes 403.
+const ALL_SCOPES = [
+  "agents:read",
+  "deploys:read",
+  "tasks:read",
+  "tasks:write",
+  "messages:write",
+  "workflows:read",
+  "workflows:write",
+  "approvals:read",
+  "approvals:write",
+  "usage:read",
+] as const;
+type ApiScope = (typeof ALL_SCOPES)[number];
+
+function apiError(code: string, message: string, status: number) {
+  return json({ error: { code, message } }, status);
+}
+/** `headers` carries the `X-RateLimit-*` pair from `gate()` so a caller can
+ * see how much quota is left on every successful response, not just once
+ * they've already been cut off by a 429. */
+function apiOk(data: unknown, status = 200, headers?: Record<string, string>) {
+  return new Response(JSON.stringify({ data }), {
+    status,
+    headers: { "Content-Type": "application/json", ...(headers ?? {}) },
+  });
+}
 
 async function authApiKey(
   ctx: { runQuery: any; runMutation: any },
   request: Request,
-): Promise<{ spaceId: Id<"spaces">; companyId: string } | null> {
+): Promise<Omit<ApiAuth, "rateLimitHeaders"> | null> {
   const header = request.headers.get("Authorization") ?? "";
   const key = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (!key.startsWith("hk_")) return null;
   const keyHash = await sha256Hex(key);
   const row = await ctx.runQuery(internal.apiKeys.byHash, { keyHash });
   if (!row || row.revoked) return null;
+  if (row.expiresAt && row.expiresAt < Date.now()) return null;
   await ctx.runMutation(internal.publicApi.touchKey, { keyId: row._id });
-  return { spaceId: row.spaceId, companyId: row.companyId };
+  return {
+    spaceId: row.spaceId,
+    companyId: row.companyId,
+    apiKeyId: row._id,
+    rateLimitPerMinute: row.rateLimitPerMinute,
+    scopes: row.scopes,
+  };
+}
+
+/**
+ * Auth + rate-limit + scope gate shared by every /api/v1/* handler. Returns
+ * either a resolved `ApiAuth` to proceed with, or a ready-to-return error
+ * Response. `requiredScope` is checked before the rate limit is recorded so
+ * a 403 never counts against the key's quota.
+ */
+async function gate(
+  ctx: { runQuery: any; runMutation: any },
+  request: Request,
+  route: string,
+  requiredScope?: ApiScope,
+): Promise<ApiAuth | Response> {
+  const auth = await authApiKey(ctx, request);
+  if (!auth) return apiError("unauthorized", "missing or invalid API key", 401);
+  if (requiredScope && auth.scopes && !auth.scopes.includes(requiredScope)) {
+    return apiError(
+      "forbidden",
+      `this key is not scoped for '${requiredScope}'`,
+      403,
+    );
+  }
+  const rl = await ctx.runMutation(internal.publicApi.recordRequest, {
+    apiKeyId: auth.apiKeyId,
+    companyId: auth.companyId,
+    spaceId: auth.spaceId,
+    route,
+    limitPerMinute: auth.rateLimitPerMinute,
+  });
+  if (!rl.allowed) {
+    return new Response(
+      JSON.stringify({
+        error: { code: "rate_limited", message: `rate limit: ${rl.limit}/minute` },
+      }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "60",
+          "X-RateLimit-Limit": String(rl.limit),
+          "X-RateLimit-Remaining": "0",
+        },
+      },
+    );
+  }
+  return {
+    ...auth,
+    rateLimitHeaders: {
+      "X-RateLimit-Limit": String(rl.limit),
+      "X-RateLimit-Remaining": String(rl.remaining),
+    },
+  };
+}
+
+/** Parse the shared `?cursor=&limit=` pagination query params. */
+function paginationParams(url: URL): { cursor?: string | null; limit?: number } {
+  const cursor = url.searchParams.get("cursor");
+  const limitParam = url.searchParams.get("limit");
+  const limit = limitParam ? Number(limitParam) : undefined;
+  return {
+    cursor: cursor ?? undefined,
+    limit: limit && Number.isFinite(limit) ? limit : undefined,
+  };
 }
 
 http.route({
   path: "/api/v1/agents",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await authApiKey(ctx, request);
-    if (!auth) return unauthorized();
-    const agents = await ctx.runQuery(internal.publicApi.listAgents, {
+    const auth = await gate(ctx, request, "GET /api/v1/agents", "agents:read");
+    if (auth instanceof Response) return auth;
+    const { cursor, limit } = paginationParams(new URL(request.url));
+    const result = await ctx.runQuery(internal.publicApi.listAgents, {
       spaceId: auth.spaceId,
+      cursor,
+      limit,
     });
-    return json({ agents });
+    return apiOk(result, 200, auth.rateLimitHeaders);
+  }),
+});
+
+// GET /api/v1/agents/{id} — single-agent detail. An exact `path` route always
+// wins over this `pathPrefix`, so "/api/v1/agents" (the list route above)
+// never falls into the id regex below (same registration-order guarantee
+// documented next to the approvals bulk-decide route).
+http.route({
+  pathPrefix: "/api/v1/agents/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const agentId = url.pathname.slice("/api/v1/agents/".length);
+    if (!agentId) return apiError("not_found", "unknown route", 404);
+    const auth = await gate(ctx, request, "GET /api/v1/agents/:id", "agents:read");
+    if (auth instanceof Response) return auth;
+    const agent = await ctx.runQuery(internal.publicApi.getAgentForApi, {
+      spaceId: auth.spaceId,
+      agentId: agentId as Id<"agents">,
+    }).catch(() => null);
+    if (!agent) return apiError("not_found", "agent not found", 404);
+    return apiOk(agent, 200, auth.rateLimitHeaders);
+  }),
+});
+
+http.route({
+  path: "/api/v1/deploys",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "GET /api/v1/deploys", "deploys:read");
+    if (auth instanceof Response) return auth;
+    const { cursor, limit } = paginationParams(new URL(request.url));
+    const result = await ctx.runQuery(internal.publicApi.listDeploys, {
+      spaceId: auth.spaceId,
+      cursor,
+      limit,
+    });
+    return apiOk(result, 200, auth.rateLimitHeaders);
   }),
 });
 
@@ -952,12 +1194,15 @@ http.route({
   path: "/api/v1/tasks",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    const auth = await authApiKey(ctx, request);
-    if (!auth) return unauthorized();
-    const tasks = await ctx.runQuery(internal.publicApi.listTasks, {
+    const auth = await gate(ctx, request, "GET /api/v1/tasks", "tasks:read");
+    if (auth instanceof Response) return auth;
+    const { cursor, limit } = paginationParams(new URL(request.url));
+    const result = await ctx.runQuery(internal.publicApi.listTasks, {
       spaceId: auth.spaceId,
+      cursor,
+      limit,
     });
-    return json({ tasks });
+    return apiOk(result, 200, auth.rateLimitHeaders);
   }),
 });
 
@@ -965,17 +1210,53 @@ http.route({
   path: "/api/v1/tasks",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const auth = await authApiKey(ctx, request);
-    if (!auth) return unauthorized();
+    const auth = await gate(ctx, request, "POST /api/v1/tasks", "tasks:write");
+    if (auth instanceof Response) return auth;
     const body = await request.json().catch(() => ({}));
-    if (!body.title) return json({ error: "title required" }, 400);
+    if (!body.title) return apiError("bad_request", "title required", 400);
     const id = await ctx.runMutation(internal.publicApi.createTask, {
       spaceId: auth.spaceId,
       companyId: auth.companyId,
       title: String(body.title),
       description: body.description,
     });
-    return json({ id });
+    return apiOk({ id }, 201, auth.rateLimitHeaders);
+  }),
+});
+
+// PATCH /api/v1/tasks/{id} — body { title?, description?, status? }.
+http.route({
+  pathPrefix: "/api/v1/tasks/",
+  method: "PATCH",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const taskId = url.pathname.slice("/api/v1/tasks/".length);
+    if (!taskId) return apiError("not_found", "unknown route", 404);
+    const auth = await gate(ctx, request, "PATCH /api/v1/tasks/:id", "tasks:write");
+    if (auth instanceof Response) return auth;
+    const body = await request.json().catch(() => ({}));
+    const status =
+      body.status === "todo" ||
+      body.status === "in_progress" ||
+      body.status === "blocked" ||
+      body.status === "done"
+        ? body.status
+        : undefined;
+    if (body.status !== undefined && status === undefined) {
+      return apiError("bad_request", "status must be one of todo|in_progress|blocked|done", 400);
+    }
+    try {
+      const result = await ctx.runMutation(internal.publicApi.updateTaskForApi, {
+        spaceId: auth.spaceId,
+        taskId: taskId as Id<"tasks">,
+        title: typeof body.title === "string" ? body.title : undefined,
+        description: typeof body.description === "string" ? body.description : undefined,
+        status,
+      });
+      return apiOk(result, 200, auth.rateLimitHeaders);
+    } catch (e) {
+      return apiError("not_found", e instanceof Error ? e.message : String(e), 404);
+    }
   }),
 });
 
@@ -983,17 +1264,64 @@ http.route({
   path: "/api/v1/messages",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const auth = await authApiKey(ctx, request);
-    if (!auth) return unauthorized();
+    const auth = await gate(ctx, request, "POST /api/v1/messages", "messages:write");
+    if (auth instanceof Response) return auth;
     const body = await request.json().catch(() => ({}));
-    if (!body.content) return json({ error: "content required" }, 400);
+    if (!body.content) return apiError("bad_request", "content required", 400);
     const res = await ctx.runMutation(internal.publicApi.sendMessage, {
       spaceId: auth.spaceId,
       companyId: auth.companyId,
       content: String(body.content),
       threadTitle: body.threadTitle,
     });
-    return json(res);
+    return apiOk(res, 201, auth.rateLimitHeaders);
+  }),
+});
+
+http.route({
+  path: "/api/v1/workflows",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "GET /api/v1/workflows", "workflows:read");
+    if (auth instanceof Response) return auth;
+    const { cursor, limit } = paginationParams(new URL(request.url));
+    const result = await ctx.runQuery(internal.publicApi.listWorkflows, {
+      spaceId: auth.spaceId,
+      cursor,
+      limit,
+    });
+    return apiOk(result, 200, auth.rateLimitHeaders);
+  }),
+});
+
+// POST /api/v1/workflows/{id}/toggle — body { enabled: boolean }. Exact-path
+// routes ("/api/v1/workflows/run", "/api/v1/workflows/runs") registered
+// nearby always win over this pathPrefix, so neither collides with the
+// `:id/toggle` regex (same guarantee documented on the approvals routes).
+http.route({
+  pathPrefix: "/api/v1/workflows/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const rest = url.pathname.slice("/api/v1/workflows/".length);
+    const match = rest.match(/^([^/]+)\/toggle$/);
+    if (!match) return apiError("not_found", "unknown route", 404);
+    const auth = await gate(ctx, request, "POST /api/v1/workflows/:id/toggle", "workflows:write");
+    if (auth instanceof Response) return auth;
+    const body = await request.json().catch(() => ({}));
+    if (typeof body.enabled !== "boolean") {
+      return apiError("bad_request", "enabled (boolean) required", 400);
+    }
+    try {
+      const result = await ctx.runMutation(internal.publicApi.toggleWorkflowForApi, {
+        spaceId: auth.spaceId,
+        workflowId: match[1] as Id<"workflows">,
+        enabled: body.enabled,
+      });
+      return apiOk(result, 200, auth.rateLimitHeaders);
+    } catch (e) {
+      return apiError("not_found", e instanceof Error ? e.message : String(e), 404);
+    }
   }),
 });
 
@@ -1001,19 +1329,188 @@ http.route({
   path: "/api/v1/workflows/run",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const auth = await authApiKey(ctx, request);
-    if (!auth) return unauthorized();
+    const auth = await gate(ctx, request, "POST /api/v1/workflows/run", "workflows:write");
+    if (auth instanceof Response) return auth;
     const body = await request.json().catch(() => ({}));
-    if (!body.workflowId) return json({ error: "workflowId required" }, 400);
+    if (!body.workflowId) return apiError("bad_request", "workflowId required", 400);
     try {
       const runId = await ctx.runMutation(internal.workflows.startFromTrigger, {
         workflowId: body.workflowId as Id<"workflows">,
         trigger: "api",
       });
-      return json({ runId });
+      return apiOk({ runId }, 201, auth.rateLimitHeaders);
     } catch {
-      return json({ error: "invalid workflowId" }, 400);
+      return apiError("bad_request", "invalid workflowId", 400);
     }
+  }),
+});
+
+http.route({
+  path: "/api/v1/workflows/runs",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "GET /api/v1/workflows/runs", "workflows:read");
+    if (auth instanceof Response) return auth;
+    const url = new URL(request.url);
+    const workflowIdParam = url.searchParams.get("workflowId");
+    const { cursor, limit } = paginationParams(url);
+    const result = await ctx.runQuery(internal.publicApi.listWorkflowRuns, {
+      spaceId: auth.spaceId,
+      workflowId: workflowIdParam ? (workflowIdParam as Id<"workflows">) : undefined,
+      cursor,
+      limit,
+    });
+    return apiOk(result, 200, auth.rateLimitHeaders);
+  }),
+});
+
+http.route({
+  path: "/api/v1/approvals",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "GET /api/v1/approvals", "approvals:read");
+    if (auth instanceof Response) return auth;
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status") ?? undefined;
+    const { cursor, limit } = paginationParams(url);
+    const result = await ctx.runQuery(internal.approvals.listForApi, {
+      spaceId: auth.spaceId,
+      status,
+      cursor,
+      limit,
+    });
+    return apiOk(result, 200, auth.rateLimitHeaders);
+  }),
+});
+
+// POST /api/v1/approvals/bulk-decide — body { approvalIds: string[], approve: boolean }.
+// An exact `path` route always wins over the `pathPrefix` single-decide route
+// below regardless of registration order (Convex's router checks exact
+// matches first), so "bulk-decide" never falls into the `/:id/decide` regex.
+http.route({
+  path: "/api/v1/approvals/bulk-decide",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "POST /api/v1/approvals/bulk-decide", "approvals:write");
+    if (auth instanceof Response) return auth;
+    const body = await request.json().catch(() => ({}));
+    if (typeof body.approve !== "boolean") {
+      return apiError("bad_request", "approve (boolean) required", 400);
+    }
+    if (!Array.isArray(body.approvalIds) || body.approvalIds.length === 0) {
+      return apiError("bad_request", "approvalIds (non-empty array) required", 400);
+    }
+    const result = await ctx.runMutation(internal.approvals.bulkDecideForApi, {
+      spaceId: auth.spaceId,
+      companyId: auth.companyId,
+      approvalIds: body.approvalIds as Id<"approvals">[],
+      approve: body.approve,
+    });
+    return apiOk(result, 200, auth.rateLimitHeaders);
+  }),
+});
+
+// POST /api/v1/approvals/{id}/decide — body { approve: boolean }.
+http.route({
+  pathPrefix: "/api/v1/approvals/",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const rest = url.pathname.slice("/api/v1/approvals/".length);
+    const match = rest.match(/^([^/]+)\/decide$/);
+    if (!match) return apiError("not_found", "unknown route", 404);
+    const auth = await gate(ctx, request, "POST /api/v1/approvals/:id/decide", "approvals:write");
+    if (auth instanceof Response) return auth;
+    const body = await request.json().catch(() => ({}));
+    if (typeof body.approve !== "boolean") {
+      return apiError("bad_request", "approve (boolean) required", 400);
+    }
+    try {
+      await ctx.runMutation(internal.approvals.decideForApi, {
+        spaceId: auth.spaceId,
+        companyId: auth.companyId,
+        approvalId: match[1] as Id<"approvals">,
+        approve: body.approve,
+      });
+      return apiOk({ ok: true }, 200, auth.rateLimitHeaders);
+    } catch (e) {
+      return apiError("bad_request", e instanceof Error ? e.message : String(e), 400);
+    }
+  }),
+});
+
+http.route({
+  path: "/api/v1/usage",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const auth = await gate(ctx, request, "GET /api/v1/usage", "usage:read");
+    if (auth instanceof Response) return auth;
+    const usage = await ctx.runQuery(internal.publicApi.usageSummary, {
+      apiKeyId: auth.apiKeyId,
+    });
+    return apiOk(usage, 200, auth.rateLimitHeaders);
+  }),
+});
+
+// ===========================================================================
+// One-click approval links (feature 19) — signed short-lived single-use
+// tokens minted by approvals.issueTokensAndDeliver. No API key or auth cookie
+// needed: the token itself IS the credential, hashed at rest and burned on
+// first use. Reachable from an email/webhook link, so this responds with a
+// small HTML confirmation page by default (JSON via ?format=json).
+// ===========================================================================
+
+function approvalResultPage(
+  ok: boolean,
+  message: string,
+  title?: string,
+): Response {
+  const html = `<!doctype html><html><head><meta charset="utf-8"/>
+<title>Cadre approvals</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;background:#0a0a0a;color:#eee;
+display:grid;place-items:center;min-height:100vh;margin:0;padding:24px;}
+.card{max-width:420px;text-align:center;border:1px solid #262626;border-radius:20px;
+padding:32px;background:#111;}
+h1{font-size:18px;margin:0 0 8px;color:${ok ? "#34d399" : "#f87171"};}
+p{color:#a3a3a3;font-size:14px;line-height:1.5;margin:0;}
+</style></head>
+<body><div class="card"><h1>${ok ? "✓ " : "✕ "}${message}</h1>
+${title ? `<p>${title}</p>` : ""}</div></body></html>`;
+  return new Response(html, {
+    status: ok ? 200 : 400,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+
+http.route({
+  pathPrefix: "/api/v1/approvals/token/",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const token = url.pathname.slice("/api/v1/approvals/token/".length);
+    const wantsJson =
+      url.searchParams.get("format") === "json" ||
+      (request.headers.get("Accept") ?? "").includes("application/json");
+    const override = url.searchParams.get("action");
+    if (!token) {
+      return wantsJson ? apiError("bad_request", "token required", 400) : approvalResultPage(false, "Missing token");
+    }
+    const result = await ctx.runAction(internal.approvals.decideByToken, {
+      token,
+      override: override === "approve" || override === "deny" ? override : undefined,
+    });
+    if (!result.ok) {
+      return wantsJson
+        ? apiError("token_invalid", result.error, 400)
+        : approvalResultPage(false, result.error);
+    }
+    const message =
+      result.decision === "approve" ? "Approved" : "Rejected";
+    return wantsJson
+      ? apiOk({ approvalId: result.approvalId, decision: result.decision })
+      : approvalResultPage(true, message, result.title);
   }),
 });
 

@@ -2,7 +2,7 @@
 
 import { ReactNode } from "react";
 import Link from "next/link";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   ChevronDown,
   ChevronRight,
@@ -13,10 +13,15 @@ import {
   Trash2,
 } from "@/components/icons";
 import { cn } from "@/lib/utils";
+import { DURATION, EASE } from "@/components/site/motion";
 
 /* ---------------------------------------------------------------------------
    Bento cards — the premium card system: very round (rounded-3xl), generous
    padding, big quiet titles, tiny muted metadata, one accent per card.
+   Cycle 7 cross-surface consistency: the hover-lift here now shares the
+   exact `DURATION.instant` + `EASE` transition every other pressable
+   surface in the app uses (Button, Modal's close glyph) instead of a
+   bespoke `duration: 0.2` with the framer default ease.
 --------------------------------------------------------------------------- */
 
 export function BentoCard({
@@ -32,15 +37,17 @@ export function BentoCard({
   className?: string;
   tone?: "surface" | "accent";
 }) {
+  const reduce = useReducedMotion();
   return (
-    <div
+    <motion.div
       className={cn(
-        "rounded-3xl p-6",
+        "rounded-3xl p-6 transition-shadow",
         tone === "accent"
           ? "bg-accent text-white shadow-[0_0_40px_rgba(255,91,4,0.18)]"
-          : "border border-border bg-surface",
+          : "border border-border bg-surface hover:shadow-[0_8px_28px_-16px_rgba(31,31,28,0.25)]",
         className,
       )}
+      whileHover={reduce ? undefined : { y: -3, transition: { duration: DURATION.instant, ease: EASE } }}
     >
       {(title || action) && (
         <div className="mb-5 flex items-center justify-between gap-3">
@@ -49,7 +56,7 @@ export function BentoCard({
         </div>
       )}
       {children}
-    </div>
+    </motion.div>
   );
 }
 
@@ -145,6 +152,7 @@ export function MediaCard({
 }) {
   const max = Math.max(...bars, 1);
   const Wrapper = href ? Link : "div";
+  const reduce = useReducedMotion();
   return (
     <BentoCard tone="accent" className={cn("flex flex-col", className)}>
       <div>
@@ -153,8 +161,8 @@ export function MediaCard({
       </div>
       <div className="my-5 flex justify-center">
         <motion.div
-          animate={{ scale: [1, 1.06, 1] }}
-          transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+          animate={reduce ? undefined : { scale: [1, 1.06, 1] }}
+          transition={reduce ? undefined : { duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
         >
           <Wrapper
             href={(href ?? "#") as never}
@@ -204,19 +212,21 @@ export function DateChipCard({
   label: string;
   className?: string;
 }) {
+  const reduce = useReducedMotion();
   return (
-    <div
+    <motion.div
       className={cn(
         "flex items-center gap-4 rounded-3xl border border-border bg-surface px-6 py-5",
         className,
       )}
+      whileHover={reduce ? undefined : { y: -3, transition: { duration: DURATION.instant, ease: EASE } }}
     >
       <span className="h-9 w-1 rounded-full bg-accent shadow-[0_0_8px_rgba(255,91,4,0.6)]" />
       <div>
         <p className="font-semibold tracking-tight">{date}</p>
         <p className="text-sm text-muted">{label}</p>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

@@ -11,28 +11,79 @@ import {
 } from "react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
+import { DURATION, EASE } from "@/components/site/motion";
+
+/* ---------------------------------------------------------------------------
+   Cycle 7 cross-surface consistency: shared spring presets for the UI kit's
+   pill-glide and pop-in interactions, so every `layoutId` pill morph and
+   every badge/count spring-pop in the shell settles with the same handful of
+   feels instead of a bespoke stiffness/damping per call site (this file had
+   three near-identical-but-not-quite pill springs and two near-identical pop
+   springs before this pass). `components/sidebar.tsx` imports these too, so
+   its active-nav pill and live-count badge match Segmented/Badge/Toggle
+   exactly rather than drifting a point or two off. Distinct from Lane A's
+   `SPRING` in `site/motion.tsx` (`snappy`/`scroll`/`soft`), which tunes
+   pointer- and scroll-linked motion values, a different feel from a
+   discrete pill/badge settle. */
+export const UI_SPRING = {
+  /** `layoutId` pill glide: Segmented's active option, the sidebar's active
+   *  nav pill. */
+  pill: { type: "spring", stiffness: 420, damping: 34 },
+  /** Small badge/count pop-in or value bump: Badge mount, Toggle's knob
+   *  travel, the sidebar's live agent-count bump. */
+  pop: { type: "spring", stiffness: 500, damping: 32 },
+  /** Modal panel entrance. */
+  panel: { type: "spring", stiffness: 380, damping: 30 },
+} as const;
+
+/* ---------------------------------------------------------------------------
+   Application UI kit — paper-white pill/beige-card language. Every consumer
+   across the dashboard keeps the exact same props; only the presentation and
+   the hover/press micro-interactions changed.
+--------------------------------------------------------------------------- */
+
+// framer-motion's HTMLMotionProps redefine a handful of native event names
+// (drag/animation lifecycle) with its own gesture signatures, so a spread of
+// plain ButtonHTMLAttributes can collide with them. Button is used ~60 places
+// and none pass those, so omitting them from the public prop type is safe.
+type NativeButtonProps = Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  "onDrag" | "onDragStart" | "onDragEnd" | "onAnimationStart" | "onAnimationEnd"
+>;
+
+// Same drag/animation event-name collision as Button above, for the two
+// motion-wrapped form fields below.
+type NativeInputProps = Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "onDrag" | "onDragStart" | "onDragEnd" | "onAnimationStart" | "onAnimationEnd"
+>;
+type NativeTextareaProps = Omit<
+  TextareaHTMLAttributes<HTMLTextAreaElement>,
+  "onDrag" | "onDragStart" | "onDragEnd" | "onAnimationStart" | "onAnimationEnd"
+>;
 
 export function Button({
   className,
   variant = "primary",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
+}: NativeButtonProps & {
   variant?: "primary" | "ghost" | "danger" | "outline";
 }) {
+  const reduce = useReducedMotion();
   const variants = {
-    primary:
-      "bg-accent text-white hover:brightness-110 shadow-[0_0_16px_rgba(255,91,4,0.25)]",
-    outline: "border border-border bg-surface-2 hover:border-muted",
-    ghost: "text-muted hover:text-foreground hover:bg-surface-2",
-    danger: "bg-red-500/90 text-white hover:bg-red-500",
+    primary: "bg-[var(--foreground)] text-white hover:bg-black",
+    outline: "border border-border bg-background text-foreground hover:border-border-hover",
+    ghost: "text-muted hover:text-foreground hover:bg-band",
+    danger: "bg-red-600 text-white hover:bg-red-700",
   };
   return (
-    <button
+    <motion.button
+      whileHover={reduce || props.disabled ? undefined : { y: -1 }}
+      whileTap={reduce || props.disabled ? undefined : { scale: 0.96 }}
+      transition={{ duration: DURATION.instant, ease: EASE }}
       className={cn(
-        // Micro-interaction: press compresses, release springs back (CSS so it
-        // composes with any button content; motion handles the bigger stuff).
-        "inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition active:scale-[0.97]",
-        "disabled:opacity-50",
+        "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+        "disabled:pointer-events-none disabled:opacity-50",
         variants[variant],
         className,
       )}
@@ -51,7 +102,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-3xl border border-border bg-surface p-6",
+        "rounded-card border border-border bg-surface p-6 shadow-card transition-shadow duration-300 hover:shadow-card-hover",
         className,
       )}
     >
@@ -67,43 +118,53 @@ export function Badge({
   children: ReactNode;
   tone?: "default" | "green" | "yellow" | "red" | "blue";
 }) {
+  const reduce = useReducedMotion();
   const tones = {
-    default: "bg-surface-2 text-muted",
-    green: "bg-lime-400/10 text-lime-400",
-    yellow: "bg-amber-400/10 text-amber-400",
-    red: "bg-red-500/10 text-red-400",
-    blue: "bg-sky-400/10 text-sky-300",
+    default: "bg-band text-muted",
+    green: "bg-green-50 text-green-700",
+    yellow: "bg-amber-50 text-amber-700",
+    red: "bg-red-50 text-red-700",
+    blue: "bg-sky-50 text-sky-700",
   };
   return (
-    <span
+    <motion.span
+      initial={reduce ? false : { opacity: 0, scale: 0.85 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={UI_SPRING.pop}
       className={cn(
-        "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
         tones[tone],
       )}
     >
       {children}
-    </span>
+    </motion.span>
   );
 }
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+export function Input(props: NativeInputProps) {
+  const reduce = useReducedMotion();
   return (
-    <input
+    <motion.input
       {...props}
+      whileFocus={reduce ? undefined : { scale: 1.006 }}
+      transition={{ duration: DURATION.instant, ease: EASE }}
       className={cn(
-        "w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none transition placeholder:text-muted focus:border-accent focus:shadow-[0_0_12px_rgba(255,91,4,0.15)]",
+        "w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-muted focus:border-[var(--foreground)] focus:shadow-[0_0_0_3px_rgba(31,31,28,0.08)]",
         props.className,
       )}
     />
   );
 }
 
-export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea(props: NativeTextareaProps) {
+  const reduce = useReducedMotion();
   return (
-    <textarea
+    <motion.textarea
       {...props}
+      whileFocus={reduce ? undefined : { scale: 1.003 }}
+      transition={{ duration: DURATION.instant, ease: EASE }}
       className={cn(
-        "w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm outline-none transition placeholder:text-muted focus:border-accent focus:shadow-[0_0_12px_rgba(255,91,4,0.15)]",
+        "w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-muted focus:border-[var(--foreground)] focus:shadow-[0_0_0_3px_rgba(31,31,28,0.08)]",
         props.className,
       )}
     />
@@ -121,27 +182,70 @@ export function Modal({
   title: string;
   children: ReactNode;
 }) {
+  const reduce = useReducedMotion();
+
+  // Escape-to-close and a body scroll lock while the modal is open. Pure
+  // presentation/UX polish on top of the exact same `onClose` every one of
+  // the ~20 call sites already wires up; nothing about the open/children
+  // contract changes.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"
+          className="fixed inset-0 z-50 grid place-items-center bg-[#1f1f1c]/40 p-4 backdrop-blur-[2px]"
           onClick={onClose}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.18 }}
+          transition={{ duration: DURATION.instant, ease: EASE }}
         >
           <motion.div
-            className="w-full max-w-lg rounded-3xl border border-border bg-surface p-6 shadow-2xl"
+            className="relative w-full max-w-lg rounded-modal border border-border bg-background p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
             initial={{ opacity: 0, y: 16, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.98 }}
-            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+            transition={UI_SPRING.panel}
           >
-            <h2 className="mb-4 text-lg font-semibold">{title}</h2>
-            {children}
+            <motion.button
+              type="button"
+              aria-label="Close"
+              onClick={onClose}
+              className="absolute right-5 top-5 grid h-7 w-7 place-items-center rounded-full text-muted hover:bg-band hover:text-foreground"
+              whileHover={reduce ? undefined : { rotate: 90 }}
+              whileTap={reduce ? undefined : { scale: 0.88 }}
+              transition={{ duration: DURATION.instant, ease: EASE }}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+            </motion.button>
+            {/* Title + body settle in a beat after the panel spring lands,
+                so the frame arrives first and the content reads as filling
+                it rather than everything popping at once. Same editorial
+                `EASE` curve as every other one-shot fade in the shell. */}
+            <motion.div
+              initial={reduce ? undefined : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: DURATION.instant, delay: reduce ? 0 : 0.06, ease: EASE }}
+            >
+              <h2 className="mb-4 pr-8 text-lg font-semibold text-foreground">{title}</h2>
+              {children}
+            </motion.div>
           </motion.div>
         </motion.div>
       )}
@@ -161,14 +265,14 @@ export function EmptyState({
   graphic?: ReactNode;
 }) {
   return (
-    <div className="grid place-items-center rounded-3xl border border-dashed border-border bg-surface/50 p-12 text-center">
+    <div className="grid place-items-center rounded-card border border-dashed border-border bg-band/40 p-12 text-center">
       <div className="flex flex-col items-center">
         {graphic && (
-          <div className="mb-5 grid h-24 w-24 place-items-center rounded-2xl border border-border bg-[#0c0c0c]">
+          <div className="mb-5 grid h-24 w-24 place-items-center rounded-2xl border border-border bg-background">
             <div className="h-16 w-16">{graphic}</div>
           </div>
         )}
-        <p className="font-medium">{title}</p>
+        <p className="font-medium text-foreground">{title}</p>
         <p className="mt-1 max-w-sm text-sm text-muted">{body}</p>
         {action && <div className="mt-4 flex justify-center">{action}</div>}
       </div>
@@ -199,21 +303,24 @@ export function SkeletonRows({ rows = 4, className }: { rows?: number; className
 }
 
 export function StatusDot({ status }: { status?: string }) {
+  const reduce = useReducedMotion();
   const color =
     status === "online"
-      ? "bg-lime-400 shadow-[0_0_8px_rgba(163,230,53,0.7)]"
+      ? "bg-green-500"
       : status === "degraded"
-        ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]"
+        ? "bg-amber-500"
         : status === "pending"
-          ? "bg-accent shadow-[0_0_8px_rgba(255,91,4,0.6)]"
-          : "bg-zinc-600";
+          ? "bg-[var(--foreground)]"
+          : "bg-[#d8d5cd]";
   return (
     <span className="relative inline-flex h-2 w-2">
-      {/* Live agents visibly breathe: an expanding ping ring behind the dot. */}
-      {status === "online" && (
+      {/* Live agents visibly breathe: an expanding ping ring behind the dot.
+          Ambient/looping, so it fully stops under reduced motion instead of
+          pinging forever. */}
+      {status === "online" && !reduce && (
         <motion.span
-          className="absolute inset-0 rounded-full bg-lime-400"
-          animate={{ scale: [1, 2.4], opacity: [0.5, 0] }}
+          className="absolute inset-0 rounded-full bg-green-500"
+          animate={{ scale: [1, 2.4], opacity: [0.45, 0] }}
           transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
         />
       )}
@@ -227,12 +334,12 @@ export function StatusDot({ status }: { status?: string }) {
 // ---------------------------------------------------------------------------
 
 const RING_COLORS = {
-  accent: { stroke: "#ff5b04", glow: "rgba(255,91,4,0.55)" },
-  green: { stroke: "#a3e635", glow: "rgba(163,230,53,0.55)" },
-  yellow: { stroke: "#facc15", glow: "rgba(250,204,21,0.55)" },
-  red: { stroke: "#ef4444", glow: "rgba(239,68,68,0.6)" },
-  cyan: { stroke: "#67e8f9", glow: "rgba(103,232,249,0.5)" },
-  muted: { stroke: "#3f3f3f", glow: "transparent" },
+  accent: { stroke: "#1f1f1c", glow: "rgba(31,31,28,0.28)" },
+  green: { stroke: "#16a34a", glow: "rgba(22,163,74,0.32)" },
+  yellow: { stroke: "#d97706", glow: "rgba(217,119,6,0.3)" },
+  red: { stroke: "#dc2626", glow: "rgba(220,38,38,0.32)" },
+  cyan: { stroke: "#0891b2", glow: "rgba(8,145,178,0.3)" },
+  muted: { stroke: "#d8d5cd", glow: "transparent" },
 } as const;
 
 export type RingColor = keyof typeof RING_COLORS;
@@ -250,7 +357,10 @@ function Reading({ value }: { value: ReactNode }) {
     }
     const controls = animate(shown ?? 0, target, {
       duration: 0.9,
-      ease: [0.22, 0.8, 0.3, 1],
+      // Same editorial `EASE` curve as every other one-shot reveal/count in
+      // the shell (cycle 7: this and RingGauge's arc draw-in used to carry
+      // their own near-identical-but-not-quite bezier literal each).
+      ease: EASE,
       onUpdate: (v) => setShown(Math.round(v)),
     });
     return () => controls.stop();
@@ -260,8 +370,8 @@ function Reading({ value }: { value: ReactNode }) {
 }
 
 /**
- * Glowing ring gauge: dotted track + colored luminous arc with the reading in
- * the center. The arc draws in from zero and the number counts up.
+ * Ring gauge: dotted track + colored arc with the reading in the center. The
+ * arc draws in from zero and the number counts up.
  */
 export function RingGauge({
   value,
@@ -299,7 +409,7 @@ export function RingGauge({
           strokeWidth="2.5"
           strokeDasharray="1.5 4.5"
         />
-        {/* luminous arc — draws in from zero */}
+        {/* colored arc — draws in from zero */}
         <motion.circle
           cx="50"
           cy="50"
@@ -311,12 +421,12 @@ export function RingGauge({
           strokeDasharray={circ}
           initial={{ strokeDashoffset: reduce ? circ - arc : circ }}
           animate={{ strokeDashoffset: circ - arc }}
-          transition={{ duration: 1.1, ease: [0.22, 0.8, 0.3, 1] }}
-          style={{ filter: `drop-shadow(0 0 6px ${c.glow})` }}
+          transition={{ duration: 1.1, ease: EASE }}
+          style={{ filter: `drop-shadow(0 0 5px ${c.glow})` }}
         />
       </svg>
       <span className="text-center leading-none">
-        <span className="font-semibold" style={{ fontSize: size / 4.6 }}>
+        <span className="font-semibold text-foreground" style={{ fontSize: size / 4.6 }}>
           <Reading value={value} />
         </span>
         {unit && (
@@ -344,28 +454,30 @@ export function Segmented<T extends string>({
   // Scope the morphing pill to this instance — a shared layoutId would make
   // two Segmented controls on one page animate into each other.
   const pillId = useId();
+  const reduce = useReducedMotion();
   return (
-    <div className={cn("inline-flex items-center gap-1", className)}>
+    <div className={cn("inline-flex items-center gap-1 rounded-full border border-border bg-background p-1", className)}>
       {options.map((o) => (
-        <button
+        <motion.button
           key={o.value}
           onClick={() => onChange(o.value)}
+          whileTap={reduce ? undefined : { scale: 0.94 }}
           className={cn(
-            "relative rounded-lg px-3 py-1.5 text-sm transition",
+            "relative rounded-full px-3 py-1.5 text-sm transition-colors",
             o.value === value
               ? "text-white"
-              : "text-muted hover:bg-surface-2 hover:text-foreground",
+              : "text-muted hover:text-foreground",
           )}
         >
           {o.value === value && (
             <motion.span
               layoutId={pillId}
-              className="absolute inset-0 rounded-lg bg-accent shadow-[0_0_14px_rgba(255,91,4,0.3)]"
-              transition={{ type: "spring", stiffness: 420, damping: 34 }}
+              className="absolute inset-0 rounded-full bg-[var(--foreground)]"
+              transition={UI_SPRING.pill}
             />
           )}
           <span className="relative">{o.label}</span>
-        </button>
+        </motion.button>
       ))}
     </div>
   );
@@ -381,12 +493,14 @@ export function Toggle({
   onChange: (v: boolean) => void;
   label?: string;
 }) {
+  const reduce = useReducedMotion();
   return (
-    <button
+    <motion.button
       type="button"
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
+      whileTap={reduce ? undefined : { scale: 0.94 }}
       className="inline-flex items-center gap-2"
     >
       {label && <span className="text-sm text-muted">{label}</span>}
@@ -394,16 +508,16 @@ export function Toggle({
         className={cn(
           "relative flex h-5 w-9 items-center rounded-full px-0.5 transition-colors",
           checked
-            ? "justify-end bg-accent shadow-[0_0_10px_rgba(255,91,4,0.4)]"
-            : "justify-start border border-border bg-surface-2",
+            ? "justify-end bg-[var(--foreground)]"
+            : "justify-start border border-border bg-band",
         )}
       >
         <motion.span
           layout
-          className="h-4 w-4 rounded-full bg-white"
-          transition={{ type: "spring", stiffness: 500, damping: 32 }}
+          className="h-4 w-4 rounded-full bg-background shadow-[0_1px_2px_rgba(31,31,28,0.25)]"
+          transition={UI_SPRING.pop}
         />
       </span>
-    </button>
+    </motion.button>
   );
 }
