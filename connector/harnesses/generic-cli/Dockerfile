@@ -36,10 +36,18 @@ RUN pip install --no-cache-dir -r /app/connector/requirements.txt || true
 
 COPY connector/control_plane/ /app/connector/control_plane/
 
+# Shared policy entrypoint — see hermes/Dockerfile's comment and
+# docs/HARNESS_SPEC.md "Container policy (security profiles, feature 17)".
+COPY connector/harnesses/entrypoint.sh /app/connector/harnesses/entrypoint.sh
+RUN chmod +x /app/connector/harnesses/entrypoint.sh
+
 RUN useradd --create-home --uid 10001 agent \
     && chown -R agent:agent /app
 USER agent
 
 EXPOSE 8080
 
+# See hermes/Dockerfile's ENTRYPOINT comment: applies egress/fs-quota/secret
+# policy and fails closed before execing CMD.
+ENTRYPOINT ["/app/connector/harnesses/entrypoint.sh"]
 CMD ["sh", "-c", "python -m http.server 8080 --bind 0.0.0.0 >/dev/null 2>&1 & exec python -m connector.control_plane.agent_runtime"]

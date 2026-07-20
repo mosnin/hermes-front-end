@@ -440,7 +440,116 @@ class AgentRuntime:
             time.sleep(2.0)
 
 
+def _enforce_boot_policy() -> None:
+    """Belt-and-suspenders in-process security-policy enforcement.
+
+    ``connector.control_plane.policy.entrypoint`` is the PRIMARY boot path: it
+    runs as the container's PID 1 (wired as every harness Dockerfile's
+    ENTRYPOINT), applies the full policy (egress proxy, netfilter lockdown,
+    fs quota, secret-scope filter) BEFORE anything agent-related starts, and
+    only then execs this module — with ``HERMES_POLICY_ENFORCED=1`` set as a
+    marker and an already-filtered environment.
+
+    If this module is ever started WITHOUT going through that entrypoint —
+    local dev (`python -m connector.control_plane.agent_runtime` directly), an
+    older image built before the policy entrypoint existed, a harness
+    Dockerfile that forgot to prepend it — a configured security profile must
+    still not be silently unenforced. This second, in-process hook checks for
+    the marker and, if absent, applies the same policy here directly (fail
+    closed exactly like the primary path) before the control-plane client or
+    agent loop is ever constructed.
+
+    If the marker IS present, the kernel/env layers the primary path applied
+    (netfilter rules, a privileged tmpfs mount, the secret-filtered process
+    environment) have already survived into this process. But the two
+    THREAD-based controls — the egress allowlist proxy (the PRIMARY egress
+    boundary) and the fs-quota watcher — were started in the PID-1 entrypoint
+    process and were DESTROYED by its ``os.execvpe`` into this one: exec
+    replaces the process image, tearing down every thread and closing the
+    proxy's (non-inheritable) listening socket. The inherited
+    ``HTTP_PROXY``/``HTTPS_PROXY`` would then point at a dead loopback port,
+    ECONNREFUSED-ing every outbound call (model API included), and any
+    netfilter rules would pin traffic to that dead port. So when an egress or
+    fs policy is configured we RE-ESTABLISH the in-process layers here, in the
+    process that actually outlives boot — rebinding a live proxy (which
+    overwrites the stale proxy env vars before the agent uses them) and
+    re-arming the watcher. This re-run is idempotent w.r.t. the persistent
+    layers (netfilter flush/re-add re-pins to the live proxy port; the tmpfs
+    mount is reused, not stacked; already-dropped secrets stay dropped). It is
+    allowed to fail closed: an egress policy whose proxy cannot be rebound
+    leaves the agent with NO egress enforcement, which must abort boot.
+    """
+    from .policy import (
+        PolicyConfig,
+        PolicyConfigError,
+        enforce_policy_from_env,
+    )
+
+    def log(line: str) -> None:
+        print(line, flush=True)
+
+    marker_present = os.environ.get("HERMES_POLICY_ENFORCED") == "1"
+    if marker_present:
+        # Fast path: if no policy actually restricts anything, there are no
+        # in-process threads to rebuild — trust the marker and move on.
+        try:
+            config = PolicyConfig.from_env()
+        except PolicyConfigError as exc:
+            # The marker proves the entrypoint (PID 1) already parsed this
+            # config, validated it, and applied every PERSISTENT layer —
+            # netfilter rules and the secret-filtered environ survive the
+            # exec into this process and are still in force. A re-parse
+            # failing now is post-validation env drift; the only thing it
+            # blocks is re-arming the two THREAD-based controls (egress
+            # proxy, fs watcher), and a dead inherited HTTP(S)_PROXY fails
+            # SAFE (outbound calls refuse, they don't bypass the boundary).
+            # This hook is drift re-establishment, not a second hard gate —
+            # so warn loudly and proceed on the primary path's enforcement
+            # rather than killing an agent that is still contained. The
+            # no-marker branch below remains the fail-closed primary gate.
+            log(f"[policy] runtime: malformed policy config under marker: {exc}")
+            log(
+                "[policy] runtime: primary entrypoint already applied policy; "
+                "cannot re-establish in-process controls — continuing on "
+                "persistent (netfilter/secret-filter) layers"
+            )
+            return
+        if not (config.has_egress_policy or config.has_fs_policy):
+            return
+        log(
+            "[policy] runtime: re-establishing in-process controls (egress proxy / "
+            "fs watcher) — thread-based layers do not survive the entrypoint's exec"
+        )
+        try:
+            report = enforce_policy_from_env(logger=log, apply_secret_filter=True)
+        except PolicyConfigError as exc:
+            log(f"[policy] runtime: malformed policy config: {exc}")
+            log("[policy] runtime: FAIL-CLOSED — refusing to start agent loop")
+            raise SystemExit(90)
+        if not report.ok:
+            log("[policy] runtime: FAIL-CLOSED — could not re-establish in-process controls")
+            raise SystemExit(90)
+        return
+
+    log(
+        "[policy] runtime: no policy-entrypoint marker found — this process was "
+        "started without connector.control_plane.policy.entrypoint as PID 1; "
+        "applying the security policy in-process (belt and suspenders)"
+    )
+    try:
+        report = enforce_policy_from_env(logger=log, apply_secret_filter=True)
+    except PolicyConfigError as exc:
+        log(f"[policy] runtime: malformed policy config: {exc}")
+        log("[policy] runtime: FAIL-CLOSED — refusing to start agent loop")
+        raise SystemExit(90)
+    if not report.ok:
+        log("[policy] runtime: FAIL-CLOSED — refusing to start agent loop")
+        raise SystemExit(90)
+    os.environ["HERMES_POLICY_ENFORCED"] = "1"
+
+
 def main() -> None:
+    _enforce_boot_policy()
     client = ControlPlaneClient()
     AgentRuntime(client).run()
 

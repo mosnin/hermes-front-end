@@ -199,28 +199,100 @@ always wins on key overlap:
 | `toolAllowlist`      | `HERMES_TOOL_ALLOWLIST` (comma-joined) |
 | opaque `containerPolicy` | `HERMES_CONTAINER_POLICY_JSON` (JSON) |
 
-**What's actually enforced today:** only `toolAllowlist`, and only
-server-side in Convex (`securityProfiles.assertToolAllowed`, called from the
-router/connector dispatch paths before a tool call is allowed through) — that
-enforcement doesn't depend on this container-env plumbing at all. Convex has
-no network boundary of its own, so `egressAllowlist` / `fsQuotaMb` /
-`secretScopes` are **advisory at the container boundary**: the env vars are
-set, but no built-in harness's connector currently reads and enforces them
-(that's a `connector/control_plane` change, outside this team's file
-ownership — see cross-team note below). The plumbing is complete end-to-end
-so a harness's adapter can opt into reading these vars without any change to
-`fleet.ts`, `lib/cloudflare.ts`, or the worker.
+**What's actually enforced today:** `toolAllowlist` is enforced server-side in
+Convex (`securityProfiles.assertToolAllowed`, called from the router/connector
+dispatch paths before a tool call is allowed through) — independent of the
+container-env plumbing below. As of this change, `egressAllowlist` /
+`fsQuotaMb` / `secretScopes` are now **also enforced in-container**, for every
+built-in harness (hermes, openclaw, goose, generic-cli) alike, before the
+agent loop ever starts. `hasContainerPolicy: boolean` is still recorded on the
+worker's registry entry (surfaced in `/list`) for operator observability.
 
-`hasContainerPolicy: boolean` is recorded on the worker's registry entry
-(surfaced in `/list`) purely for operator observability — it does not gate
-anything.
+### In-container enforcement (connector/control_plane/policy/)
 
-**Cross-team note (connector/control_plane, not owned by this team):** to
-actually enforce `HERMES_EGRESS_ALLOWLIST` / `HERMES_FS_QUOTA_MB` /
-`HERMES_SECRET_SCOPES` at runtime, the connector/harness process would need
-to read them at boot and apply an egress proxy / fs quota / secret filter
-before starting the agent loop — this manifest+env contract is the seam for
-that; no further Convex/fleet-worker change should be required.
+Every harness image now runs a policy boot sequence as its Docker
+`ENTRYPOINT` (`connector/harnesses/entrypoint.sh`, a one-line `exec` shim into
+`python -m connector.control_plane.policy.entrypoint`) as the container's
+FIRST process, ahead of anything agent-related:
+
+1. **Parse** — `HERMES_EGRESS_ALLOWLIST` / `HERMES_FS_QUOTA_MB` /
+   `HERMES_SECRET_SCOPES` / `HERMES_TOOL_ALLOWLIST` /
+   `HERMES_CONTAINER_POLICY_JSON` are parsed into an immutable `PolicyConfig`
+   (`policy/config.py`). Absent/empty vars mean "no restriction" for that
+   dimension — a valid, explicit state. A present-but-malformed value (a
+   non-integer quota, invalid JSON, an unrecognized `failMode`) raises before
+   anything is applied.
+2. **Egress (primary control)** — a threaded stdlib `http.server` forward +
+   CONNECT proxy bound to loopback (`policy/egress.py`) is started and
+   `HTTP_PROXY`/`HTTPS_PROXY` (+ lowercase) are exported so the agent process
+   dials out through it. Every request/tunnel is checked against the host
+   allowlist; anything that doesn't match is refused (HTTP 403 / closed
+   tunnel), deny-by-default. This is the layer that actually holds even with
+   zero container privileges — see "why not just iptables" below.
+3. **Netfilter (defense-in-depth, best-effort)** — `policy/netfilter.py`
+   attempts an `iptables`/`nft` `OUTPUT` lockdown pinning traffic to the proxy
+   port + DNS + loopback, as a second layer behind the proxy for processes
+   that ignore `HTTP(S)_PROXY` or talk raw sockets. Requires root +
+   `CAP_NET_ADMIN` + a firewall binary in the image; **degrades** (never
+   fails boot) when any of those is missing.
+4. **FS quota** — `policy/fsquota.py` prepares a dedicated agent work
+   directory, best-effort mounts a size-capped `tmpfs` there when privileged,
+   and always starts a background watcher thread that polls the directory's
+   size and takes a configured action (`block` default / `log` / `terminate`)
+   on breach — the control that holds even without tmpfs privilege.
+5. **Secret-scope filter** — `policy/secrets.py` computes a new environment
+   with every secret-shaped var (`*_KEY`/`*_TOKEN`/`*_SECRET`/...) not in an
+   allowed scope removed, keyed by `HERMES_SECRET_SCOPES`. Control-plane
+   credentials (`HERMES_CONTROL_PLANE_URL`/`HERMES_CONNECTOR_TOKEN`) and
+   runtime plumbing (`PATH`, proxy vars, etc.) always survive regardless of
+   scope.
+6. **Exec** — the entrypoint then `exec`s the real agent process (replacing
+   its own PID, so signals land on the agent directly) with the filtered,
+   proxy-aware environment, plus `HERMES_POLICY_ENFORCED=1` as a marker.
+
+**Two-layer egress model, and why it must be this way:** Cloudflare
+Containers may not grant `CAP_NET_ADMIN`, so a kernel firewall alone is not a
+viable *primary* control — a container that got no such capability would run
+completely unrestricted. The application-layer proxy is therefore the
+mandatory, primary boundary (works with zero privilege); netfilter is a
+genuine second layer bolted on **only** when the capability happens to be
+present, so a process that bypasses `HTTP_PROXY` entirely still hits a wall
+in the privileged case. Losing netfilter never means losing enforcement,
+only losing the second layer.
+
+**Always-allow hosts:** the control-plane host (parsed from
+`HERMES_CONTROL_PLANE_URL`) and the inferred model-API host(s) (from
+`HERMES_AGENT_MODEL` or whichever of `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` is
+present; both `api.anthropic.com` and `api.openai.com` if ambiguous) are
+folded into the effective allowlist unconditionally — an operator-set
+`egressAllowlist` can never accidentally sever the agent from the control
+plane or its own LLM.
+
+**Fail-closed semantics:** a policy dimension the operator actually
+configured that cannot be enforced (malformed value, a layer's enforcement
+module missing/raising) aborts the container *before* the agent loop starts
+— logged as `[policy] FAIL-CLOSED: refusing to start agent`, process exits
+non-zero (`entrypoint.py`'s `EXIT_POLICY_REFUSED = 90`). This is opt-out only
+via `HERMES_CONTAINER_POLICY_JSON={"failMode":"open"}`, which downgrades a
+failure to a logged warning and starts the agent best-effort — never the
+default. Capability absence (no root, no `CAP_NET_ADMIN`, no firewall
+binary) is explicitly **not** a failure for the netfilter layer — it degrades
+to proxy-only, since the proxy is the primary control and still holds.
+
+**Belt-and-suspenders second hook:** `agent_runtime.main()` calls
+`_enforce_boot_policy()` before constructing the control-plane client. If the
+`HERMES_POLICY_ENFORCED` marker is absent (this module was started without
+going through the policy entrypoint — local dev, an older image, a harness
+Dockerfile that forgot to prepend it), it applies the exact same
+`enforce_policy_from_env` sequence in-process and fails closed identically.
+If the marker is present, it only runs a cheap `verify_or_reapply` drift
+probe and never re-blocks boot on its own.
+
+**Cross-team note (this Convex/worker plumbing, unchanged):** the manifest +
+env var contract (`fleet.ts` → `lib/cloudflare.ts spawnAgent()` → the fleet
+worker's `/spawn` body → the env table above) required no changes to close
+this gap — it was already the correct seam. Nothing here required a
+Convex/wrangler change.
 
 ## Version tracking (feature 5)
 
